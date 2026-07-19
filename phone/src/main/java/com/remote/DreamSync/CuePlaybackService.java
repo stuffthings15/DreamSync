@@ -191,7 +191,7 @@ public final class CuePlaybackService extends Service
     }
 
     private float clampGain(float gain) {
-        return Math.max(0.005f, Math.min(0.20f, gain));
+        return Math.max(0.005f, Math.min(0.10f, gain));
     }
 
     private void startAsForeground() {

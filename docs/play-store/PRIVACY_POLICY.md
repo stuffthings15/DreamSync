@@ -8,6 +8,10 @@ DreamSync is published by Remote. This policy explains how the Android phone and
 
 During a night session, DreamSync uses watch motion and heart-rate readings to estimate cue-ready windows. Any arousal sign starts a 20-minute quiet period, and the first cue-linked wake sign stops further cues for the night. The app may also store session history, cue events, morning check-ins, and optional dream notes.
 
+## Research basis and limits
+
+DreamSync copies the paired pink-noise burst structure reported in peer-reviewed auditory sleep research. Those laboratory studies used EEG to phase-lock sounds to brain waves. DreamSync does not measure EEG, diagnose sleep stages, or send data to the study authors. Research results about slow oscillations, memory, hormones, or immune cells are not claims about DreamSync's effects.
+
 ## Local processing
 
 DreamSync processes session data on the user's paired phone and watch. Remote does not operate a DreamSync server and does not receive health readings, session history, check-ins, or dream notes. DreamSync has no account system, ads, analytics, or automatic cloud upload.
@@ -28,7 +32,7 @@ Export creates a local file only after the user chooses a destination. Delete re
 
 ## Intended use
 
-DreamSync is a wellness tool for adults. It does not measure EEG, diagnose sleep, treat a medical condition, or guarantee deeper sleep or lucid dreams.
+DreamSync is an adult wellness tool, not a medical device. It does not measure EEG; diagnose, treat, cure, or prevent any medical condition; or guarantee deeper sleep, memory, immune, or lucid-dream outcomes. Stop using DreamSync if cues disturb sleep or cause adverse effects. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
 
 ## Contact
 

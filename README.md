@@ -14,6 +14,12 @@ DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guara
 
 Source: Besedovsky et al., *Nature Communications* 8, 1984 (2017), DOI `10.1038/s41467-017-02170-3`. The supplied article is preserved at `docs/sleep study data.docx`.
 
+Related peer-reviewed evidence and limits:
+
+- Ngo et al., *Neuron* 78, 545-553 (2013), DOI `10.1016/j.neuron.2013.03.006`.
+- Ngo et al., *Journal of Neuroscience* 35, 6630-6638 (2015), DOI `10.1523/JNEUROSCI.3133-14.2015`.
+- Weigenand et al., *European Journal of Neuroscience* 44, 2357-2368 (2016), DOI `10.1111/ejn.13334`. Its open-loop null result is why DreamSync makes no memory claim.
+
 ## Safety and reliability
 
 - One session binds one reachable phone and watch.

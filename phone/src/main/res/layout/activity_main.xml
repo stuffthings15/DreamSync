@@ -319,6 +319,16 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/scienceButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:text="How it works &amp; research"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
+
+            <Button
                 android:id="@+id/privacyButton"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
@@ -333,7 +343,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Wellness only. DreamSync estimates cue-ready windows from motion and heart rate. It does not measure EEG, diagnose sleep, or provide medical care."
+            android:text="Research-shaped, not clinically proven. DreamSync uses wrist estimates, not EEG. It is not a medical device."
             android:textColor="@color/ds_muted"
             android:textSize="12sp" />
     </LinearLayout>

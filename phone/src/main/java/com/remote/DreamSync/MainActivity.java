@@ -11,12 +11,15 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Html;
 import android.text.InputType;
+import android.text.method.LinkMovementMethod;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -120,6 +123,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.historyButton).setOnClickListener(v -> showHistory());
         findViewById(R.id.exportButton).setOnClickListener(v -> prepareExport());
         findViewById(R.id.deleteDataButton).setOnClickListener(v -> confirmDeleteAll());
+        findViewById(R.id.scienceButton).setOnClickListener(v -> showScience());
         findViewById(R.id.privacyButton).setOnClickListener(v -> showPrivacyAndSafety());
     }
 
@@ -541,13 +545,51 @@ public final class MainActivity extends Activity {
                 .getBoolean("onboarding_seen", false)) return;
         new AlertDialog.Builder(this)
                 .setTitle("Welcome to DreamSync")
-                .setMessage("DreamSync estimates cue-ready windows from wrist motion and heart rate. "
-                        + "It does not measure EEG, diagnose sleep, guarantee deeper sleep, induce lucid dreams, "
-                        + "or provide medical care. Stop if cues disturb sleep or cause adverse effects. Data stays local unless you export it.")
+                .setMessage("DreamSync is an adult wellness app that estimates conservative cue-ready windows from wrist motion and heart rate. "
+                        + "Its deep cue pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
+                        + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
+                        + "Stop if cues disturb sleep or cause adverse effects, and consult a qualified healthcare professional for medical advice. "
+                        + "Data stays local unless you export it.")
                 .setPositiveButton("I understand", (dialog, which) ->
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean("onboarding_seen", true).apply())
                 .setCancelable(false)
+                .show();
+    }
+
+    private void showScience() {
+        TextView content = new TextView(this);
+        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        content.setPadding(padding, padding, padding, padding);
+        content.setTextColor(getColor(R.color.ds_ice));
+        content.setLinkTextColor(getColor(R.color.ds_violet));
+        content.setTextSize(15f);
+        content.setLineSpacing(0f, 1.2f);
+        content.setMovementMethod(LinkMovementMethod.getInstance());
+        content.setText(Html.fromHtml(
+                "<b>What DreamSync does</b><br>"
+                        + "1. Your watch checks motion, heart-rate freshness, and time since estimated sleep onset.<br>"
+                        + "2. Cues are allowed only after a stable, low-motion period, from 25 to 145 minutes after estimated sleep onset.<br>"
+                        + "3. A deep cue is two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.<br>"
+                        + "4. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops cues for the night.<br><br>"
+                        + "<b>What the peer-reviewed study found</b><br>"
+                        + "In a randomized crossover laboratory study of 14 healthy young men, EEG phase-locked paired tones increased slow-oscillation power and amplitude without changing time spent in the measured sleep stages. About 172 paired stimulations were delivered on average across 120 minutes. Hormone analyses used 10 to 14 participants, and immune-cell results used a nine-person subset; growth hormone was unchanged. DreamSync does not measure or claim those outcomes.<br><br>"
+                        + "<b>The important difference</b><br>"
+                        + "The laboratory system used EEG, in-ear headphones, and sound calibrated to 50 dB SPL. DreamSync has no EEG, blocks headphone routes, and uses a user-calibrated phone speaker level rather than a laboratory SPL value. It copies the published acoustic pattern, not the phase-locking method. Open-loop research did not show a word-pair memory benefit and some participants noticed the sounds; this is why DreamSync uses fewer, barely audible cues and stops early when waking is detected.<br><br>"
+                        + "Lucid cues are a separate conditioning feature. These studies do not prove that DreamSync causes lucid dreams.<br><br>"
+                        + "<b>Peer-reviewed sources</b><br>"
+                        + "<a href=\"https://doi.org/10.1038/s41467-017-02170-3\">Besedovsky et al., Nature Communications (2017)</a><br>"
+                        + "<a href=\"https://doi.org/10.1016/j.neuron.2013.03.006\">Ngo et al., Neuron (2013)</a><br>"
+                        + "<a href=\"https://doi.org/10.1523/JNEUROSCI.3133-14.2015\">Ngo et al., Journal of Neuroscience (2015)</a><br>"
+                        + "<a href=\"https://doi.org/10.1111/ejn.13334\">Weigenand et al., European Journal of Neuroscience (2016)</a><br><br>"
+                        + "<b>Safety</b><br>DreamSync is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.",
+                Html.FROM_HTML_MODE_LEGACY));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
+        new AlertDialog.Builder(this)
+                .setTitle("How DreamSync works")
+                .setView(scroll)
+                .setPositiveButton("Done", null)
                 .show();
     }
 
@@ -557,7 +599,9 @@ public final class MainActivity extends Activity {
                 .setMessage("DreamSync uses motion and heart-rate readings from your watch only to estimate cue-ready windows during a night session. "
                         + "Session history, cue events, check-ins, and dream notes stay on your devices unless you choose Export. "
                         + "DreamSync has no account, ads, analytics, or automatic cloud upload. You can export or delete your data at any time.\n\n"
-                        + "Wellness only: DreamSync does not measure EEG, diagnose sleep, treat a medical condition, or guarantee results. Stop using it if cues disturb your sleep.")
+                        + "Wellness only: DreamSync does not measure EEG or guarantee deeper sleep, memory, immune, or lucid-dream outcomes. "
+                        + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
+                        + "Stop using it if cues disturb your sleep, and consult a qualified healthcare professional for medical advice, diagnosis, or treatment.")
                 .setPositiveButton("Done", null)
                 .show();
     }

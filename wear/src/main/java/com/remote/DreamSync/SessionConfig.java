@@ -17,13 +17,13 @@ final class SessionConfig {
     int deepEndMin = 145;
     int remStartMin = 255;
     int sessionEndMin = 510;
-    int deepStableMin = 8;
-    int remStableMin = 3;
-    int deepCueIntervalSec = 15;
-    int deepCuesPerBlock = 8;
+    int deepStableMin = 10;
+    int remStableMin = 5;
+    int deepCueIntervalSec = 30;
+    int deepCuesPerBlock = 6;
     int maxDeepBlocks = 2;
-    int lucidCueIntervalSec = 90;
-    int maxLucidCues = 3;
+    int lucidCueIntervalSec = 180;
+    int maxLucidCues = 2;
 
     static SessionConfig fromJson(String json) {
         SessionConfig config = new SessionConfig();
@@ -59,7 +59,7 @@ final class SessionConfig {
         phoneNodeId = safeIdentifier(phoneNodeId);
         watchNodeId = safeIdentifier(watchNodeId);
         mode = sanitizeMode(mode);
-        cueGain = clampFloat(cueGain, 0.005f, 0.20f);
+        cueGain = clampFloat(cueGain, 0.005f, 0.10f);
         deepStartMin = clampInt(deepStartMin, 10, 120);
         deepEndMin = clampInt(deepEndMin, 60, 300);
         remStartMin = clampInt(remStartMin, 180, 420);

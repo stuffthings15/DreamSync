@@ -49,6 +49,7 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQUEST_NOTIFICATIONS = 101;
     private static final int REQUEST_EXPORT = 602;
+    private static final int REQUEST_INSTALL_LOG_EXPORT = 603;
 
     private TextView statusText;
     private TextView readinessText;
@@ -64,6 +65,7 @@ public final class MainActivity extends Activity {
     private PhoneDao dao;
     private boolean summaryReceiverRegistered;
     private String pendingExportJson = "";
+    private String pendingInstallLog = "";
 
     private final BroadcastReceiver summaryReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -111,6 +113,7 @@ public final class MainActivity extends Activity {
 
     private void wireActions() {
         deployWatchButton.setOnClickListener(v -> deployWatchApp());
+        findViewById(R.id.exportInstallLogButton).setOnClickListener(v -> exportInstallLog());
         findViewById(R.id.watchHelpButton).setOnClickListener(v -> showWatchHelp());
         gainSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -470,6 +473,15 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void exportInstallLog() {
+        pendingInstallLog = WatchDeployer.exportLog(this);
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TITLE, "dreamsync-watch-install-error-log.txt");
+        startActivityForResult(intent, REQUEST_INSTALL_LOG_EXPORT);
+    }
+
     private JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("schemaVersion", 1);
@@ -542,13 +554,17 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_EXPORT || resultCode != RESULT_OK || data == null) return;
+        if ((requestCode != REQUEST_EXPORT && requestCode != REQUEST_INSTALL_LOG_EXPORT)
+                || resultCode != RESULT_OK || data == null) return;
         Uri uri = data.getData();
         if (uri == null) return;
         try (OutputStream output = getContentResolver().openOutputStream(uri)) {
             if (output == null) throw new IllegalStateException("No output stream");
-            output.write(pendingExportJson.getBytes(StandardCharsets.UTF_8));
-            statusText.setText("Research export saved.");
+            String content = requestCode == REQUEST_INSTALL_LOG_EXPORT
+                    ? pendingInstallLog : pendingExportJson;
+            output.write(content.getBytes(StandardCharsets.UTF_8));
+            statusText.setText(requestCode == REQUEST_INSTALL_LOG_EXPORT
+                    ? "Watch install error log saved." : "Research export saved.");
         } catch (Exception error) {
             statusText.setText("Could not save export: " + safeMessage(error));
         }

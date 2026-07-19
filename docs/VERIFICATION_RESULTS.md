@@ -10,6 +10,7 @@ Date: 18 July 2026
 - Sample replay fingerprint: `25ba38d66d023dea6bf4589aaf4986688be4f8ede85a054c34f498af2d2c0e9b`.
 - Room schema generation: phone and watch schema version 1 generated.
 - Watch installer recovery: authorization is probed before upload, the APK is pushed then installed through `pm install -r`, every stage is visible, and network reads fail after 120 seconds instead of hanging forever.
+- Watch installer diagnostics: each attempt records timestamped device/app details, target, APK size, stage changes, package-manager output, and full exceptions; the phone UI exports the bounded local text log through Android's document picker.
 - Presentation: all 11 slides rendered and inspected; template-fidelity audit passed with zero issues.
 - Word artifacts: package structure, styles, tables, headings, metadata, and content inspected. Automated page rendering was attempted but LibreOffice was unavailable and headless Word export did not complete.
 
@@ -35,5 +36,5 @@ Hardware results must be appended here after each real run. Record device/OS ver
 
 ## APK checksums
 
-- Phone debug APK: `154D943A33B8CDC9A01D7D463C98E5F89E7F95EBAC9D54DBDC1A0722F0E0532A`
+- Phone debug APK: `5027E86786F00CA12CF87D95F5EC5EB0B3FED353671583A2E6F84B0E2D78EF24`
 - Watch debug APK: `B766B16EC63BB155A13EBCC5840C4F08FC375E10D79CE2E9CC9DC8028F02702D`

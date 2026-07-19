@@ -513,6 +513,18 @@
                 android:textAllCaps="false"
                 android:textColor="@color/ds_ice"
                 android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/exportInstallLogButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:stateListAnimator="@null"
+                android:text="Export watch install error log"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_muted"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <TextView

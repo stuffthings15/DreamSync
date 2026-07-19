@@ -1,12 +1,19 @@
 package com.nathanw.somnicue;
 
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.os.Build;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.Instant;
 
 import dadb.AdbKeyPair;
 import dadb.AdbShellResponse;
@@ -22,6 +29,9 @@ final class WatchDeployer {
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     private static final int SOCKET_TIMEOUT_MS = 120_000;
     private static final String REMOTE_APK = "/data/local/tmp/dreamsync-wear.apk";
+    private static final String LOG_FILE = "watch-installer-error-log.txt";
+    private static final long MAX_LOG_BYTES = 512L * 1024L;
+    private static final Object LOG_LOCK = new Object();
 
     interface StatusListener {
         void onStatus(String message);
@@ -32,9 +42,15 @@ final class WatchDeployer {
     private WatchDeployer() {}
 
     static void deploy(Context context, String host, int port, StatusListener listener) {
+        record(context, "--- INSTALL ATTEMPT ---");
+        record(context, "Phone=" + Build.MANUFACTURER + " " + Build.MODEL
+                + ", Android=" + Build.VERSION.RELEASE + ", SDK=" + Build.VERSION.SDK_INT
+                + ", app=" + appVersion(context));
+        record(context, "Target=" + host + ":" + port);
         try {
             File apk = extractWearApk(context);
-            listener.onStatus("Step 1/4 - Connecting to the watch at " + host + ":" + port
+            record(context, "Bundled APK bytes=" + apk.length());
+            report(context, listener, "Step 1/4 - Connecting to the watch at " + host + ":" + port
                     + ". Look at the watch and tap Allow (tick \"Always allow\").");
             AdbKeyPair keyPair = loadOrCreateKeyPair(context);
             // dadb connects lazily. A zero socket timeout can leave an install
@@ -45,13 +61,15 @@ final class WatchDeployer {
                 if (probe.getExitCode() != 0) {
                     throw new IOException("Watch connection check failed: " + probe.getAllOutput());
                 }
-                listener.onStatus("Step 2/4 - Connected. Uploading the watch app...");
+                report(context, listener, "Step 2/4 - Connected. Uploading the watch app...");
                 try {
                     dadb.push(apk, REMOTE_APK, 0644, apk.lastModified() / 1000L);
-                    listener.onStatus("Step 3/4 - Upload complete. Installing on the watch...");
+                    report(context, listener, "Step 3/4 - Upload complete. Installing on the watch...");
                     AdbShellResponse install = dadb.shell("pm install -r \"" + REMOTE_APK + "\"");
                     String installOutput = install.getAllOutput() == null
                             ? "" : install.getAllOutput().trim();
+                    record(context, "pm install exit=" + install.getExitCode()
+                            + ", output=" + installOutput);
                     if (!installOutput.contains("Success")) {
                         throw new IOException("Watch package installer: " + installOutput);
                     }
@@ -62,10 +80,60 @@ final class WatchDeployer {
                         // Best-effort cleanup. Preserve the real install error.
                     }
                 }
-                listener.onStatus("Step 4/4 - Done! Watch app installed. Open Dream Sync on the watch.");
+                report(context, listener, "Step 4/4 - Done! Watch app installed. Open Dream Sync on the watch.");
             }
         } catch (Exception error) {
-            listener.onStatus(friendlyError(error, host));
+            String friendly = friendlyError(error, host);
+            record(context, "FAILED: " + friendly);
+            StringWriter trace = new StringWriter();
+            error.printStackTrace(new PrintWriter(trace));
+            record(context, trace.toString().trim());
+            listener.onStatus(friendly);
+        }
+    }
+
+    static String exportLog(Context context) {
+        synchronized (LOG_LOCK) {
+            File file = new File(context.getFilesDir(), LOG_FILE);
+            if (!file.isFile()) return "No watch installation attempts have been logged yet.\n";
+            try {
+                return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            } catch (IOException error) {
+                return "Could not read installer log: " + error + "\n";
+            }
+        }
+    }
+
+    private static void report(Context context, StatusListener listener, String message) {
+        record(context, message);
+        listener.onStatus(message);
+    }
+
+    private static String appVersion(Context context) {
+        try {
+            PackageInfo info = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0);
+            return info.versionName + " (" + info.getLongVersionCode() + ")";
+        } catch (Exception error) {
+            return context.getPackageName() + " (version unavailable)";
+        }
+    }
+
+    private static void record(Context context, String message) {
+        synchronized (LOG_LOCK) {
+            File file = new File(context.getFilesDir(), LOG_FILE);
+            if (file.isFile() && file.length() > MAX_LOG_BYTES) {
+                // Keep one previous diagnostic file instead of growing forever.
+                File old = new File(context.getFilesDir(), LOG_FILE + ".old");
+                if (old.exists()) old.delete();
+                file.renameTo(old);
+            }
+            String line = Instant.now() + " | " + message + System.lineSeparator();
+            try (FileOutputStream out = new FileOutputStream(file, true)) {
+                out.write(line.getBytes(StandardCharsets.UTF_8));
+            } catch (IOException ignored) {
+                // Logging must never hide the real installer result.
+            }
         }
     }
 

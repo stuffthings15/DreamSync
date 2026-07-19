@@ -4,13 +4,16 @@ import java.util.Random;
 
 public final class CueWaveforms {
     public static final int SAMPLE_RATE = 44_100;
-    public static final String VERSION = "deep-pink-pair-v1_lucid-660-880-v1";
+    public static final int DEEP_BURST_MS = 50;
+    public static final int DEEP_PAIR_INTERVAL_MS = 1_075;
+    public static final int DEEP_FADE_MS = 5;
+    public static final String VERSION = "deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1";
 
     private CueWaveforms() {}
 
     public static float[] deepPinkPair(float gain, long seed) {
-        int burstSamples = (int) (0.050 * SAMPLE_RATE);
-        int secondStart = (int) (1.075 * SAMPLE_RATE);
+        int burstSamples = SAMPLE_RATE * DEEP_BURST_MS / 1_000;
+        int secondStart = SAMPLE_RATE * DEEP_PAIR_INTERVAL_MS / 1_000;
         float[] output = new float[secondStart + burstSamples];
         float[] burst = pinkBurst(burstSamples, seed);
         copy(output, burst, 0, gain);
@@ -45,7 +48,7 @@ public final class CueWaveforms {
             values[i] = (float) pink;
             max = Math.max(max, Math.abs(pink));
         }
-        int fadeSamples = Math.max(1, (int) (0.005 * SAMPLE_RATE));
+        int fadeSamples = Math.max(1, SAMPLE_RATE * DEEP_FADE_MS / 1_000);
         for (int i = 0; i < sampleCount; i++) {
             double envelope = 1.0;
             if (i < fadeSamples) envelope = i / (double) fadeSamples;

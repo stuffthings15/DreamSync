@@ -33,9 +33,10 @@ public class SafetyCoreTest {
 
     @Test public void waveformKeepsLocalPairTiming() {
         float[] deep = CueWaveforms.deepPinkPair(0.04f, 1L);
-        assertEquals((int) (1.075 * CueWaveforms.SAMPLE_RATE)
-                + (int) (0.050 * CueWaveforms.SAMPLE_RATE), deep.length);
-        assertNotEquals(0f, deep[(int) (1.075 * CueWaveforms.SAMPLE_RATE) + 20], 0f);
+        int secondStart = CueWaveforms.SAMPLE_RATE * CueWaveforms.DEEP_PAIR_INTERVAL_MS / 1_000;
+        int burstSamples = CueWaveforms.SAMPLE_RATE * CueWaveforms.DEEP_BURST_MS / 1_000;
+        assertEquals(secondStart + burstSamples, deep.length);
+        assertNotEquals(0f, deep[secondStart + 20], 0f);
         float[] lucid = CueWaveforms.lucidChime(0.04f);
         assertEquals((int) (0.120 * CueWaveforms.SAMPLE_RATE) * 2
                 + (int) (0.100 * CueWaveforms.SAMPLE_RATE), lucid.length);

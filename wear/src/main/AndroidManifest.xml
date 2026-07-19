@@ -23,7 +23,7 @@
 
         <meta-data
             android:name="com.google.android.wearable.standalone"
-            android:value="true" />
+            android:value="false" />
 
         <activity
             android:name=".MainActivity"
@@ -37,7 +37,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="somnicue"
+                    android:scheme="dreamsync"
                     android:host="watch" />
             </intent-filter>
         </activity>
@@ -56,7 +56,7 @@
                 <data
                     android:scheme="wear"
                     android:host="*"
-                    android:pathPrefix="/somnicue/" />
+                    android:pathPrefix="/dreamsync/" />
             </intent-filter>
         </service>
     </application>

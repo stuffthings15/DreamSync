@@ -2,6 +2,7 @@ package com.remote.DreamSync;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -24,6 +25,7 @@ public final class MainActivity extends Activity {
             "android.permission.health.READ_HEART_RATE";
     private static final String READ_HEALTH_DATA_IN_BACKGROUND =
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND";
+    private static final String USER_PREFS = "dreamsync_watch_user";
 
     private TextView statusText;
     private TextView modeText;
@@ -53,19 +55,50 @@ public final class MainActivity extends Activity {
         modeText = findViewById(R.id.modeText);
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
+        Button privacyButton = findViewById(R.id.privacyButton);
 
         startButton.setOnClickListener(v -> {
             pendingStart = true;
             foregroundRequestAttempted = false;
             backgroundRequestAttempted = false;
-            ensurePermissionsThenStart();
+            showDisclosureThenStart();
         });
         stopButton.setOnClickListener(v -> {
             pendingStart = false;
             stopService(new Intent(this, SleepSessionService.class));
             statusText.setText("Session stopped.");
         });
+        privacyButton.setOnClickListener(v -> showPrivacyAndSafety());
         refreshMode();
+    }
+
+    private void showDisclosureThenStart() {
+        if (getSharedPreferences(USER_PREFS, MODE_PRIVATE)
+                .getBoolean("health_disclosure_accepted", false)) {
+            ensurePermissionsThenStart();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Motion and heart-rate access")
+                .setMessage("DreamSync uses watch motion and heart-rate readings during a night session to estimate cue-ready windows and pause cues when waking is detected. "
+                        + "These readings and session records stay on your paired devices unless you choose Export on the phone. They are not used for diagnosis, ads, or automatic cloud upload.")
+                .setPositiveButton("Continue", (dialog, which) -> {
+                    getSharedPreferences(USER_PREFS, MODE_PRIVATE).edit()
+                            .putBoolean("health_disclosure_accepted", true).apply();
+                    ensurePermissionsThenStart();
+                })
+                .setNegativeButton("Not now", (dialog, which) -> pendingStart = false)
+                .setCancelable(false)
+                .show();
+    }
+
+    private void showPrivacyAndSafety() {
+        new AlertDialog.Builder(this)
+                .setTitle("Privacy & safety")
+                .setMessage("Motion and heart-rate readings are used on your watch only for cue timing and safety. Session data stays on your paired devices unless you export it from the phone. "
+                        + "DreamSync has no account, ads, analytics, or automatic cloud upload.\n\nWellness only. DreamSync does not diagnose or treat medical conditions.")
+                .setPositiveButton("Done", null)
+                .show();
     }
 
     @Override
@@ -102,9 +135,8 @@ public final class MainActivity extends Activity {
 
     private void refreshMode() {
         SessionConfig config = SessionConfig.load(this);
-        modeText.setText("Mode: " + config.mode.replace('_', ' ')
-                + " • gain " + Math.round(config.cueGain * 100f) + "%"
-                + (config.dryRun ? " • DRY RUN" : ""));
+        modeText.setText("Plan: " + config.mode.replace('_', ' ')
+                + " • volume " + Math.round(config.cueGain * 100f) + "%");
     }
 
     private void ensurePermissionsThenStart() {
@@ -136,7 +168,7 @@ public final class MainActivity extends Activity {
         if (!hasActivityPermission && !hasHeartPermission) {
             pendingStart = false;
             statusText.setText(
-                    "Dream Sync needs Activity recognition or Heart rate permission to start its health foreground service."
+                    "DreamSync needs activity recognition or heart-rate access to start."
             );
             return;
         }

@@ -7,7 +7,6 @@ import androidx.room.PrimaryKey;
 @Entity(tableName = "sessions")
 public class WearSessionEntity {
     @PrimaryKey @NonNull public String sessionId = "";
-    public String condition = "ACTIVE";
     public String mode = "DEEP";
     public String state = "PREFLIGHT";
     public long startUtcMs;

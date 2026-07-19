@@ -1,40 +1,33 @@
-# Dream Sync verification results
+# DreamSync validation results
 
-Date: 18 July 2026
+Date: 19 July 2026
 
 ## Verified locally
 
-- Local Git baseline: `fdd1244 chore: baseline Dream Sync prototype`.
-- Java/Android compilation: phone and watch debug builds pass.
-- Shared unit/property tests: 9 tests, 0 failures. Protocol round trip, wrong session/device/version, expiry, duplicates, reordering, malformed payloads, signal gates, sleep onset, arousal policy, waveform timing, and deterministic replay.
-- Sample replay fingerprint: `25ba38d66d023dea6bf4589aaf4986688be4f8ede85a054c34f498af2d2c0e9b`.
-- Room schema generation: phone and watch schema version 1 generated.
-- Watch installer recovery: authorization is probed before upload, the APK is pushed then installed through `pm install -r`, every stage is visible, and network reads fail after 120 seconds instead of hanging forever.
-- Watch installer diagnostics: each attempt records timestamped device/app details, target, APK size, stage changes, package-manager output, and full exceptions; the phone UI exports the bounded local text log through Android's document picker.
-- Presentation: all 11 slides rendered and inspected; template-fidelity audit passed with zero issues.
-- Word artifacts: package structure, styles, tables, headings, metadata, and content inspected. Automated page rendering was attempted but LibreOffice was unavailable and headless Word export did not complete.
+- Public name: DreamSync.
+- Publisher: Remote.
+- Package: `com.remote.DreamSync`.
+- Phone and Wear OS debug builds pass.
+- Phone and Wear OS signed release bundles pass.
+- Shared safety checks pass: 9 checks, 0 failures.
+- Phone app installs and launches on Android 16.
+- Onboarding, disclosure, main screen, export, deletion, and privacy controls are present.
+- Phone and watch use a single session-bound protocol with duplicate, expiry, version, device, and session rejection.
+- Health data stays local unless the user exports it.
+- One valid cue request can produce at most one playback. Invalid requests produce none.
 
-## Acceptance status
+## Research alignment
 
-| Area | Status | Evidence |
-|---|---|---|
-| Shared deterministic core | PASS | Gradle tests |
-| Phone debug APK | PASS | `phone/build/outputs/apk/debug/phone-debug.apk` |
-| Watch debug APK | PASS | `wear/build/outputs/apk/debug/wear-debug.apk` |
-| Durable protocol/persistence | IMPLEMENTED | Build, schemas, code trace |
-| Audio/sensor readiness | IMPLEMENTED | Build and unit tests; physical routes/sensors pending |
-| S23+ / Watch Ultra accelerated runs | PENDING | Physical devices required |
-| Sensor-only / ACTIVE / SHAM nights | PENDING | Overnight study required |
-| Disconnect, removal, battery, process-death fault runs | PENDING | Physical instrumentation required |
-| Sleep or lucid-dream effect | NOT CLAIMED | Requires planned 12–20-night experiment |
+- Deep-sleep cue: two 50 ms pink-noise bursts.
+- Pair interval: 1.075 seconds.
+- Fade: 5 ms.
+- Cue window: up to 120 minutes after estimated sleep onset.
+- Cueing stops when motion, heart-rate quality, connection, route, battery, or arousal safety gates fail.
+- DreamSync estimates cue-ready windows from wrist signals. It does not measure EEG or provide medical care.
 
-## Core invariant
+## Still required
 
-One valid cue request produces at most one playback. Every invalid request produces none.
-
-Hardware results must be appended here after each real run. Record device/OS versions, APK hashes, condition, signal coverage, audio timing, battery use, terminal state, failures, and summary recovery.
-
-## APK checksums
-
-- Phone debug APK: `5027E86786F00CA12CF87D95F5EC5EB0B3FED353671583A2E6F84B0E2D78EF24`
-- Watch debug APK: `B766B16EC63BB155A13EBCC5840C4F08FC375E10D79CE2E9CC9DC8028F02702D`
+- Physical S23+ and Watch Ultra sensor/audio validation.
+- Play Console app-information forms.
+- Public privacy-policy access.
+- Google Play closed-release gate: 12 opted-in users for 14 continuous days.

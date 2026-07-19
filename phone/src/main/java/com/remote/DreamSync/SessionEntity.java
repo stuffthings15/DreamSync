@@ -7,7 +7,6 @@ import androidx.room.PrimaryKey;
 @Entity(tableName = "sessions")
 public class SessionEntity {
     @PrimaryKey @NonNull public String sessionId = "";
-    public String condition = "ACTIVE";
     public String mode = "DEEP";
     public String state = "PREFLIGHT";
     public long startUtcMs;
@@ -18,5 +17,4 @@ public class SessionEntity {
     public String calibrationRecord = "";
     public int protocolVersion = 1;
     public String waveformVersion = "";
-    public boolean conditionRevealed;
 }

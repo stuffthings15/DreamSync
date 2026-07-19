@@ -65,5 +65,17 @@
             android:textAllCaps="false"
             android:textColor="@color/ds_danger"
             android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/privacyButton"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/btn_primary"
+            android:stateListAnimator="@null"
+            android:text="Privacy"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
     </LinearLayout>
 </ScrollView>

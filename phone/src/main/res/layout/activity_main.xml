@@ -14,7 +14,6 @@
         android:paddingTop="24dp"
         android:paddingBottom="28dp">
 
-        <!-- Header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -45,14 +44,13 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:letterSpacing="0.02"
-                    android:text="Sleep-cue research prototype"
+                    android:text="Smart sleep cues, guided by your watch"
                     android:textColor="@color/ds_muted"
                     android:textSize="13sp" />
             </LinearLayout>
+
         </LinearLayout>
 
-        <!-- Status card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -65,27 +63,17 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
-                android:text="STATUS"
+                android:text="TONIGHT"
                 android:textColor="@color/ds_violet"
                 android:textSize="11sp"
                 android:textStyle="bold" />
-
-            <CheckBox
-                android:id="@+id/blindTrialCheck"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:buttonTint="@color/ds_violet"
-                android:text="Blinded experiment: active or sham, revealed after morning survey"
-                android:textColor="@color/ds_muted"
-                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/readinessText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Readiness: run both test cues, connect the watch, then arm."
+                android:text="Preview the sound, open DreamSync on your watch, then start."
                 android:textColor="@color/ds_muted"
                 android:textSize="13sp" />
 
@@ -94,204 +82,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Phone audio is not armed."
+                android:text="Ready to set up tonight."
                 android:textColor="@color/ds_text"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <!-- Protocol card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:letterSpacing="0.12"
-                android:text="PROTOCOL"
-                android:textColor="@color/ds_violet"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-
-            <RadioGroup
-                android:id="@+id/modeGroup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp">
-
-                <RadioButton
-                    android:id="@+id/modeSensor"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/ds_indigo"
-                    android:paddingStart="8dp"
-                    android:paddingVertical="8dp"
-                    android:text="Sensor-only / sham (no cues)"
-                    android:textColor="@color/ds_text"
-                    android:textSize="15sp" />
-
-                <RadioButton
-                    android:id="@+id/modeDeep"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/ds_indigo"
-                    android:checked="true"
-                    android:paddingStart="8dp"
-                    android:paddingVertical="8dp"
-                    android:text="Deep cues (early-night NREM)"
-                    android:textColor="@color/ds_text"
-                    android:textSize="15sp" />
-
-                <RadioButton
-                    android:id="@+id/modeLucid"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/ds_indigo"
-                    android:paddingStart="8dp"
-                    android:paddingVertical="8dp"
-                    android:text="Lucid cue (late-night REM)"
-                    android:textColor="@color/ds_text"
-                    android:textSize="15sp" />
-
-                <RadioButton
-                    android:id="@+id/modeCombined"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/ds_indigo"
-                    android:paddingStart="8dp"
-                    android:paddingVertical="8dp"
-                    android:text="Combined (separated windows)"
-                    android:textColor="@color/ds_text"
-                    android:textSize="15sp" />
-            </RadioGroup>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="10dp"
-                android:background="@color/ds_card_line" />
-
-            <CheckBox
-                android:id="@+id/dryRunCheck"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:buttonTint="@color/ds_violet"
-                android:paddingStart="8dp"
-                android:text="Accelerated test run — verify cues fire while awake, without waiting a full night. Do not sleep with this on."
-                android:textColor="@color/ds_muted"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <!-- Cue volume card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:letterSpacing="0.12"
-                android:text="CUE VOLUME"
-                android:textColor="@color/ds_violet"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/gainLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Cue gain: 4% (also set phone media volume low)"
-                android:textColor="@color/ds_text"
-                android:textSize="15sp" />
-
-            <SeekBar
-                android:id="@+id/gainSeek"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:max="20"
-                android:min="1"
-                android:progress="4"
-                android:progressTint="@color/ds_indigo"
-                android:thumbTint="@color/ds_violet" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Lie down, play a test cue, lower it until barely audible, then go one step lower."
-                android:textColor="@color/ds_muted"
-                android:textSize="13sp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/testDeepButton"
-                    android:layout_width="0dp"
-                    android:layout_height="52dp"
-                    android:layout_marginEnd="6dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/btn_outline"
-                    android:stateListAnimator="@null"
-                    android:text="Test deep cue"
-                    android:textAllCaps="false"
-                    android:textColor="@color/ds_ice"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/testLucidButton"
-                    android:layout_width="0dp"
-                    android:layout_height="52dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/btn_outline"
-                    android:stateListAnimator="@null"
-                    android:text="Practice lucid chime"
-                    android:textAllCaps="false"
-                    android:textColor="@color/ds_ice"
-                    android:textSize="14sp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Night session card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:letterSpacing="0.12"
-                android:text="NIGHT SESSION"
-                android:textColor="@color/ds_violet"
-                android:textSize="11sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <Button
                 android:id="@+id/armButton"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="14dp"
                 android:background="@drawable/btn_primary"
                 android:stateListAnimator="@null"
-                android:text="Arm phone audio + send settings"
+                android:text="Start night"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
@@ -311,10 +114,9 @@
                     android:layout_weight="1"
                     android:background="@drawable/btn_outline"
                     android:stateListAnimator="@null"
-                    android:text="Open on watch"
+                    android:text="Open watch"
                     android:textAllCaps="false"
-                    android:textColor="@color/ds_ice"
-                    android:textSize="14sp" />
+                    android:textColor="@color/ds_ice" />
 
                 <Button
                     android:id="@+id/stopButton"
@@ -324,14 +126,12 @@
                     android:layout_weight="1"
                     android:background="@drawable/btn_danger"
                     android:stateListAnimator="@null"
-                    android:text="Stop session"
+                    android:text="Stop"
                     android:textAllCaps="false"
-                    android:textColor="@color/ds_danger"
-                    android:textSize="14sp" />
+                    android:textColor="@color/ds_danger" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Research data card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -344,7 +144,125 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
-                android:text="MORNING + RESEARCH DATA"
+                android:text="CUE PLAN"
+                android:textColor="@color/ds_violet"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/modeGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp">
+
+                <RadioButton
+                    android:id="@+id/modeDeep"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/ds_indigo"
+                    android:checked="true"
+                    android:paddingStart="8dp"
+                    android:paddingVertical="8dp"
+                    android:text="Deep sleep cues"
+                    android:textColor="@color/ds_text"
+                    android:textSize="15sp" />
+
+                <RadioButton
+                    android:id="@+id/modeLucid"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/ds_indigo"
+                    android:paddingStart="8dp"
+                    android:paddingVertical="8dp"
+                    android:text="Lucid dream cues"
+                    android:textColor="@color/ds_text"
+                    android:textSize="15sp" />
+
+                <RadioButton
+                    android:id="@+id/modeCombined"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/ds_indigo"
+                    android:paddingStart="8dp"
+                    android:paddingVertical="8dp"
+                    android:text="Both"
+                    android:textColor="@color/ds_text"
+                    android:textSize="15sp" />
+            </RadioGroup>
+
+            <TextView
+                android:id="@+id/gainLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Cue volume: 4%"
+                android:textColor="@color/ds_text"
+                android:textSize="15sp" />
+
+            <SeekBar
+                android:id="@+id/gainSeek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:max="20"
+                android:min="1"
+                android:progress="4"
+                android:progressTint="@color/ds_indigo"
+                android:thumbTint="@color/ds_violet" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Keep cues barely audible. DreamSync pauses after signs of waking."
+                android:textColor="@color/ds_muted"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/previewDeepButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_outline"
+                    android:stateListAnimator="@null"
+                    android:text="Preview pink noise"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ds_ice" />
+
+                <Button
+                    android:id="@+id/practiceLucidButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_outline"
+                    android:stateListAnimator="@null"
+                    android:text="Practice chime"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ds_ice" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="YOUR DATA"
                 android:textColor="@color/ds_violet"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -356,7 +274,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/btn_primary"
                 android:stateListAnimator="@null"
-                android:text="Complete morning survey"
+                android:text="Morning check-in"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF" />
 
@@ -399,13 +317,23 @@
                     android:textAllCaps="false"
                     android:textColor="@color/ds_danger" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/privacyButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:text="Privacy &amp; safety"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
         </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Tonight: keep the phone 50–100 cm from the pillow. The watch estimates probable sleep states from motion and heart rate; it does not measure EEG or diagnose sleep stages."
+            android:text="Wellness only. DreamSync estimates cue-ready windows from motion and heart rate. It does not measure EEG, diagnose sleep, or provide medical care."
             android:textColor="@color/ds_muted"
             android:textSize="12sp" />
     </LinearLayout>

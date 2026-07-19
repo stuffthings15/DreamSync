@@ -6,12 +6,12 @@ public final class CuePolicy {
     private int cueLinkedArousals;
     private boolean disabled;
 
-    public boolean canRequestDeep(int maximum, boolean signalReady, boolean activeCondition) {
-        return !disabled && signalReady && activeCondition && deepCues < maximum;
+    public boolean canRequestDeep(int maximum, boolean signalReady) {
+        return !disabled && signalReady && deepCues < maximum;
     }
 
-    public boolean canRequestLucid(int maximum, boolean cardiacReady, boolean activeCondition) {
-        return !disabled && cardiacReady && activeCondition && lucidCues < maximum;
+    public boolean canRequestLucid(int maximum, boolean cardiacReady) {
+        return !disabled && cardiacReady && lucidCues < maximum;
     }
 
     public void onAudioStarted(String cueType) {

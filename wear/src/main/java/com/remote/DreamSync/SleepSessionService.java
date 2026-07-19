@@ -61,7 +61,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     static final String ACTION_CUE_ACK = "com.remote.DreamSync.CUE_ACK";
     static final String EXTRA_STATUS = "status";
 
-    private static final String CHANNEL_ID = "somnicue_watch_session";
+    private static final String CHANNEL_ID = "dreamsync_watch_session";
     private static final int NOTIFICATION_ID = 3001;
     private static final long EVALUATION_INTERVAL_MS = 5_000L;
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
@@ -108,8 +108,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private int deepCues;
     private int lucidCues;
     private int cueLinkedArousals;
-    private int shamDeepCues;
-    private int shamLucidCues;
     private boolean deepBlockActive;
     private int deepCuesInCurrentBlock;
     private boolean cuesDisabled;
@@ -338,7 +336,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && !arousal && !Double.isNaN(features.motionRms30)
                 && features.motionRms30 < 0.30;
         long onset = sleepOnsetEstimator.update(
-                quietCandidate, now, (config.dryRun ? 1L : 10L) * 60_000L);
+                quietCandidate, now, 10L * 60_000L);
         double sleepElapsedMin = onset > 0L ? (now - onset) / 60_000.0 : -1.0;
         double priorElapsed = Math.max(0.0, sleepElapsedMin);
         EligibilityEstimator.Result estimate = eligibilityEstimator.estimate(
@@ -366,7 +364,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             handleDeepCueing(now, priorElapsed, stage);
             handleLucidCueing(now, priorElapsed, stage);
         }
-        if (!quality.motionReady && elapsedMin >= (config.dryRun ? 2.0 : 15.0)) {
+        if (!quality.motionReady && elapsedMin >= 15.0) {
             cuesDisabled = true;
             terminalState = "SENSOR_FAILED";
             persistEvent("SENSOR_DEGRADED", "", quality.reason);
@@ -438,7 +436,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void updateBaseline(long now, double elapsedMin, FeatureSnapshot features) {
-        double earliestBaselineMin = config.dryRun ? 1.0 : 5.0;
+        double earliestBaselineMin = 5.0;
         if (!Double.isNaN(baselineHeartRate) || elapsedMin < earliestBaselineMin) return;
         List<Double> calibration = new ArrayList<>();
         synchronized (sampleLock) {
@@ -451,7 +449,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (calibration.size() >= 8) {
             baselineHeartRate = percentile(calibration, 0.75);
             logEvent("BASELINE_SET", String.format(Locale.US, "%.1f bpm", baselineHeartRate));
-        } else if (features.hasHeartRate && elapsedMin >= (config.dryRun ? 2.0 : 10.0)) {
+        } else if (features.hasHeartRate && elapsedMin >= 10.0) {
             baselineHeartRate = features.heartMedian2;
             logEvent("BASELINE_FALLBACK", String.format(Locale.US, "%.1f bpm", baselineHeartRate));
         }
@@ -477,7 +475,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     ) {
         if (arousal) return Stage.AROUSAL;
         if (!features.hasMotion) return Stage.INSUFFICIENT_SIGNAL;
-        if (elapsedMin < (config.dryRun ? 0.5 : 10.0)) return Stage.SETTLING;
+        if (elapsedMin < 10.0) return Stage.SETTLING;
         if (elapsedMin >= config.deepStartMin
                 && elapsedMin <= config.deepEndMin
                 && stillness >= 0.72
@@ -509,7 +507,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void handleArousal(long now) {
         if (deepBlockActive) endDeepBlock("arousal");
-        long arousalBackoffMs = config.dryRun ? 60_000L : 10L * 60L * 1000L;
+        long arousalBackoffMs = 10L * 60L * 1000L;
         backoffUntilMs = Math.max(backoffUntilMs, now + arousalBackoffMs);
         if (lastCueMs > 0L
                 && now - lastCueMs <= CUE_AROUSAL_WINDOW_MS
@@ -544,7 +542,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             }
             if (deepCuesInCurrentBlock >= config.deepCuesPerBlock) {
                 endDeepBlock("block_complete");
-                long blockBackoffMs = config.dryRun ? 30_000L : 15L * 60L * 1000L;
+                long blockBackoffMs = 15L * 60L * 1000L;
                 backoffUntilMs = Math.max(backoffUntilMs, now + blockBackoffMs);
                 return;
             }
@@ -552,9 +550,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 nextDeepCueMs = now + config.deepCueIntervalSec * 1000L;
                 sendCue("DEEP", "DEEP_PAIR", now, () -> {
                     deepCues++;
-                    deepCuesInCurrentBlock++;
-                }, () -> {
-                    shamDeepCues++;
                     deepCuesInCurrentBlock++;
                 });
             }
@@ -578,7 +573,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void handleLucidCueing(long now, double elapsedMin, Stage stage) {
         if (!config.usesLucidCues() || cuesDisabled || deepBlockActive) return;
         if (elapsedMin < config.remStartMin
-                || lucidCues + shamLucidCues >= config.maxLucidCues) return;
+                || lucidCues >= config.maxLucidCues) return;
         if (now < backoffUntilMs) return;
 
         boolean stableEnough = probableRemSinceMs > 0L
@@ -588,8 +583,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (stage == Stage.REM_LIKE_ELIGIBLE && stableEnough && intervalPassed) {
             // Pacing advances regardless of delivery; the budget does not.
             lastLucidCueMs = now;
-            sendCue("LUCID", "LUCID_CHIME", now,
-                    () -> lucidCues++, () -> shamLucidCues++);
+            sendCue("LUCID", "LUCID_CHIME", now, () -> lucidCues++);
         }
     }
 
@@ -604,16 +598,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             String cueType,
             String label,
             long now,
-            Runnable onAudioStarted,
-            Runnable onShamEligible
+            Runnable onAudioStarted
     ) {
         String cueId = UUID.randomUUID().toString();
-        if (!config.isActiveCondition()) {
-            onShamEligible.run();
-            logEvent("SHAM_ELIGIBLE", cueType + " cueId=" + cueId);
-            persistEvent("SHAM_ELIGIBLE", cueId, cueType);
-            return;
-        }
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
                 com.remote.DreamSync.shared.Protocol.TYPE_CUE_REQUEST,
                 config.sessionId,
@@ -738,7 +725,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         );
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("Dream Sync night session")
+                .setContentTitle("DreamSync night session")
                 .setContentText("Motion and heart-rate staging is active")
                 .setOngoing(true)
                 .setContentIntent(openPendingIntent)
@@ -762,7 +749,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Dream Sync night session",
+                "DreamSync night session",
                 NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Overnight sensor collection and conservative cue gating.");
@@ -951,7 +938,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 || config == null) return;
         WearSessionEntity snapshot = new WearSessionEntity();
         snapshot.sessionId = config.sessionId;
-        snapshot.condition = config.condition;
         snapshot.mode = config.mode;
         snapshot.state = state;
         snapshot.startUtcMs = sessionStartUtcMs;
@@ -975,16 +961,13 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("deepBlocks", deepBlocks);
             summary.put("deepCues", deepCues);
             summary.put("lucidCues", lucidCues);
-            summary.put("shamDeepEligible", shamDeepCues);
-            summary.put("shamLucidEligible", shamLucidCues);
             summary.put("cueLinkedArousals", cueLinkedArousals);
             summary.put("finalGain", currentGain);
             summary.put("lastState", latestStage);
             summary.put("signalQuality", latestSignalQuality);
             summary.put("terminalState", terminalState);
-            summary.put("condition", config == null ? "unknown" : config.condition);
             summary.put("protocolVersion", com.remote.DreamSync.shared.Protocol.VERSION);
-            summary.put("waveformVersion", "pink-pair-50ms-v1_lucid-1075ms-v1");
+            summary.put("waveformVersion", com.remote.DreamSync.shared.CueWaveforms.VERSION);
             summary.put("log", logFilePath);
         } catch (Exception ignored) {}
         if (config == null) return;

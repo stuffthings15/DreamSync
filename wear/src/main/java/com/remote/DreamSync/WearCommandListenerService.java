@@ -80,7 +80,6 @@ public final class WearCommandListenerService extends WearableListenerService {
         databaseExecutor.execute(() -> {
             WearSessionEntity session = new WearSessionEntity();
             session.sessionId = config.sessionId;
-            session.condition = config.condition;
             session.mode = config.mode;
             session.state = "ARMED";
             session.gain = config.cueGain;

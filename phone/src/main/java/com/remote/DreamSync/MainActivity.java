@@ -14,7 +14,6 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
@@ -29,7 +28,6 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
-import com.remote.DreamSync.shared.ExperimentCondition;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 
 import org.json.JSONArray;
@@ -38,7 +36,6 @@ import org.json.JSONObject;
 
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,14 +46,13 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQUEST_NOTIFICATIONS = 101;
     private static final int REQUEST_EXPORT = 602;
+    private static final String PREFS = "dreamsync_phone";
 
     private TextView statusText;
     private TextView readinessText;
     private TextView gainLabel;
     private RadioGroup modeGroup;
     private SeekBar gainSeek;
-    private CheckBox dryRunCheck;
-    private CheckBox blindTrialCheck;
     private ExecutorService remoteExecutor;
     private ExecutorService databaseExecutor;
     private PhoneDao dao;
@@ -74,7 +70,7 @@ public final class MainActivity extends Activity {
             String summary = intent.getStringExtra("summary");
             String sessionId = intent.getStringExtra("sessionId");
             if (summary != null && !summary.isEmpty()) {
-                showFriendlySummary(summary, false);
+                showFriendlySummary(summary);
                 if (sessionId != null && !sessionId.isEmpty()) showMorningSurvey(sessionId);
             }
         }
@@ -99,26 +95,24 @@ public final class MainActivity extends Activity {
         gainLabel = findViewById(R.id.gainLabel);
         modeGroup = findViewById(R.id.modeGroup);
         gainSeek = findViewById(R.id.gainSeek);
-        dryRunCheck = findViewById(R.id.dryRunCheck);
-        blindTrialCheck = findViewById(R.id.blindTrialCheck);
     }
 
     private void wireActions() {
         gainSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                gainLabel.setText("Cue gain: " + progress + "% (phone media volume must stay low)");
+                gainLabel.setText("Cue volume: " + progress + "%");
                 updateReadiness();
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-        findViewById(R.id.testDeepButton).setOnClickListener(v -> testCue("DEEP"));
-        findViewById(R.id.testLucidButton).setOnClickListener(v -> runLucidPractice());
+        findViewById(R.id.previewDeepButton).setOnClickListener(v -> previewCue("DEEP"));
+        findViewById(R.id.practiceLucidButton).setOnClickListener(v -> runLucidPractice());
         findViewById(R.id.openWatchButton).setOnClickListener(v -> openWatchApp());
         findViewById(R.id.armButton).setOnClickListener(v -> startTransactionalSession());
         findViewById(R.id.stopButton).setOnClickListener(v -> stopSession());
         findViewById(R.id.morningButton).setOnClickListener(v -> {
-            String sessionId = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+            String sessionId = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_summary_session", "");
             if (sessionId.isEmpty()) statusText.setText("No completed session is ready for a survey.");
             else showMorningSurvey(sessionId);
@@ -126,23 +120,24 @@ public final class MainActivity extends Activity {
         findViewById(R.id.historyButton).setOnClickListener(v -> showHistory());
         findViewById(R.id.exportButton).setOnClickListener(v -> prepareExport());
         findViewById(R.id.deleteDataButton).setOnClickListener(v -> confirmDeleteAll());
+        findViewById(R.id.privacyButton).setOnClickListener(v -> showPrivacyAndSafety());
     }
 
-    private void testCue(String type) {
+    private void previewCue(String type) {
         AudioOutput.Result preflight = new AudioOutput(this).preflight();
         if (!preflight.success) {
-            statusText.setText("Cannot test cue: " + preflight.reason + ".");
+            statusText.setText("Cannot preview cue: " + preflight.reason + ".");
             return;
         }
         String action = "LUCID".equals(type)
-                ? CuePlaybackService.ACTION_TEST_LUCID : CuePlaybackService.ACTION_TEST_DEEP;
+                ? CuePlaybackService.ACTION_PREVIEW_LUCID : CuePlaybackService.ACTION_PREVIEW_DEEP;
         armAudioService(action, cueGain(), "", "", "");
         statusText.setText("Cue played on the phone speaker. Set it barely audible, then one step lower.");
         readinessText.postDelayed(this::updateReadiness, 1_500L);
     }
 
     private void runLucidPractice() {
-        int count = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        int count = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0);
         new AlertDialog.Builder(this)
                 .setTitle("Lucid cue conditioning")
@@ -150,10 +145,10 @@ public final class MainActivity extends Activity {
                         + "Play the exact chime. Ask: Am I dreaming? Check text or a clock twice. "
                         + "Picture recognizing the chime inside a dream.")
                 .setPositiveButton(count >= 10 ? "Practice again" : "Play + record", (dialog, which) -> {
-                    testCue("LUCID");
-                    int next = Math.min(10, getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+                    previewCue("LUCID");
+                    int next = Math.min(10, getSharedPreferences(PREFS, MODE_PRIVATE)
                             .getInt("lucid_practice_count", 0) + 1);
-                    getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putInt("lucid_practice_count", next)
                             .putLong("lucid_practice_utc", System.currentTimeMillis())
                             .apply();
@@ -167,23 +162,23 @@ public final class MainActivity extends Activity {
     private void startTransactionalSession() {
         AudioOutput audio = new AudioOutput(this);
         AudioOutput.Result preflight = audio.preflight();
-        if (!"SENSOR_ONLY".equals(selectedMode()) && !preflight.success) {
+        if (!preflight.success) {
             statusText.setText("Not ready: " + preflight.reason + ".");
             return;
         }
-        String calibration = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
-        if (!"SENSOR_ONLY".equals(selectedMode()) && calibration.isEmpty()) {
-            statusText.setText("Test a cue at the final volume before arming.");
+        if (calibration.isEmpty()) {
+            statusText.setText("Preview a cue at the final volume before starting.");
             return;
         }
         if (("LUCID".equals(selectedMode()) || "COMBINED".equals(selectedMode()))
-                && getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+                && getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0) < 10) {
             statusText.setText("Complete the 10-step lucid conditioning block first.");
             return;
         }
-        statusText.setText("Preflight passed. Finding the Dream Sync watch...");
+        statusText.setText("Ready. Finding the DreamSync watch...");
         Wearable.getCapabilityClient(this).getCapability(
                 com.remote.DreamSync.shared.Protocol.WATCH_CAPABILITY,
                 CapabilityClient.FILTER_REACHABLE)
@@ -195,7 +190,7 @@ public final class MainActivity extends Activity {
     private void onWatchCapability(CapabilityInfo capability) {
         Node watch = chooseNode(capability.getNodes());
         if (watch == null) {
-            statusText.setText("Dream Sync watch app is not reachable. Open it on the paired watch.");
+            statusText.setText("DreamSync is not reachable on the paired watch. Open it there first.");
             return;
         }
         Wearable.getNodeClient(this).getLocalNode()
@@ -206,32 +201,23 @@ public final class MainActivity extends Activity {
 
     private void createAndSendSession(Node phone, Node watch) {
         String sessionId = UUID.randomUUID().toString();
-        ExperimentCondition condition;
-        if ("SENSOR_ONLY".equals(selectedMode())) condition = ExperimentCondition.SHAM;
-        else if (blindTrialCheck.isChecked()) {
-            condition = new SecureRandom().nextBoolean()
-                    ? ExperimentCondition.ACTIVE : ExperimentCondition.SHAM;
-        } else condition = ExperimentCondition.ACTIVE;
-
-        JSONObject config = buildConfig(sessionId, phone.getId(), watch.getId(), condition.name());
+        JSONObject config = buildConfig(sessionId, phone.getId(), watch.getId());
         SessionEntity session = new SessionEntity();
         session.sessionId = sessionId;
-        session.condition = condition.name();
         session.mode = selectedMode();
         session.state = "ARMING";
         session.startUtcMs = System.currentTimeMillis();
         session.configurationJson = config.toString();
-        session.calibrationRecord = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        session.calibrationRecord = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
         session.protocolVersion = com.remote.DreamSync.shared.Protocol.VERSION;
         session.waveformVersion = com.remote.DreamSync.shared.CueWaveforms.VERSION;
         databaseExecutor.execute(() -> dao.upsertSession(session));
 
-        getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString("active_session_id", sessionId)
                 .putString("local_phone_node", phone.getId())
                 .putString("bound_watch_node", watch.getId())
-                .putString("active_condition", condition.name())
                 .putString("active_mode", selectedMode())
                 .apply();
         armAudioService(CuePlaybackService.ACTION_ARM, cueGain(),
@@ -242,9 +228,7 @@ public final class MainActivity extends Activity {
                 sessionId, "", phone.getId(), watch.getId(),
                 System.currentTimeMillis(),
                 com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS,
-                Map.of("config", config.toString(),
-                        "condition", condition.name(),
-                        "mode", selectedMode()));
+                Map.of("config", config.toString(), "mode", selectedMode()));
         PutDataMapRequest map = PutDataMapRequest.create(
                 com.remote.DreamSync.shared.Protocol.PATH_CONFIG_PREFIX + sessionId);
         map.getDataMap().putByteArray("envelope", envelope.encode());
@@ -259,31 +243,26 @@ public final class MainActivity extends Activity {
                         "Could not synchronize settings: " + safeMessage(error)));
     }
 
-    private JSONObject buildConfig(
-            String sessionId, String phoneNode, String watchNode, String condition
-    ) {
+    private JSONObject buildConfig(String sessionId, String phoneNode, String watchNode) {
         JSONObject json = new JSONObject();
         try {
-            boolean dryRun = dryRunCheck.isChecked();
             json.put("sessionId", sessionId);
             json.put("phoneNodeId", phoneNode);
             json.put("watchNodeId", watchNode);
-            json.put("condition", condition);
             json.put("mode", selectedMode());
             json.put("cueGain", cueGain());
-            json.put("deepStartMin", dryRun ? 1 : 25);
-            json.put("deepEndMin", dryRun ? 3 : 180);
-            json.put("remStartMin", dryRun ? 4 : 255);
-            json.put("sessionEndMin", dryRun ? 8 : 510);
-            json.put("deepStableMin", dryRun ? 1 : 8);
-            json.put("remStableMin", dryRun ? 1 : 3);
+            json.put("deepStartMin", 25);
+            json.put("deepEndMin", 145);
+            json.put("remStartMin", 255);
+            json.put("sessionEndMin", 510);
+            json.put("deepStableMin", 8);
+            json.put("remStableMin", 3);
             json.put("deepCueIntervalSec", 15);
-            json.put("deepCuesPerBlock", dryRun ? 2 : 8);
-            json.put("maxDeepBlocks", dryRun ? 1 : 2);
-            json.put("lucidCueIntervalSec", dryRun ? 60 : 90);
-            json.put("maxLucidCues", dryRun ? 1 : 3);
-            json.put("dryRun", dryRun);
-            json.put("calibration", getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+            json.put("deepCuesPerBlock", 8);
+            json.put("maxDeepBlocks", 2);
+            json.put("lucidCueIntervalSec", 90);
+            json.put("maxLucidCues", 3);
+            json.put("calibration", getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_calibration", ""));
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
@@ -328,7 +307,7 @@ public final class MainActivity extends Activity {
         startForegroundService(intent);
     }
 
-    private void showFriendlySummary(String summaryText, boolean revealCondition) {
+    private void showFriendlySummary(String summaryText) {
         try {
             JSONObject summary = new JSONObject(summaryText);
             String line = "Session " + summary.optLong("minutes", 0) + " min"
@@ -337,10 +316,9 @@ public final class MainActivity extends Activity {
                     + " | Cue-linked arousals " + summary.optInt("cueLinkedArousals", 0)
                     + " | Signal " + summary.optString("signalQuality", "unknown")
                     + " | End " + summary.optString("terminalState", "complete");
-            if (revealCondition) line += " | Condition " + summary.optString("condition", "unknown");
             statusText.setText(line);
         } catch (JSONException error) {
-            statusText.setText("Session summary received. Complete the morning survey to reveal the condition.");
+            statusText.setText("Session complete. Your morning check-in is ready.");
         }
     }
 
@@ -359,10 +337,10 @@ public final class MainActivity extends Activity {
         EditText notes = field(form, "Dream journal and notes", false);
 
         new AlertDialog.Builder(this)
-                .setTitle("Morning survey")
-                .setMessage("Answer before the active/sham condition is shown.")
+                .setTitle("Morning check-in")
+                .setMessage("Save how the night felt and any dream notes.")
                 .setView(form)
-                .setPositiveButton("Save + reveal", (dialog, which) -> {
+                .setPositiveButton("Save", (dialog, which) -> {
                     MorningSurveyEntity survey = new MorningSurveyEntity();
                     survey.sessionId = sessionId;
                     survey.sleepQuality = boundedInt(sleep.getText().toString(), 1, 10, 0);
@@ -379,16 +357,10 @@ public final class MainActivity extends Activity {
                         dao.upsertSurvey(survey);
                         SessionEntity session = dao.session(sessionId);
                         if (session != null) {
-                            session.conditionRevealed = true;
                             dao.upsertSession(session);
                             runOnUiThread(() -> {
-                                String summary = session.summaryJson;
-                                showFriendlySummary(summary, true);
-                                new AlertDialog.Builder(this)
-                                        .setTitle("Condition revealed")
-                                        .setMessage(session.condition + "\n\nThis is one observation, not proof of benefit.")
-                                        .setPositiveButton("Done", null)
-                                        .show();
+                                showFriendlySummary(session.summaryJson);
+                                statusText.setText("Morning check-in saved.");
                             });
                         }
                     });
@@ -413,33 +385,19 @@ public final class MainActivity extends Activity {
         databaseExecutor.execute(() -> {
             List<SessionEntity> sessions = dao.sessions();
             StringBuilder text = new StringBuilder();
-            double activeSleep = 0, shamSleep = 0;
-            int activeN = 0, shamN = 0;
             for (SessionEntity session : sessions) {
                 MorningSurveyEntity survey = dao.survey(session.sessionId);
-                String condition = session.conditionRevealed ? session.condition : "HIDDEN";
-                text.append(condition).append(" | ").append(session.mode)
+                text.append(session.mode)
                         .append(" | ").append(session.state);
                 if (survey != null) {
                     text.append(" | sleep ").append(survey.sleepQuality)
                             .append(" | rested ").append(survey.restedness);
-                    if (session.conditionRevealed && "ACTIVE".equals(session.condition)) {
-                        activeSleep += survey.sleepQuality; activeN++;
-                    } else if (session.conditionRevealed) {
-                        shamSleep += survey.sleepQuality; shamN++;
-                    }
                 }
                 text.append('\n');
             }
-            if (activeN > 0 || shamN > 0) {
-                text.append("\nExploratory mean sleep quality: ")
-                        .append(activeN > 0 ? String.format("active %.1f", activeSleep / activeN) : "active --")
-                        .append("; ")
-                        .append(shamN > 0 ? String.format("sham %.1f", shamSleep / shamN) : "sham --");
-            }
             String result = text.length() == 0 ? "No saved sessions." : text.toString();
             runOnUiThread(() -> new AlertDialog.Builder(this)
-                    .setTitle("Research history")
+                    .setTitle("Sleep history")
                     .setMessage(result)
                     .setPositiveButton("Done", null)
                     .show());
@@ -447,14 +405,14 @@ public final class MainActivity extends Activity {
     }
 
     private void prepareExport() {
-        statusText.setText("Preparing de-identified research export...");
+        statusText.setText("Preparing your local data export...");
         databaseExecutor.execute(() -> {
             try {
                 pendingExportJson = buildExportJson().toString(2);
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
                         .setType("application/json")
-                        .putExtra(Intent.EXTRA_TITLE, "dreamsync-research-export.json");
+                        .putExtra(Intent.EXTRA_TITLE, "dreamsync-data-export.json");
                 runOnUiThread(() -> startActivityForResult(intent, REQUEST_EXPORT));
             } catch (JSONException error) {
                 runOnUiThread(() -> statusText.setText("Export failed: " + safeMessage(error)));
@@ -466,12 +424,11 @@ public final class MainActivity extends Activity {
         JSONObject root = new JSONObject();
         root.put("schemaVersion", 1);
         root.put("generatedUtcMs", System.currentTimeMillis());
-        root.put("productLanguage", "experimental stage-gated sleep-cue research; non-medical");
+        root.put("productLanguage", "wellness sleep-cue tool; non-medical");
         JSONArray sessionArray = new JSONArray();
         for (SessionEntity session : dao.sessions()) {
             JSONObject item = new JSONObject();
             item.put("sessionId", session.sessionId);
-            item.put("condition", session.conditionRevealed ? session.condition : "HIDDEN_PENDING_SURVEY");
             item.put("mode", session.mode);
             item.put("state", session.state);
             item.put("startUtcMs", session.startUtcMs);
@@ -483,9 +440,6 @@ public final class MainActivity extends Activity {
                 JSONObject safeConfig = new JSONObject(session.configurationJson);
                 safeConfig.remove("phoneNodeId");
                 safeConfig.remove("watchNodeId");
-                if (!session.conditionRevealed) {
-                    safeConfig.put("condition", "HIDDEN_PENDING_SURVEY");
-                }
                 item.put("configuration", safeConfig);
             }
             if (!session.summaryJson.isEmpty()) item.put("summary", new JSONObject(session.summaryJson));
@@ -540,7 +494,7 @@ public final class MainActivity extends Activity {
         try (OutputStream output = getContentResolver().openOutputStream(uri)) {
             if (output == null) throw new IllegalStateException("No output stream");
             output.write(pendingExportJson.getBytes(StandardCharsets.UTF_8));
-            statusText.setText("Research export saved.");
+            statusText.setText("Data export saved.");
         } catch (Exception error) {
             statusText.setText("Could not save export: " + safeMessage(error));
         }
@@ -548,16 +502,16 @@ public final class MainActivity extends Activity {
 
     private void confirmDeleteAll() {
         new AlertDialog.Builder(this)
-                .setTitle("Delete all local research data?")
+                .setTitle("Delete all local data?")
                 .setMessage("This removes session history, cue events, surveys, and received watch logs. It cannot be undone.")
                 .setPositiveButton("Delete", (dialog, which) -> databaseExecutor.execute(() -> {
                     dao.deleteAllSurveys();
                     dao.deleteAllEvents();
                     dao.deleteAllSessions();
                     deleteReceivedLogs();
-                    getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .remove("last_summary").remove("last_summary_session").apply();
-                    runOnUiThread(() -> statusText.setText("All local research data deleted."));
+                    runOnUiThread(() -> statusText.setText("All local data deleted."));
                 }))
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -572,9 +526,9 @@ public final class MainActivity extends Activity {
 
     private void updateReadiness() {
         AudioOutput.Result audio = new AudioOutput(this).preflight();
-        String calibration = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
-        int practice = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        int practice = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0);
         readinessText.setText("Readiness: speaker " + (audio.success ? "ready" : audio.reason)
                 + " | calibration " + (calibration.isEmpty() ? "needed" : "saved")
@@ -583,17 +537,28 @@ public final class MainActivity extends Activity {
     }
 
     private void showOnboardingOnce() {
-        if (getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        if (getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("onboarding_seen", false)) return;
         new AlertDialog.Builder(this)
-                .setTitle("Dream Sync research prototype")
-                .setMessage("Dream Sync estimates cue-eligible windows from wrist motion and heart rate. "
+                .setTitle("Welcome to DreamSync")
+                .setMessage("DreamSync estimates cue-ready windows from wrist motion and heart rate. "
                         + "It does not measure EEG, diagnose sleep, guarantee deeper sleep, induce lucid dreams, "
                         + "or provide medical care. Stop if cues disturb sleep or cause adverse effects. Data stays local unless you export it.")
                 .setPositiveButton("I understand", (dialog, which) ->
-                        getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean("onboarding_seen", true).apply())
                 .setCancelable(false)
+                .show();
+    }
+
+    private void showPrivacyAndSafety() {
+        new AlertDialog.Builder(this)
+                .setTitle("Privacy & safety")
+                .setMessage("DreamSync uses motion and heart-rate readings from your watch only to estimate cue-ready windows during a night session. "
+                        + "Session history, cue events, check-ins, and dream notes stay on your devices unless you choose Export. "
+                        + "DreamSync has no account, ads, analytics, or automatic cloud upload. You can export or delete your data at any time.\n\n"
+                        + "Wellness only: DreamSync does not measure EEG, diagnose sleep, treat a medical condition, or guarantee results. Stop using it if cues disturb your sleep.")
+                .setPositiveButton("Done", null)
                 .show();
     }
 
@@ -608,15 +573,15 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        String summary = getSharedPreferences("somnicue_phone", MODE_PRIVATE)
+        String summary = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_summary", "");
-        if (!summary.isEmpty()) showFriendlySummary(summary, false);
+        if (!summary.isEmpty()) showFriendlySummary(summary);
         updateReadiness();
     }
 
     private void openWatchApp() {
         Intent remoteIntent = new Intent(Intent.ACTION_VIEW)
-                .setData(Uri.parse("somnicue://watch/start"))
+                .setData(Uri.parse("dreamsync://watch/start"))
                 .addCategory(Intent.CATEGORY_BROWSABLE);
         try {
             new RemoteActivityHelper(this, remoteExecutor).startRemoteActivity(remoteIntent, null);
@@ -634,7 +599,6 @@ public final class MainActivity extends Activity {
 
     private String selectedMode() {
         int checked = modeGroup.getCheckedRadioButtonId();
-        if (checked == R.id.modeSensor) return "SENSOR_ONLY";
         if (checked == R.id.modeLucid) return "LUCID";
         if (checked == R.id.modeCombined) return "COMBINED";
         return "DEEP";
@@ -645,7 +609,7 @@ public final class MainActivity extends Activity {
     }
 
     private String pref(String key) {
-        return getSharedPreferences("somnicue_phone", MODE_PRIVATE).getString(key, "");
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
     }
 
     private int boundedInt(String value, int min, int max, int fallback) {

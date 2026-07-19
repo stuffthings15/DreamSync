@@ -24,15 +24,16 @@ import java.util.concurrent.Executors;
 public final class CuePlaybackService extends Service
         implements MessageClient.OnMessageReceivedListener {
     static final String ACTION_ARM = "com.remote.DreamSync.ARM";
-    static final String ACTION_TEST_DEEP = "com.remote.DreamSync.TEST_DEEP";
-    static final String ACTION_TEST_LUCID = "com.remote.DreamSync.TEST_LUCID";
+    static final String ACTION_PREVIEW_DEEP = "com.remote.DreamSync.PREVIEW_DEEP";
+    static final String ACTION_PREVIEW_LUCID = "com.remote.DreamSync.PREVIEW_LUCID";
     static final String ACTION_STOP = "com.remote.DreamSync.STOP_AUDIO";
     static final String EXTRA_GAIN = "gain";
     static final String EXTRA_SESSION_ID = "sessionId";
     static final String EXTRA_LOCAL_NODE_ID = "localNodeId";
     static final String EXTRA_WATCH_NODE_ID = "watchNodeId";
 
-    private static final String CHANNEL_ID = "somnicue_audio";
+    private static final String CHANNEL_ID = "dreamsync_audio";
+    private static final String PREFS = "dreamsync_phone";
     private static final int NOTIFICATION_ID = 2001;
 
     private final MessageGuard messageGuard = new MessageGuard();
@@ -60,18 +61,18 @@ public final class CuePlaybackService extends Service
         armedGain = clampGain(intent.getFloatExtra(EXTRA_GAIN, armedGain));
         String action = intent.getAction();
         if (ACTION_ARM.equals(action)) {
-            getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString("active_session_id", intent.getStringExtra(EXTRA_SESSION_ID))
                     .putString("local_phone_node", intent.getStringExtra(EXTRA_LOCAL_NODE_ID))
                     .putString("bound_watch_node", intent.getStringExtra(EXTRA_WATCH_NODE_ID))
                     .putFloat("armed_gain", armedGain)
                     .apply();
-        } else if (ACTION_TEST_DEEP.equals(action) || ACTION_TEST_LUCID.equals(action)) {
-            String type = ACTION_TEST_LUCID.equals(action) ? "LUCID" : "DEEP";
+        } else if (ACTION_PREVIEW_DEEP.equals(action) || ACTION_PREVIEW_LUCID.equals(action)) {
+            String type = ACTION_PREVIEW_LUCID.equals(action) ? "LUCID" : "DEEP";
             playbackExecutor.execute(() -> {
                 AudioOutput.Result result = audioOutput.play(type, armedGain, () -> {});
                 if (result.success) {
-                    getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putString("last_calibration", audioOutput.calibrationRecord(armedGain))
                             .putLong("last_calibration_utc", System.currentTimeMillis())
                             .apply();
@@ -178,7 +179,7 @@ public final class CuePlaybackService extends Service
     }
 
     private String prefs(String key) {
-        return getSharedPreferences("somnicue_phone", MODE_PRIVATE).getString(key, "");
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
     }
 
     private float parseFloat(String value, float fallback) {
@@ -202,7 +203,7 @@ public final class CuePlaybackService extends Service
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("Dream Sync audio armed")
+                .setContentTitle("DreamSync audio ready")
                 .setContentText("Verified speaker route; waiting for current-session cues")
                 .setOngoing(true)
                 .setContentIntent(open)
@@ -216,7 +217,7 @@ public final class CuePlaybackService extends Service
 
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "Dream Sync audio", NotificationManager.IMPORTANCE_LOW);
+                CHANNEL_ID, "DreamSync audio", NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("Keeps the verified phone cue engine ready during a session.");
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }

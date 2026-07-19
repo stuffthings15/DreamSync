@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase;
 
 @Database(
         entities = {SessionEntity.class, EventEntity.class, MorningSurveyEntity.class},
-        version = 1,
+        version = 2,
         exportSchema = true
 )
 public abstract class PhoneDatabase extends RoomDatabase {
@@ -20,7 +20,9 @@ public abstract class PhoneDatabase extends RoomDatabase {
                 if (instance == null) {
                     instance = Room.databaseBuilder(
                             context.getApplicationContext(), PhoneDatabase.class,
-                            "dreamsync-phone.db").build();
+                            "dreamsync-phone.db")
+                            .fallbackToDestructiveMigration()
+                            .build();
                 }
             }
         }

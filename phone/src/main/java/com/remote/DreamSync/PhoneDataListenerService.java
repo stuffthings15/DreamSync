@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 public final class PhoneDataListenerService extends WearableListenerService {
     static final String ACTION_SUMMARY_CHANGED = "com.remote.DreamSync.SUMMARY_CHANGED";
     static final String ACTION_STATUS_CHANGED = "com.remote.DreamSync.SESSION_STATUS_CHANGED";
+    private static final String PREFS = "dreamsync_phone";
 
     private final ExecutorService databaseExecutor = Executors.newSingleThreadExecutor();
 
@@ -78,7 +79,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
 
     private void handleSummary(ProtocolEnvelope envelope, Asset logAsset) {
         String summary = envelope.payload.getOrDefault("summary", "{}");
-        getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString("last_summary", summary)
                 .putString("last_summary_session", envelope.sessionId)
                 .apply();
@@ -141,7 +142,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
     }
 
     private String pref(String key) {
-        return getSharedPreferences("somnicue_phone", MODE_PRIVATE).getString(key, "");
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
     }
 
     @Override public void onDestroy() {

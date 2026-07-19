@@ -5,7 +5,7 @@ import androidx.room.Database;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
 
-@Database(entities = {WearSessionEntity.class, WearEventEntity.class}, version = 1, exportSchema = true)
+@Database(entities = {WearSessionEntity.class, WearEventEntity.class}, version = 2, exportSchema = true)
 public abstract class WearDatabase extends RoomDatabase {
     private static volatile WearDatabase instance;
     public abstract WearDao dao();
@@ -16,7 +16,9 @@ public abstract class WearDatabase extends RoomDatabase {
                 if (instance == null) {
                     instance = Room.databaseBuilder(
                             context.getApplicationContext(), WearDatabase.class,
-                            "dreamsync-wear.db").build();
+                            "dreamsync-wear.db")
+                            .fallbackToDestructiveMigration()
+                            .build();
                 }
             }
         }

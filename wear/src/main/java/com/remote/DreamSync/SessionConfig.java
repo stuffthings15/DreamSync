@@ -6,17 +6,15 @@ import android.content.SharedPreferences;
 import org.json.JSONObject;
 
 final class SessionConfig {
-    static final String PREFS = "somnicue_config";
+    static final String PREFS = "dreamsync_config";
 
     String sessionId = "";
     String phoneNodeId = "";
     String watchNodeId = "";
-    String condition = "ACTIVE";
     String mode = "DEEP";
-    boolean dryRun = false;
     float cueGain = 0.04f;
     int deepStartMin = 25;
-    int deepEndMin = 180;
+    int deepEndMin = 145;
     int remStartMin = 255;
     int sessionEndMin = 510;
     int deepStableMin = 8;
@@ -34,9 +32,7 @@ final class SessionConfig {
             config.sessionId = object.optString("sessionId", config.sessionId);
             config.phoneNodeId = object.optString("phoneNodeId", config.phoneNodeId);
             config.watchNodeId = object.optString("watchNodeId", config.watchNodeId);
-            config.condition = object.optString("condition", config.condition);
             config.mode = object.optString("mode", config.mode);
-            config.dryRun = object.optBoolean("dryRun", false);
             config.cueGain = (float) object.optDouble("cueGain", config.cueGain);
             config.deepStartMin = object.optInt("deepStartMin", config.deepStartMin);
             config.deepEndMin = object.optInt("deepEndMin", config.deepEndMin);
@@ -62,19 +58,13 @@ final class SessionConfig {
         sessionId = safeIdentifier(sessionId);
         phoneNodeId = safeIdentifier(phoneNodeId);
         watchNodeId = safeIdentifier(watchNodeId);
-        condition = "SHAM".equals(condition) ? "SHAM" : "ACTIVE";
         mode = sanitizeMode(mode);
         cueGain = clampFloat(cueGain, 0.005f, 0.20f);
-        int deepStartFloor = dryRun ? 1 : 10;
-        int deepEndFloor = dryRun ? 2 : 60;
-        int remStartFloor = dryRun ? 3 : 180;
-        int sessionEndFloor = dryRun ? 5 : 240;
-        int stableFloor = dryRun ? 1 : 3;
-        deepStartMin = clampInt(deepStartMin, deepStartFloor, 120);
-        deepEndMin = clampInt(deepEndMin, deepEndFloor, 300);
-        remStartMin = clampInt(remStartMin, remStartFloor, 420);
-        sessionEndMin = clampInt(sessionEndMin, sessionEndFloor, 720);
-        deepStableMin = clampInt(deepStableMin, stableFloor, 20);
+        deepStartMin = clampInt(deepStartMin, 10, 120);
+        deepEndMin = clampInt(deepEndMin, 60, 300);
+        remStartMin = clampInt(remStartMin, 180, 420);
+        sessionEndMin = clampInt(sessionEndMin, 240, 720);
+        deepStableMin = clampInt(deepStableMin, 3, 20);
         remStableMin = clampInt(remStableMin, 1, 10);
         deepCueIntervalSec = clampInt(deepCueIntervalSec, 10, 60);
         deepCuesPerBlock = clampInt(deepCuesPerBlock, 1, 20);
@@ -95,9 +85,7 @@ final class SessionConfig {
         c.sessionId = p.getString("sessionId", c.sessionId);
         c.phoneNodeId = p.getString("phoneNodeId", c.phoneNodeId);
         c.watchNodeId = p.getString("watchNodeId", c.watchNodeId);
-        c.condition = p.getString("condition", c.condition);
         c.mode = sanitizeMode(p.getString("mode", c.mode));
-        c.dryRun = p.getBoolean("dryRun", c.dryRun);
         c.cueGain = p.getFloat("cueGain", c.cueGain);
         c.deepStartMin = p.getInt("deepStartMin", c.deepStartMin);
         c.deepEndMin = p.getInt("deepEndMin", c.deepEndMin);
@@ -120,9 +108,7 @@ final class SessionConfig {
                 .putString("sessionId", sessionId)
                 .putString("phoneNodeId", phoneNodeId)
                 .putString("watchNodeId", watchNodeId)
-                .putString("condition", condition)
                 .putString("mode", mode)
-                .putBoolean("dryRun", dryRun)
                 .putFloat("cueGain", cueGain)
                 .putInt("deepStartMin", deepStartMin)
                 .putInt("deepEndMin", deepEndMin)
@@ -146,13 +132,8 @@ final class SessionConfig {
         return "LUCID".equals(mode) || "COMBINED".equals(mode);
     }
 
-    boolean isActiveCondition() {
-        return "ACTIVE".equals(condition);
-    }
-
     private static String sanitizeMode(String input) {
-        if ("SENSOR_ONLY".equals(input)
-                || "DEEP".equals(input)
+        if ("DEEP".equals(input)
                 || "LUCID".equals(input)
                 || "COMBINED".equals(input)) {
             return input;

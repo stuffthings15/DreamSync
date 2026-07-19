@@ -1,5 +1,0 @@
-Dream Sync private capstone debug APKs
-Built: 2026-07-19 America/Los_Angeles
-
-F90921F5AEF2873A1E462D38FAF83C7FD72EDBC646900A383FF17E4547460B79  phone/build/outputs/apk/debug/phone-debug.apk
-4B439FF0E3775012F61BF54585CC1E5B271915EB110565FC34709626EA396E4B  wear/build/outputs/apk/debug/wear-debug.apk

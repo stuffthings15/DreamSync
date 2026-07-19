@@ -45,7 +45,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 .\gradlew.bat :shared:test testDebugUnitTest :wear:assembleDebug :phone:assembleDebug
 ```
 
-The phone debug APK embeds the watch debug APK for the existing private Wi-Fi ADB installer.
+Install the phone and Wear OS apps through the private Google Play internal-test links.
 Public Play distribution, production signing, Samsung Health Sensor SDK, learned models,
 Health Connect, and medical claims are deliberately out of scope.
 

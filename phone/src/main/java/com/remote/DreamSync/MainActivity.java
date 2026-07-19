@@ -49,7 +49,6 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQUEST_NOTIFICATIONS = 101;
     private static final int REQUEST_EXPORT = 602;
-    private static final int REQUEST_INSTALL_LOG_EXPORT = 603;
 
     private TextView statusText;
     private TextView readinessText;
@@ -58,14 +57,11 @@ public final class MainActivity extends Activity {
     private SeekBar gainSeek;
     private CheckBox dryRunCheck;
     private CheckBox blindTrialCheck;
-    private EditText watchAddressInput;
-    private Button deployWatchButton;
     private ExecutorService remoteExecutor;
     private ExecutorService databaseExecutor;
     private PhoneDao dao;
     private boolean summaryReceiverRegistered;
     private String pendingExportJson = "";
-    private String pendingInstallLog = "";
 
     private final BroadcastReceiver summaryReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -105,16 +101,9 @@ public final class MainActivity extends Activity {
         gainSeek = findViewById(R.id.gainSeek);
         dryRunCheck = findViewById(R.id.dryRunCheck);
         blindTrialCheck = findViewById(R.id.blindTrialCheck);
-        watchAddressInput = findViewById(R.id.watchAddressInput);
-        deployWatchButton = findViewById(R.id.deployWatchButton);
-        watchAddressInput.setText(getSharedPreferences("somnicue_phone", MODE_PRIVATE)
-                .getString("watch_adb_address", ""));
     }
 
     private void wireActions() {
-        deployWatchButton.setOnClickListener(v -> deployWatchApp());
-        findViewById(R.id.exportInstallLogButton).setOnClickListener(v -> exportInstallLog());
-        findViewById(R.id.watchHelpButton).setOnClickListener(v -> showWatchHelp());
         gainSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 gainLabel.setText("Cue gain: " + progress + "% (phone media volume must stay low)");
@@ -473,15 +462,6 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void exportInstallLog() {
-        pendingInstallLog = WatchDeployer.exportLog(this);
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("text/plain")
-                .putExtra(Intent.EXTRA_TITLE, "dreamsync-watch-install-error-log.txt");
-        startActivityForResult(intent, REQUEST_INSTALL_LOG_EXPORT);
-    }
-
     private JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("schemaVersion", 1);
@@ -554,17 +534,13 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if ((requestCode != REQUEST_EXPORT && requestCode != REQUEST_INSTALL_LOG_EXPORT)
-                || resultCode != RESULT_OK || data == null) return;
+        if (requestCode != REQUEST_EXPORT || resultCode != RESULT_OK || data == null) return;
         Uri uri = data.getData();
         if (uri == null) return;
         try (OutputStream output = getContentResolver().openOutputStream(uri)) {
             if (output == null) throw new IllegalStateException("No output stream");
-            String content = requestCode == REQUEST_INSTALL_LOG_EXPORT
-                    ? pendingInstallLog : pendingExportJson;
-            output.write(content.getBytes(StandardCharsets.UTF_8));
-            statusText.setText(requestCode == REQUEST_INSTALL_LOG_EXPORT
-                    ? "Watch install error log saved." : "Research export saved.");
+            output.write(pendingExportJson.getBytes(StandardCharsets.UTF_8));
+            statusText.setText("Research export saved.");
         } catch (Exception error) {
             statusText.setText("Could not save export: " + safeMessage(error));
         }
@@ -636,62 +612,6 @@ public final class MainActivity extends Activity {
                 .getString("last_summary", "");
         if (!summary.isEmpty()) showFriendlySummary(summary, false);
         updateReadiness();
-    }
-
-    private void deployWatchApp() {
-        String address = watchAddressInput.getText().toString().trim();
-        if (address.isEmpty()) {
-            statusText.setText("Enter the watch address shown under Debug over Wi-Fi first.");
-            return;
-        }
-        String host = address;
-        int port = 5555;
-        int colon = address.lastIndexOf(':');
-        if (colon > 0) {
-            host = address.substring(0, colon);
-            try { port = Integer.parseInt(address.substring(colon + 1).trim()); }
-            catch (NumberFormatException invalid) {
-                statusText.setText("Use the exact IP:port shown by the watch.");
-                return;
-            }
-        }
-        if (!host.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
-            statusText.setText("Enter the watch IP exactly, such as 192.168.1.42:5555.");
-            return;
-        }
-        getSharedPreferences("somnicue_phone", MODE_PRIVATE).edit()
-                .putString("watch_adb_address", address).apply();
-        deployWatchButton.setEnabled(false);
-        deployWatchButton.setText("Installing...");
-        final String finalHost = host;
-        final int finalPort = port;
-        remoteExecutor.execute(() -> {
-            WatchDeployer.deploy(this, finalHost, finalPort,
-                    message -> runOnUiThread(() -> {
-                        statusText.setText(message);
-                        if (message.startsWith("Step 1/")) deployWatchButton.setText("Connecting...");
-                        else if (message.startsWith("Step 2/")) deployWatchButton.setText("Uploading...");
-                        else if (message.startsWith("Step 3/")) deployWatchButton.setText("Installing on watch...");
-                        else if (message.startsWith("Step 4/")) deployWatchButton.setText("Installed");
-                    }));
-            runOnUiThread(() -> {
-                deployWatchButton.setText("Install watch app over Wi-Fi");
-                deployWatchButton.setEnabled(true);
-            });
-        });
-    }
-
-    private void showWatchHelp() {
-        new AlertDialog.Builder(this)
-                .setTitle("Install the watch app")
-                .setMessage("Internal capstone build only.\n\n"
-                        + "1. On watch: unlock Developer options.\n"
-                        + "2. Enable ADB debugging and Debug over Wi-Fi.\n"
-                        + "3. Put phone and watch on the same Wi-Fi.\n"
-                        + "4. Enter the shown IP:port and accept the watch prompt.\n\n"
-                        + "This installer is not intended for a public release.")
-                .setPositiveButton("Done", null)
-                .show();
     }
 
     private void openWatchApp() {

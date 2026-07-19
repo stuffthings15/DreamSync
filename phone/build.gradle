@@ -10,7 +10,7 @@ android {
         applicationId 'com.remote.DreamSync'
         minSdk 31
         targetSdk 36
-        versionCode 3
+        versionCode 5
         versionName '0.1.0-nightly'
         javaCompileOptions {
             annotationProcessorOptions {
@@ -41,24 +41,6 @@ android {
         }
     }
 
-    sourceSets {
-        main {
-            assets.srcDirs += layout.buildDirectory.dir('generated/wearApk')
-        }
-    }
-}
-
-// Bundle the wear APK as an asset so the phone app can deploy it to the watch
-// over Wi-Fi ADB (see WatchDeployer).
-tasks.register('copyWearApk', Copy) {
-    dependsOn ':wear:assembleDebug'
-    from project(':wear').layout.buildDirectory.file('outputs/apk/debug/wear-debug.apk')
-    into layout.buildDirectory.dir('generated/wearApk')
-    rename { 'dreamsync-wear.apk' }
-}
-
-tasks.named('preBuild').configure {
-    dependsOn 'copyWearApk'
 }
 
 dependencies {
@@ -68,10 +50,4 @@ dependencies {
     implementation 'androidx.room:room-runtime:2.8.4'
     annotationProcessor 'androidx.room:room-compiler:2.8.4'
     testImplementation 'junit:junit:4.13.2'
-    implementation('dev.mobile:dadb:1.2.9') {
-        // dadb's POM leaks JUnit as a runtime dependency; keep it out of the APK.
-        exclude group: 'org.junit'
-        exclude group: 'org.junit.jupiter'
-        exclude group: 'org.junit.platform'
-    }
 }

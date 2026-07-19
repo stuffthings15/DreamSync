@@ -12,6 +12,11 @@ android {
         targetSdk 36
         versionCode 1
         versionName '0.1.0-nightly'
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += ["room.schemaLocation": "$projectDir/schemas"]
+            }
+        }
     }
 
     compileOptions {
@@ -21,5 +26,9 @@ android {
 }
 
 dependencies {
+    implementation project(':shared')
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+    implementation 'androidx.room:room-runtime:2.8.4'
+    annotationProcessor 'androidx.room:room-compiler:2.8.4'
+    testImplementation 'junit:junit:4.13.2'
 }

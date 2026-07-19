@@ -6,7 +6,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -14,13 +16,22 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.graphics.drawable.Icon;
 import android.os.Build;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
+import com.google.android.gms.wearable.Asset;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
+import com.nathanw.somnicue.shared.EligibilityEstimator;
+import com.nathanw.somnicue.shared.ProtocolEnvelope;
+import com.nathanw.somnicue.shared.SignalQualityMonitor;
+import com.nathanw.somnicue.shared.SleepOnsetEstimator;
 
 import org.json.JSONObject;
 
@@ -28,6 +39,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
@@ -36,11 +48,17 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class SleepSessionService extends Service implements SensorEventListener {
     static final String ACTION_START = "com.nathanw.somnicue.START_SESSION";
     static final String ACTION_STOP = "com.nathanw.somnicue.STOP_SESSION";
     static final String ACTION_STATUS = "com.nathanw.somnicue.STATUS";
+    static final String ACTION_CUE_ACK = "com.nathanw.somnicue.CUE_ACK";
     static final String EXTRA_STATUS = "status";
 
     private static final String CHANNEL_ID = "somnicue_watch_session";
@@ -65,6 +83,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private SessionConfig config;
 
     private long sessionStartMs;
+    private long sessionStartUtcMs;
+    private long lastMotionSampleMs;
+    private long lastHeartSampleMs;
+    private long lastHeartbeatMs;
     private long probableNremSinceMs;
     private long probableRemSinceMs;
     private long backoffUntilMs;
@@ -78,25 +100,61 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private double gravityY;
     private double gravityZ;
     private boolean gravityInitialized;
+    private boolean accelerometerRegistered;
+    private boolean heartRateRegistered;
+    private boolean storageHealthy = true;
 
     private int deepBlocks;
     private int deepCues;
     private int lucidCues;
     private int cueLinkedArousals;
+    private int shamDeepCues;
+    private int shamLucidCues;
     private boolean deepBlockActive;
     private int deepCuesInCurrentBlock;
     private boolean cuesDisabled;
     private boolean sessionFinished;
     private String latestStage = "SETTLING";
+    private String latestSignalQuality = "calibrating";
+    private String terminalState = "RUNNING";
+
+    private final SignalQualityMonitor signalQualityMonitor = new SignalQualityMonitor();
+    private final SleepOnsetEstimator sleepOnsetEstimator = new SleepOnsetEstimator();
+    private final EligibilityEstimator eligibilityEstimator = new EligibilityEstimator();
+    private final Map<String, PendingCue> pendingCues = new ConcurrentHashMap<>();
+    private ExecutorService databaseExecutor;
+    private WearDao dao;
 
     private FileWriter logWriter;
     private String logFilePath = "";
+
+    private final BroadcastReceiver cueAckReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (!ACTION_CUE_ACK.equals(intent.getAction())) return;
+            if (config == null) return;
+            if (!config.sessionId.equals(intent.getStringExtra("sessionId"))) return;
+            handleCueAck(
+                    intent.getStringExtra("cueId"),
+                    intent.getStringExtra("ackType"),
+                    intent.getStringExtra("reason"));
+        }
+    };
 
     private final Runnable evaluator = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
-            evaluateAndAct();
+            try {
+                evaluateAndAct();
+            } catch (RuntimeException error) {
+                terminalState = "INTERNAL_ERROR";
+                cuesDisabled = true;
+                persistEvent("INTERNAL_ERROR", "", error.getClass().getSimpleName()
+                        + ": " + error.getMessage());
+                logEvent("INTERNAL_ERROR", error.getMessage());
+                stopSelf();
+                return;
+            }
             evaluatorHandler.postDelayed(this, EVALUATION_INTERVAL_MS);
         }
     };
@@ -116,6 +174,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
         sensorThread.start();
         sensorHandler = new Handler(sensorThread.getLooper());
         evaluatorHandler = new Handler(getMainLooper());
+        databaseExecutor = Executors.newSingleThreadExecutor();
+        dao = WearDatabase.get(this).dao();
+        databaseExecutor.execute(() -> dao.markInterrupted(System.currentTimeMillis()));
+        IntentFilter ackFilter = new IntentFilter(ACTION_CUE_ACK);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(cueAckReceiver, ackFilter, RECEIVER_NOT_EXPORTED);
+        else registerReceiver(cueAckReceiver, ackFilter);
         createNotificationChannel();
     }
 
@@ -123,6 +187,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            terminalState = intent == null
+                    ? "USER_STOPPED" : intent.getStringExtra("terminationReason");
+            if (terminalState == null || terminalState.isEmpty()) terminalState = "USER_STOPPED";
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -132,13 +199,28 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void startSession() {
         config = SessionConfig.load(this);
+        if (config.sessionId.isEmpty() || config.phoneNodeId.isEmpty() || config.watchNodeId.isEmpty()) {
+            broadcastStatus("No acknowledged phone session. Send settings from the phone first.");
+            stopSelf();
+            return;
+        }
         currentGain = config.cueGain;
-        sessionStartMs = System.currentTimeMillis();
+        sessionStartMs = SystemClock.elapsedRealtime();
+        sessionStartUtcMs = System.currentTimeMillis();
         running = true;
         startAsForeground();
         acquireWakeLock();
         openLog();
         registerSensors();
+        persistSession("RUNNING", "");
+        if (!accelerometerRegistered) {
+            terminalState = "SENSOR_FAILED";
+            cuesDisabled = true;
+            persistEvent("SENSOR_FAILED", "", "accelerometer did not register");
+            logEvent("SENSOR_FAILED", "Accelerometer did not register");
+            stopSelf();
+            return;
+        }
         logEvent("SESSION_START", String.format(
                 Locale.US,
                 "mode=%s gain=%.3f hrSensor=%s",
@@ -152,7 +234,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void registerSensors() {
         if (accelerometer != null) {
-            sensorManager.registerListener(
+            accelerometerRegistered = sensorManager.registerListener(
                     this,
                     accelerometer,
                     200_000,
@@ -162,7 +244,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         if (heartRate != null) {
             try {
-                sensorManager.registerListener(
+                heartRateRegistered = sensorManager.registerListener(
                         this,
                         heartRate,
                         1_000_000,
@@ -172,14 +254,17 @@ public final class SleepSessionService extends Service implements SensorEventLis
             } catch (SecurityException error) {
                 logEvent("HEART_RATE_PERMISSION_ERROR", error.getMessage());
                 heartRate = null;
+                heartRateRegistered = false;
             }
         }
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        long now = System.currentTimeMillis();
+        long now = event.timestamp > 0L
+                ? event.timestamp / 1_000_000L : SystemClock.elapsedRealtime();
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            lastMotionSampleMs = now;
             double x = event.values[0];
             double y = event.values[1];
             double z = event.values[2];
@@ -208,6 +293,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && event.accuracy != SensorManager.SENSOR_STATUS_UNRELIABLE) {
             double bpm = event.values[0];
             if (bpm >= 30.0 && bpm <= 220.0) {
+                lastHeartSampleMs = now;
                 synchronized (sampleLock) {
                     heartSamples.addLast(new TimedValue(now, bpm));
                     prune(heartSamples, now - 20L * 60L * 1000L);
@@ -222,10 +308,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void evaluateAndAct() {
-        long now = System.currentTimeMillis();
+        long now = SystemClock.elapsedRealtime();
         double elapsedMin = (now - sessionStartMs) / 60_000.0;
         if (elapsedMin >= config.sessionEndMin) {
+            terminalState = "TIMED_OUT";
             logEvent("SESSION_TIMEOUT", "Configured end reached");
+            stopSelf();
+            return;
+        }
+        if (batteryPercent() >= 0 && batteryPercent() <= 10) {
+            terminalState = "LOW_BATTERY";
+            cuesDisabled = true;
+            logEvent("LOW_BATTERY", "Watch battery reached shutdown threshold");
             stopSelf();
             return;
         }
@@ -235,45 +329,63 @@ public final class SleepSessionService extends Service implements SensorEventLis
         features = features.withBaseline(baselineHeartRate);
 
         boolean arousal = isArousal(features);
-        double stillness = clamp01(1.0 - features.motionRms30 / 0.65);
-        double earlyPrior = earlyNightPrior(elapsedMin);
-        double heartDrop = features.hasHeartRate && !Double.isNaN(baselineHeartRate)
-                ? clamp01((baselineHeartRate - features.heartMedian2)
-                / Math.max(1.0, baselineHeartRate * 0.12))
-                : 0.40;
-        double lowHeartVariation = features.hasHeartRate
-                ? clamp01(1.0 - features.heartSd2 / 4.5)
-                : 0.40;
-        double heartIrregularity = features.hasHeartRate
-                ? clamp01((features.heartSd2 - 1.5) / 4.0)
-                : 0.30;
-        double latePrior = remPrior(elapsedMin);
-
-        double nremScore = 0.55 * stillness
-                + 0.25 * heartDrop
-                + 0.10 * lowHeartVariation
-                + 0.10 * earlyPrior;
-        double remScore = 0.55 * stillness
-                + 0.20 * heartIrregularity
-                + 0.25 * latePrior;
-
-        Stage stage = classifyStage(
-                elapsedMin,
-                features,
+        SignalQualityMonitor.Result quality = signalQualityMonitor.evaluate(
+                now, lastMotionSampleMs, lastHeartSampleMs,
+                features.motionSampleCount30, features.heartSampleCount2,
+                accelerometerRegistered, heartRateRegistered);
+        latestSignalQuality = quality.reason;
+        boolean quietCandidate = quality.motionReady
+                && !arousal && !Double.isNaN(features.motionRms30)
+                && features.motionRms30 < 0.30;
+        long onset = sleepOnsetEstimator.update(
+                quietCandidate, now, (config.dryRun ? 1L : 10L) * 60_000L);
+        double sleepElapsedMin = onset > 0L ? (now - onset) / 60_000.0 : -1.0;
+        double priorElapsed = Math.max(0.0, sleepElapsedMin);
+        EligibilityEstimator.Result estimate = eligibilityEstimator.estimate(
+                sleepElapsedMin,
+                features.motionRms30,
+                features.heartMedian2,
+                features.heartSd2,
+                baselineHeartRate,
                 arousal,
-                stillness,
-                heartIrregularity,
-                nremScore,
-                remScore
-        );
+                quality,
+                earlyNightPrior(priorElapsed),
+                remPrior(priorElapsed),
+                config.deepStartMin,
+                config.deepEndMin,
+                config.remStartMin);
+        double nremScore = estimate.nremScore;
+        double remScore = estimate.remScore;
+        Stage stage = Stage.valueOf(estimate.state.name());
         latestStage = stage.name();
         updateStability(stage, now);
 
         if (arousal) {
             handleArousal(now);
         } else {
-            handleDeepCueing(now, elapsedMin, stage);
-            handleLucidCueing(now, elapsedMin, stage);
+            handleDeepCueing(now, priorElapsed, stage);
+            handleLucidCueing(now, priorElapsed, stage);
+        }
+        if (!quality.motionReady && elapsedMin >= (config.dryRun ? 2.0 : 15.0)) {
+            cuesDisabled = true;
+            terminalState = "SENSOR_FAILED";
+            persistEvent("SENSOR_DEGRADED", "", quality.reason);
+            logEvent("SENSOR_FAILED", quality.reason);
+            stopSelf();
+            return;
+        }
+        if (!storageHealthy) {
+            cuesDisabled = true;
+            terminalState = "INTERNAL_ERROR";
+            persistEvent("STORAGE_FAILED", "", "session log write failed");
+            stopSelf();
+            return;
+        }
+        expirePendingCues(now);
+        if (now - lastHeartbeatMs >= 60_000L) {
+            lastHeartbeatMs = now;
+            publishHeartbeat(quality.reason);
+            verifyPhoneReachable();
         }
 
         String event = "TICK";
@@ -317,6 +429,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 medianHeart,
                 heartSd,
                 heartSlope,
+                motion30.size(),
+                heartValues.size(),
                 hasHeartRate,
                 hasMotion,
                 baselineHeartRate
@@ -362,31 +476,31 @@ public final class SleepSessionService extends Service implements SensorEventLis
             double remScore
     ) {
         if (arousal) return Stage.AROUSAL;
-        if (!features.hasMotion) return Stage.UNKNOWN;
+        if (!features.hasMotion) return Stage.INSUFFICIENT_SIGNAL;
         if (elapsedMin < (config.dryRun ? 0.5 : 10.0)) return Stage.SETTLING;
         if (elapsedMin >= config.deepStartMin
                 && elapsedMin <= config.deepEndMin
                 && stillness >= 0.72
                 && nremScore >= 0.72) {
-            return Stage.PROBABLE_NREM;
+            return Stage.NREM_ELIGIBLE;
         }
         if (elapsedMin >= config.remStartMin
                 && stillness >= 0.68
                 && remScore >= 0.68
                 && (heartIrregularity >= 0.20 || !features.hasHeartRate)) {
-            return Stage.PROBABLE_REM;
+            return Stage.REM_LIKE_ELIGIBLE;
         }
-        if (stillness >= 0.62) return Stage.QUIET_SLEEP;
+        if (stillness >= 0.62) return Stage.QUIET_UNCERTAIN;
         return Stage.AWAKE_OR_MOVING;
     }
 
     private void updateStability(Stage stage, long now) {
-        if (stage == Stage.PROBABLE_NREM) {
+        if (stage == Stage.NREM_ELIGIBLE) {
             if (probableNremSinceMs == 0L) probableNremSinceMs = now;
         } else {
             probableNremSinceMs = 0L;
         }
-        if (stage == Stage.PROBABLE_REM) {
+        if (stage == Stage.REM_LIKE_ELIGIBLE) {
             if (probableRemSinceMs == 0L) probableRemSinceMs = now;
         } else {
             probableRemSinceMs = 0L;
@@ -424,7 +538,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
 
         if (deepBlockActive) {
-            if (stage != Stage.PROBABLE_NREM) {
+            if (stage != Stage.NREM_ELIGIBLE) {
                 endDeepBlock("state_changed");
                 return;
             }
@@ -436,8 +550,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
             }
             if (now >= nextDeepCueMs) {
                 nextDeepCueMs = now + config.deepCueIntervalSec * 1000L;
-                sendCue(Protocol.PATH_DEEP_CUE, "DEEP_PAIR", now, () -> {
+                sendCue("DEEP", "DEEP_PAIR", now, () -> {
                     deepCues++;
+                    deepCuesInCurrentBlock++;
+                }, () -> {
+                    shamDeepCues++;
                     deepCuesInCurrentBlock++;
                 });
             }
@@ -446,7 +563,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
         boolean stableEnough = probableNremSinceMs > 0L
                 && now - probableNremSinceMs >= config.deepStableMin * 60_000L;
-        if (stage == Stage.PROBABLE_NREM
+        if (stage == Stage.NREM_ELIGIBLE
                 && stableEnough
                 && now >= backoffUntilMs
                 && deepBlocks < config.maxDeepBlocks) {
@@ -460,17 +577,19 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void handleLucidCueing(long now, double elapsedMin, Stage stage) {
         if (!config.usesLucidCues() || cuesDisabled || deepBlockActive) return;
-        if (elapsedMin < config.remStartMin || lucidCues >= config.maxLucidCues) return;
+        if (elapsedMin < config.remStartMin
+                || lucidCues + shamLucidCues >= config.maxLucidCues) return;
         if (now < backoffUntilMs) return;
 
         boolean stableEnough = probableRemSinceMs > 0L
                 && now - probableRemSinceMs >= config.remStableMin * 60_000L;
         boolean intervalPassed = lastLucidCueMs == 0L
                 || now - lastLucidCueMs >= config.lucidCueIntervalSec * 1000L;
-        if (stage == Stage.PROBABLE_REM && stableEnough && intervalPassed) {
+        if (stage == Stage.REM_LIKE_ELIGIBLE && stableEnough && intervalPassed) {
             // Pacing advances regardless of delivery; the budget does not.
             lastLucidCueMs = now;
-            sendCue(Protocol.PATH_LUCID_CUE, "LUCID_CHIME", now, () -> lucidCues++);
+            sendCue("LUCID", "LUCID_CHIME", now,
+                    () -> lucidCues++, () -> shamLucidCues++);
         }
     }
 
@@ -481,45 +600,75 @@ public final class SleepSessionService extends Service implements SensorEventLis
         logEvent("DEEP_BLOCK_END", reason);
     }
 
-    // Cue budgets and arousal-linking must only reflect cues the phone actually
-    // received, so lastCueMs and onDelivered fire on send success, not on attempt.
-    private void sendCue(String path, String label, long now, Runnable onDelivered) {
-        JSONObject payload = new JSONObject();
-        try {
-            payload.put("gain", currentGain);
-            payload.put("elapsedMs", now - sessionStartMs);
-            payload.put("label", label);
-        } catch (Exception ignored) {}
-        byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
-
-        boolean[] delivered = new boolean[1];
-        Wearable.getNodeClient(this).getConnectedNodes()
-                .addOnSuccessListener(nodes -> {
-                    if (nodes.isEmpty()) {
-                        logEvent("CUE_NOT_SENT", label + ": no connected phone");
-                        return;
-                    }
-                    for (Node node : nodes) {
-                        Wearable.getMessageClient(this)
-                                .sendMessage(node.getId(), path, bytes)
-                                .addOnSuccessListener(messageId -> {
-                                    if (delivered[0]) return;
-                                    delivered[0] = true;
-                                    lastCueMs = System.currentTimeMillis();
-                                    logEvent(label, String.format(
-                                            Locale.US, "gain=%.3f", currentGain));
-                                    onDelivered.run();
-                                })
-                                .addOnFailureListener(error -> logEvent(
-                                        "CUE_SEND_ERROR",
-                                        label + ": " + error.getMessage()
-                                ));
-                    }
-                })
-                .addOnFailureListener(error -> logEvent(
-                        "NODE_QUERY_ERROR",
-                        error.getMessage()
+    private void sendCue(
+            String cueType,
+            String label,
+            long now,
+            Runnable onAudioStarted,
+            Runnable onShamEligible
+    ) {
+        String cueId = UUID.randomUUID().toString();
+        if (!config.isActiveCondition()) {
+            onShamEligible.run();
+            logEvent("SHAM_ELIGIBLE", cueType + " cueId=" + cueId);
+            persistEvent("SHAM_ELIGIBLE", cueId, cueType);
+            return;
+        }
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.nathanw.somnicue.shared.Protocol.TYPE_CUE_REQUEST,
+                config.sessionId,
+                cueId,
+                config.watchNodeId,
+                config.phoneNodeId,
+                System.currentTimeMillis(),
+                com.nathanw.somnicue.shared.Protocol.CUE_TTL_MS,
+                Map.of(
+                        "cueType", cueType,
+                        "label", label,
+                        "gain", String.format(Locale.US, "%.4f", currentGain),
+                        "elapsedMs", Long.toString(now - sessionStartMs),
+                        "policyVersion", "eligibility-v1"
                 ));
+        pendingCues.put(cueId, new PendingCue(cueId, cueType, now, onAudioStarted));
+        persistEvent("CUE_REQUESTED", cueId, cueType);
+        Wearable.getMessageClient(this)
+                .sendMessage(config.phoneNodeId, com.nathanw.somnicue.shared.Protocol.PATH_CUE,
+                        envelope.encode())
+                .addOnSuccessListener(messageId -> logEvent(
+                        "CUE_TRANSPORT_SENT", cueType + " cueId=" + cueId))
+                .addOnFailureListener(error -> {
+                    pendingCues.remove(cueId);
+                    String reason = error.getMessage() == null ? "send failed" : error.getMessage();
+                    logEvent("CUE_SEND_ERROR", cueType + ": " + reason);
+                    persistEvent("CUE_FAILED", cueId, reason);
+                });
+    }
+
+    private void handleCueAck(String cueId, String ackType, String reason) {
+        if (cueId == null || ackType == null) return;
+        PendingCue pending = pendingCues.get(cueId);
+        if (pending == null) return;
+        if (com.nathanw.somnicue.shared.Protocol.TYPE_CUE_ACCEPTED.equals(ackType)) {
+            persistEvent("CUE_ACCEPTED", cueId, pending.cueType);
+            return;
+        }
+        if (com.nathanw.somnicue.shared.Protocol.TYPE_AUDIO_STARTED.equals(ackType)) {
+            if (!pending.audioStarted) {
+                pending.audioStarted = true;
+                lastCueMs = SystemClock.elapsedRealtime();
+                pending.onAudioStarted.run();
+                persistEvent("AUDIO_STARTED", cueId, pending.cueType);
+                logEvent("AUDIO_STARTED", pending.cueType + " cueId=" + cueId);
+            }
+            return;
+        }
+        if (com.nathanw.somnicue.shared.Protocol.TYPE_AUDIO_COMPLETED.equals(ackType)) {
+            pendingCues.remove(cueId);
+            persistEvent("AUDIO_COMPLETED", cueId, pending.cueType);
+        } else if (com.nathanw.somnicue.shared.Protocol.TYPE_AUDIO_FAILED.equals(ackType)) {
+            pendingCues.remove(cueId);
+            persistEvent("AUDIO_FAILED", cueId, reason == null ? "" : reason);
+        }
     }
 
     private String statusLine(
@@ -635,8 +784,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void openLog() {
         File base = getExternalFilesDir("sessions");
         if (base == null) base = new File(getFilesDir(), "sessions");
-        if (!base.exists() && !base.mkdirs()) return;
-        File logFile = new File(base, "somnicue-" + sessionStartMs + ".csv");
+        if (!base.exists() && !base.mkdirs()) {
+            storageHealthy = false;
+            return;
+        }
+        File logFile = new File(base, "dreamsync-" + config.sessionId + ".csv");
         logFilePath = logFile.getAbsolutePath();
         try {
             logWriter = new FileWriter(logFile, false);
@@ -647,6 +799,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             logWriter.flush();
         } catch (IOException error) {
             logWriter = null;
+            storageHealthy = false;
         }
     }
 
@@ -664,7 +817,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             logWriter.write(String.format(
                     Locale.US,
                     "%s,%.2f,%.2f,%.2f,%.4f,%.3f,%.3f,%.3f,%.3f,%s,%s,%.4f\n",
-                    DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(now)),
+                    DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(
+                            sessionStartUtcMs + (now - sessionStartMs))),
                     elapsedMin,
                     features.heartMedian2,
                     baselineHeartRate,
@@ -678,18 +832,23 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     currentGain
             ));
             logWriter.flush();
-        } catch (IOException ignored) {}
+        } catch (IOException error) {
+            storageHealthy = false;
+            cuesDisabled = true;
+        }
     }
 
     private void logEvent(String event, String details) {
         if (logWriter == null) return;
-        long now = System.currentTimeMillis();
-        double elapsedMin = sessionStartMs == 0L ? 0.0 : (now - sessionStartMs) / 60_000.0;
+        long monotonicNow = SystemClock.elapsedRealtime();
+        long nowUtc = System.currentTimeMillis();
+        double elapsedMin = sessionStartMs == 0L
+                ? 0.0 : (monotonicNow - sessionStartMs) / 60_000.0;
         try {
             logWriter.write(String.format(
                     Locale.US,
                     "%s,%.2f,NaN,%.2f,NaN,NaN,NaN,NaN,NaN,%s,%s: %s,%.4f\n",
-                    DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(now)),
+                    DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(nowUtc)),
                     elapsedMin,
                     baselineHeartRate,
                     latestStage,
@@ -698,12 +857,112 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     currentGain
             ));
             logWriter.flush();
-        } catch (IOException ignored) {}
+        } catch (IOException error) {
+            storageHealthy = false;
+            cuesDisabled = true;
+        }
     }
 
     private String sanitizeCsv(String value) {
         if (value == null) return "";
         return value.replace(',', ';').replace('\n', ' ');
+    }
+
+    private int batteryPercent() {
+        BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
+        return battery == null ? -1
+                : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+    }
+
+    private void expirePendingCues(long now) {
+        for (PendingCue cue : new ArrayList<>(pendingCues.values())) {
+            if (now - cue.requestedElapsedMs <= 20_000L) continue;
+            if (pendingCues.remove(cue.cueId) != null) {
+                persistEvent("CUE_FAILED", cue.cueId, "ack timeout");
+                logEvent("CUE_ACK_TIMEOUT", cue.cueType + " cueId=" + cue.cueId);
+            }
+        }
+    }
+
+    private void publishHeartbeat(String qualityReason) {
+        if (config == null) return;
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.nathanw.somnicue.shared.Protocol.TYPE_HEARTBEAT,
+                config.sessionId, "", config.watchNodeId, config.phoneNodeId,
+                System.currentTimeMillis(),
+                com.nathanw.somnicue.shared.Protocol.CONTROL_TTL_MS,
+                Map.of(
+                        "state", cuesDisabled ? "DEGRADED" : "RUNNING",
+                        "status", cuesDisabled
+                                ? "Logging only: " + qualityReason
+                                : "Watch live: " + latestStage,
+                        "signalQuality", qualityReason,
+                        "batteryPercent", Integer.toString(batteryPercent())
+                ));
+        PutDataMapRequest map = PutDataMapRequest.create(
+                com.nathanw.somnicue.shared.Protocol.PATH_STATE_PREFIX + config.sessionId);
+        map.getDataMap().putByteArray("envelope", envelope.encode());
+        map.getDataMap().putLong("updatedUtcMs", System.currentTimeMillis());
+        Wearable.getDataClient(this).putDataItem(map.asPutDataRequest());
+    }
+
+    private void verifyPhoneReachable() {
+        if (config == null || cuesDisabled) return;
+        Wearable.getNodeClient(this).getConnectedNodes()
+                .addOnSuccessListener(nodes -> {
+                    boolean found = false;
+                    for (Node node : nodes) {
+                        if (config.phoneNodeId.equals(node.getId())) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        cuesDisabled = true;
+                        terminalState = "PHONE_LOST";
+                        persistEvent("PHONE_LOST", "", "bound phone disconnected; logging continues");
+                        logEvent("PHONE_LOST", "Cueing disabled until a new session handshake");
+                        broadcastStatus("Phone lost. Logging only. Start a new session to re-arm cues.");
+                    }
+                })
+                .addOnFailureListener(error -> {
+                    cuesDisabled = true;
+                    terminalState = "PHONE_LOST";
+                    persistEvent("PHONE_QUERY_FAILED", "", error.getMessage());
+                });
+    }
+
+    private void persistEvent(String type, String cueId, String details) {
+        if (databaseExecutor == null || databaseExecutor.isShutdown()
+                || config == null) return;
+        WearEventEntity event = new WearEventEntity();
+        event.sessionId = config.sessionId;
+        event.cueId = cueId == null ? "" : cueId;
+        event.type = type == null ? "" : type;
+        event.elapsedMs = sessionStartMs == 0L
+                ? 0L : Math.max(0L, SystemClock.elapsedRealtime() - sessionStartMs);
+        event.utcMs = System.currentTimeMillis();
+        event.details = details == null ? "" : details;
+        databaseExecutor.execute(() -> dao.insertEvent(event));
+    }
+
+    private void persistSession(String state, String terminationReason) {
+        if (databaseExecutor == null || databaseExecutor.isShutdown()
+                || config == null) return;
+        WearSessionEntity snapshot = new WearSessionEntity();
+        snapshot.sessionId = config.sessionId;
+        snapshot.condition = config.condition;
+        snapshot.mode = config.mode;
+        snapshot.state = state;
+        snapshot.startUtcMs = sessionStartUtcMs;
+        snapshot.startElapsedMs = sessionStartMs;
+        snapshot.endUtcMs = "RUNNING".equals(state) ? 0L : System.currentTimeMillis();
+        snapshot.deepCues = deepCues;
+        snapshot.lucidCues = lucidCues;
+        snapshot.cueLinkedArousals = cueLinkedArousals;
+        snapshot.gain = currentGain;
+        snapshot.terminationReason = terminationReason == null ? "" : terminationReason;
+        databaseExecutor.execute(() -> dao.upsertSession(snapshot));
     }
 
     private void sendSummary() {
@@ -712,22 +971,47 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("mode", config == null ? "unknown" : config.mode);
             summary.put("minutes", sessionStartMs == 0L
                     ? 0
-                    : Math.round((System.currentTimeMillis() - sessionStartMs) / 60_000.0));
+                    : Math.round((SystemClock.elapsedRealtime() - sessionStartMs) / 60_000.0));
             summary.put("deepBlocks", deepBlocks);
             summary.put("deepCues", deepCues);
             summary.put("lucidCues", lucidCues);
+            summary.put("shamDeepEligible", shamDeepCues);
+            summary.put("shamLucidEligible", shamLucidCues);
             summary.put("cueLinkedArousals", cueLinkedArousals);
             summary.put("finalGain", currentGain);
             summary.put("lastState", latestStage);
+            summary.put("signalQuality", latestSignalQuality);
+            summary.put("terminalState", terminalState);
+            summary.put("condition", config == null ? "unknown" : config.condition);
+            summary.put("protocolVersion", com.nathanw.somnicue.shared.Protocol.VERSION);
+            summary.put("waveformVersion", "pink-pair-50ms-v1_lucid-1075ms-v1");
             summary.put("log", logFilePath);
         } catch (Exception ignored) {}
-        byte[] data = summary.toString().getBytes(StandardCharsets.UTF_8);
-        Wearable.getNodeClient(this).getConnectedNodes().addOnSuccessListener(nodes -> {
-            for (Node node : nodes) {
-                Wearable.getMessageClient(this)
-                        .sendMessage(node.getId(), Protocol.PATH_SUMMARY, data);
+        if (config == null) return;
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.nathanw.somnicue.shared.Protocol.TYPE_SUMMARY,
+                config.sessionId, "", config.watchNodeId, config.phoneNodeId,
+                System.currentTimeMillis(),
+                7L * 24L * 60L * 60L * 1000L,
+                Map.of("summary", summary.toString()));
+        PutDataMapRequest map = PutDataMapRequest.create(
+                com.nathanw.somnicue.shared.Protocol.PATH_SUMMARY_PREFIX + config.sessionId);
+        map.getDataMap().putByteArray("envelope", envelope.encode());
+        try {
+            if (!logFilePath.isEmpty()) {
+                File log = new File(logFilePath);
+                if (log.isFile()) {
+                    map.getDataMap().putAsset("sessionLog", Asset.createFromBytes(
+                            Files.readAllBytes(log.toPath())));
+                }
             }
-        });
+        } catch (IOException error) {
+            persistEvent("SUMMARY_LOG_ATTACH_FAILED", "", error.getMessage());
+        }
+        map.getDataMap().putLong("updatedUtcMs", System.currentTimeMillis());
+        PutDataRequest request = map.asPutDataRequest();
+        request.setUrgent();
+        Wearable.getDataClient(this).putDataItem(request);
     }
 
     @Override
@@ -741,14 +1025,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
         evaluatorHandler.removeCallbacks(evaluator);
         if (sensorManager != null) sensorManager.unregisterListener(this);
         endDeepBlock("service_stopped");
-        logEvent("SESSION_END", "normal stop");
-        sendSummary();
+        if ("RUNNING".equals(terminalState)) terminalState = "INTERRUPTED";
+        logEvent("SESSION_END", terminalState);
+        persistSession("COMPLETE", terminalState);
         if (logWriter != null) {
             try { logWriter.close(); } catch (IOException ignored) {}
             logWriter = null;
         }
+        sendSummary();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (sensorThread != null) sensorThread.quitSafely();
+        try { unregisterReceiver(cueAckReceiver); } catch (IllegalArgumentException ignored) {}
+        if (databaseExecutor != null) databaseExecutor.shutdown();
         broadcastStatus("Session stopped • D" + deepCues + " / L" + lucidCues);
         super.onDestroy();
     }
@@ -810,11 +1098,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private enum Stage {
         SETTLING,
         AWAKE_OR_MOVING,
-        QUIET_SLEEP,
-        PROBABLE_NREM,
-        PROBABLE_REM,
+        QUIET_UNCERTAIN,
+        NREM_ELIGIBLE,
+        REM_LIKE_ELIGIBLE,
         AROUSAL,
-        UNKNOWN
+        INSUFFICIENT_SIGNAL
     }
 
     private static final class TimedValue {
@@ -827,6 +1115,21 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
     }
 
+    private static final class PendingCue {
+        final String cueId;
+        final String cueType;
+        final long requestedElapsedMs;
+        final Runnable onAudioStarted;
+        boolean audioStarted;
+
+        PendingCue(String cueId, String cueType, long requestedElapsedMs, Runnable onAudioStarted) {
+            this.cueId = cueId;
+            this.cueType = cueType;
+            this.requestedElapsedMs = requestedElapsedMs;
+            this.onAudioStarted = onAudioStarted;
+        }
+    }
+
     private static final class FeatureSnapshot {
         final double elapsedMin;
         final double motionRms30;
@@ -834,6 +1137,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         final double heartMedian2;
         final double heartSd2;
         final double heartSlopePerMin;
+        final int motionSampleCount30;
+        final int heartSampleCount2;
         final boolean hasHeartRate;
         final boolean hasMotion;
         final double baselineHeartRate;
@@ -845,6 +1150,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 double heartMedian2,
                 double heartSd2,
                 double heartSlopePerMin,
+                int motionSampleCount30,
+                int heartSampleCount2,
                 boolean hasHeartRate,
                 boolean hasMotion,
                 double baselineHeartRate
@@ -855,6 +1162,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             this.heartMedian2 = heartMedian2;
             this.heartSd2 = heartSd2;
             this.heartSlopePerMin = heartSlopePerMin;
+            this.motionSampleCount30 = motionSampleCount30;
+            this.heartSampleCount2 = heartSampleCount2;
             this.hasHeartRate = hasHeartRate;
             this.hasMotion = hasMotion;
             this.baselineHeartRate = baselineHeartRate;
@@ -868,6 +1177,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     heartMedian2,
                     heartSd2,
                     heartSlopePerMin,
+                    motionSampleCount30,
+                    heartSampleCount2,
                     hasHeartRate,
                     hasMotion,
                     baseline

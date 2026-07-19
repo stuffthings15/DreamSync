@@ -8,6 +8,10 @@ import org.json.JSONObject;
 final class SessionConfig {
     static final String PREFS = "somnicue_config";
 
+    String sessionId = "";
+    String phoneNodeId = "";
+    String watchNodeId = "";
+    String condition = "ACTIVE";
     String mode = "DEEP";
     boolean dryRun = false;
     float cueGain = 0.04f;
@@ -27,6 +31,10 @@ final class SessionConfig {
         SessionConfig config = new SessionConfig();
         try {
             JSONObject object = new JSONObject(json);
+            config.sessionId = object.optString("sessionId", config.sessionId);
+            config.phoneNodeId = object.optString("phoneNodeId", config.phoneNodeId);
+            config.watchNodeId = object.optString("watchNodeId", config.watchNodeId);
+            config.condition = object.optString("condition", config.condition);
             config.mode = object.optString("mode", config.mode);
             config.dryRun = object.optBoolean("dryRun", false);
             config.cueGain = (float) object.optDouble("cueGain", config.cueGain);
@@ -51,6 +59,10 @@ final class SessionConfig {
     // Every path that produces a usable config must end here, so out-of-range
     // values can never reach the cue engine regardless of where they came from.
     private void clamp() {
+        sessionId = safeIdentifier(sessionId);
+        phoneNodeId = safeIdentifier(phoneNodeId);
+        watchNodeId = safeIdentifier(watchNodeId);
+        condition = "SHAM".equals(condition) ? "SHAM" : "ACTIVE";
         mode = sanitizeMode(mode);
         cueGain = clampFloat(cueGain, 0.005f, 0.20f);
         int deepStartFloor = dryRun ? 1 : 10;
@@ -80,6 +92,10 @@ final class SessionConfig {
     static SessionConfig load(Context context) {
         SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         SessionConfig c = new SessionConfig();
+        c.sessionId = p.getString("sessionId", c.sessionId);
+        c.phoneNodeId = p.getString("phoneNodeId", c.phoneNodeId);
+        c.watchNodeId = p.getString("watchNodeId", c.watchNodeId);
+        c.condition = p.getString("condition", c.condition);
         c.mode = sanitizeMode(p.getString("mode", c.mode));
         c.dryRun = p.getBoolean("dryRun", c.dryRun);
         c.cueGain = p.getFloat("cueGain", c.cueGain);
@@ -101,6 +117,10 @@ final class SessionConfig {
     void save(Context context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
+                .putString("sessionId", sessionId)
+                .putString("phoneNodeId", phoneNodeId)
+                .putString("watchNodeId", watchNodeId)
+                .putString("condition", condition)
                 .putString("mode", mode)
                 .putBoolean("dryRun", dryRun)
                 .putFloat("cueGain", cueGain)
@@ -126,6 +146,10 @@ final class SessionConfig {
         return "LUCID".equals(mode) || "COMBINED".equals(mode);
     }
 
+    boolean isActiveCondition() {
+        return "ACTIVE".equals(condition);
+    }
+
     private static String sanitizeMode(String input) {
         if ("SENSOR_ONLY".equals(input)
                 || "DEEP".equals(input)
@@ -134,6 +158,12 @@ final class SessionConfig {
             return input;
         }
         return "DEEP";
+    }
+
+    private static String safeIdentifier(String value) {
+        if (value == null) return "";
+        return value.replaceAll("[^A-Za-z0-9._:-]", "").substring(
+                0, Math.min(128, value.replaceAll("[^A-Za-z0-9._:-]", "").length()));
     }
 
     private static int clampInt(int value, int min, int max) {

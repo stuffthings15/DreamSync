@@ -1,53 +1,57 @@
 # Dream Sync
 
-Research prototype pairing a **Wear OS watch app** (sleep staging from motion + heart rate) with a **phone app** (low-gain audio cue playback).
+Private Android/Wear OS research prototype for an S23+ and Galaxy Watch Ultra.
+It logs accelerometer and heart-rate features, estimates conservative cue eligibility,
+and asks the phone to play calibrated audio. It is experimental, non-medical, and
+does not measure EEG or diagnose sleep stages.
 
-- **Deep cues** — paired 50 ms pink-noise bursts, delivered in blocks during probable early-night NREM.
-- **Lucid cues** — a two-tone chime (660/880 Hz) delivered during probable late-night REM.
-- The watch estimates *probable* sleep states from accelerometer stillness and heart-rate features. It does **not** measure EEG and does not diagnose sleep stages.
+## Research mapping
 
-## Safety gating (watch side)
+- The local source paper used two 50 ms pink-noise tones separated by 1.075 seconds,
+  phase-locked to EEG slow oscillations during consolidated NonREM sleep.
+- Dream Sync preserves the waveform timing but cannot reproduce EEG phase locking.
+  Its watch states are therefore `NREM_ELIGIBLE` and `REM_LIKE_ELIGIBLE`, not sleep-stage claims.
+- Lucid cues require fresh motion and cardiac data. Motion-only sessions log data but
+  do not trigger lucid cues.
+- `ACTIVE` and `SHAM` sessions record the same eligibility opportunities. SHAM omits sound.
 
-- Cues only fire after a stage has been stable for a configured number of minutes, inside configured time windows.
-- Any arousal (movement or heart-rate spike) ends the current cue block and starts a backoff.
-- An arousal within 20 s of a cue counts as *cue-linked*: gain drops 30%; three cue-linked arousals disable all cues for the night.
-- Gain is clamped to 0.5–20% on both devices.
+Source: Besedovsky et al., *Nature Communications* 8, 1984 (2017),
+DOI `10.1038/s41467-017-02170-3`, preserved in `docs/sleep study data.docx`.
+
+## Safety and reliability
+
+- One session binds one capability-matched phone and watch.
+- Cue envelopes carry protocol, session, message, cue, sender, target, time, and expiry fields.
+- Invalid, duplicate, expired, wrong-session, wrong-device, and unknown cue commands fail closed.
+- A cue counts against the night only after the phone reports `AUDIO_STARTED`.
+- Audio arming blocks mute, headphones, Bluetooth audio, active calls, failed calibration,
+  focus denial, incomplete playback, stale sensors, low battery, storage failure, or phone loss.
+- Process restart marks the old session interrupted. Cueing requires a fresh handshake.
 
 ## Modules
 
 | Module | Role |
 |---|---|
-| `phone/` | Config UI, cue audio playback (foreground media service), watch remote-launch, session summary display |
-| `wear/`  | Sensor collection, stage estimation, cue gating/dispatch, CSV session logs (`files/sessions/`) |
+| `shared/` | Protocol, deterministic waveform/features/eligibility, replay harness, unit tests |
+| `phone/` | Onboarding, readiness, audio, trial assignment, survey, history/export/delete, Room |
+| `wear/` | Sensors, quality gates, cue policy, watchdogs, durable summary/log, Room |
 
-Both share the message paths in `Protocol.java` (`/somnicue/config`, `/somnicue/stop`, `/somnicue/deep_cue`, `/somnicue/lucid_cue`, `/somnicue/summary`).
+## Build and test
 
-## Build
+Requires JDK 17 and Android SDK platform 36.
 
-Requirements: JDK 17+, Android SDK (platform 36). Copy `local.properties.example` to `local.properties` and set `sdk.dir`.
-
+```powershell
+$env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
+.\gradlew.bat :shared:test testDebugUnitTest :wear:assembleDebug :phone:assembleDebug
 ```
-./gradlew :phone:assembleDebug :wear:assembleDebug
-```
 
-Or use `build-local.ps1` (Windows) / `build-local.sh`.
+The phone debug APK embeds the watch debug APK for the existing private Wi-Fi ADB installer.
+Public Play distribution, production signing, Samsung Health Sensor SDK, learned models,
+Health Connect, and medical claims are deliberately out of scope.
 
-## Install
+## License and publication status
 
-Only the **phone APK** needs to leave this machine — it embeds the watch APK and can deploy it itself.
-
-1. Copy `phone/build/outputs/apk/debug/phone-debug.apk` to the phone (USB, cloud drive, `adb install`, …) and install it (allow "install unknown apps" for the file manager if asked).
-2. On the watch: Settings → System → About → tap Build number 7× to unlock Developer options, then enable **ADB debugging** and **Debug over Wi-Fi**. Note the `IP:port` it shows.
-3. In the phone app, under **Deploy watch app (Wi-Fi ADB)**, enter that address and tap **Install watch app over Wi-Fi**. Accept the debugging prompt on the watch (tick "always allow"). Both devices must be on the same Wi-Fi network.
-
-Limitations: watches that only offer pairing-code wireless debugging (e.g. Pixel Watch) can't use in-app deploy — install those once from a PC with `adb pair` / `adb connect` / `adb install wear/build/outputs/apk/debug/wear-debug.apk`. Some routers isolate wireless clients from each other; if the connection times out, check AP/client isolation.
-
-## Nightly use
-
-1. Phone: pick protocol, set gain, **Test deep cue** while lying down — calibrate to barely audible, then one step lower.
-2. Phone: **Arm phone audio + send settings**.
-3. Watch: open Dream Sync (or use **Open Dream Sync on watch**), grant sensor permissions, **Start night session**.
-4. Keep the phone 50–100 cm from the pillow, media volume low.
-5. Morning: the watch pushes a summary to the phone; the CSV log stays on the watch.
-
-Use the **accelerated test run** checkbox for a quick end-to-end test while awake — never sleep with it enabled.
+The live tree keeps the historical package ID `com.nathanw.somnicue` for private capstone use.
+No reliable license/provenance file was present in the supplied prototype. Ownership and
+third-party provenance must be resolved before any publication. Do not publish this tree
+or its APKs to a public store.

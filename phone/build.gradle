@@ -12,6 +12,11 @@ android {
         targetSdk 36
         versionCode 1
         versionName '0.1.0-nightly'
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += ["room.schemaLocation": "$projectDir/schemas"]
+            }
+        }
     }
 
     compileOptions {
@@ -40,8 +45,12 @@ tasks.named('preBuild').configure {
 }
 
 dependencies {
+    implementation project(':shared')
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
     implementation 'androidx.wear:wear-remote-interactions:1.2.0'
+    implementation 'androidx.room:room-runtime:2.8.4'
+    annotationProcessor 'androidx.room:room-compiler:2.8.4'
+    testImplementation 'junit:junit:4.13.2'
     implementation('dev.mobile:dadb:1.2.9') {
         // dadb's POM leaks JUnit as a runtime dependency; keep it out of the APK.
         exclude group: 'org.junit'

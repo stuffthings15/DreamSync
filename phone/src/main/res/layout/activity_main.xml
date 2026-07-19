@@ -70,6 +70,25 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
+            <CheckBox
+                android:id="@+id/blindTrialCheck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:buttonTint="@color/ds_violet"
+                android:text="Blinded experiment: active or sham, revealed after morning survey"
+                android:textColor="@color/ds_muted"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/readinessText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Readiness: run both test cues, connect the watch, then arm."
+                android:textColor="@color/ds_muted"
+                android:textSize="13sp" />
+
             <TextView
                 android:id="@+id/statusText"
                 android:layout_width="match_parent"
@@ -309,6 +328,76 @@
                     android:textAllCaps="false"
                     android:textColor="@color/ds_danger"
                     android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Research data card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="MORNING + RESEARCH DATA"
+                android:textColor="@color/ds_violet"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/morningButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_primary"
+                android:stateListAnimator="@null"
+                android:text="Complete morning survey"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/historyButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_outline"
+                    android:text="History"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ds_ice" />
+
+                <Button
+                    android:id="@+id/exportButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_outline"
+                    android:text="Export"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ds_ice" />
+
+                <Button
+                    android:id="@+id/deleteDataButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_danger"
+                    android:text="Delete"
+                    android:textAllCaps="false"
+                    android:textColor="@color/ds_danger" />
             </LinearLayout>
         </LinearLayout>
 

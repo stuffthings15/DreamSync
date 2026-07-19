@@ -1,0 +1,233 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "6aabdb73fcea2e9b1ac339f3915d47c7",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `condition` TEXT, `mode` TEXT, `state` TEXT, `startUtcMs` INTEGER NOT NULL, `endUtcMs` INTEGER NOT NULL, `summaryJson` TEXT, `watchLogPath` TEXT, `configurationJson` TEXT, `calibrationRecord` TEXT, `protocolVersion` INTEGER NOT NULL, `waveformVersion` TEXT, `conditionRevealed` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "condition",
+            "columnName": "condition",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startUtcMs",
+            "columnName": "startUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endUtcMs",
+            "columnName": "endUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryJson",
+            "columnName": "summaryJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "watchLogPath",
+            "columnName": "watchLogPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "configurationJson",
+            "columnName": "configurationJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "calibrationRecord",
+            "columnName": "calibrationRecord",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "protocolVersion",
+            "columnName": "protocolVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "waveformVersion",
+            "columnName": "waveformVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "conditionRevealed",
+            "columnName": "conditionRevealed",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
+      },
+      {
+        "tableName": "events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT, `cueId` TEXT, `type` TEXT, `monotonicMs` INTEGER NOT NULL, `utcMs` INTEGER NOT NULL, `details` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cueId",
+            "columnName": "cueId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "monotonicMs",
+            "columnName": "monotonicMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "utcMs",
+            "columnName": "utcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "details",
+            "columnName": "details",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_events_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_events_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_events_cueId",
+            "unique": false,
+            "columnNames": [
+              "cueId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_events_cueId` ON `${TABLE_NAME}` (`cueId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "morning_surveys",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `sleepQuality` INTEGER NOT NULL, `restedness` INTEGER NOT NULL, `rememberedAwakenings` INTEGER NOT NULL, `cueAwareness` TEXT, `dreamRecall` INTEGER NOT NULL, `lucidDream` TEXT, `adverseEffects` TEXT, `dreamNotes` TEXT, `submittedUtcMs` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sleepQuality",
+            "columnName": "sleepQuality",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restedness",
+            "columnName": "restedness",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rememberedAwakenings",
+            "columnName": "rememberedAwakenings",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cueAwareness",
+            "columnName": "cueAwareness",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dreamRecall",
+            "columnName": "dreamRecall",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lucidDream",
+            "columnName": "lucidDream",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "adverseEffects",
+            "columnName": "adverseEffects",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dreamNotes",
+            "columnName": "dreamNotes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "submittedUtcMs",
+            "columnName": "submittedUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6aabdb73fcea2e9b1ac339f3915d47c7')"
+    ]
+  }
+}

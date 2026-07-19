@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import dadb.AdbKeyPair;
+import dadb.AdbShellResponse;
 import dadb.Dadb;
 
 /**
@@ -18,6 +19,9 @@ import dadb.Dadb;
  * pairing-code wireless debugging (e.g. Pixel Watch) are not supported here.
  */
 final class WatchDeployer {
+    private static final int CONNECT_TIMEOUT_MS = 15_000;
+    private static final int SOCKET_TIMEOUT_MS = 120_000;
+
     interface StatusListener {
         void onStatus(String message);
     }
@@ -29,13 +33,20 @@ final class WatchDeployer {
     static void deploy(Context context, String host, int port, StatusListener listener) {
         try {
             File apk = extractWearApk(context);
-            listener.onStatus("Step 1/2 — Connecting to the watch at " + host + ":" + port
+            listener.onStatus("Step 1/3 - Connecting to the watch at " + host + ":" + port
                     + ". Look at the watch and tap Allow (tick \"Always allow\").");
             AdbKeyPair keyPair = loadOrCreateKeyPair(context);
-            try (Dadb dadb = Dadb.Companion.create(host, port, keyPair, 15_000, 0)) {
-                listener.onStatus("Step 2/2 — Connected. Installing the watch app…");
-                dadb.install(apk);
-                listener.onStatus("Done! Watch app installed. Open Dream Sync on the watch.");
+            // dadb connects lazily. A zero socket timeout can leave an install
+            // or authorization read waiting forever, with the UI stuck.
+            try (Dadb dadb = Dadb.Companion.create(
+                    host, port, keyPair, CONNECT_TIMEOUT_MS, SOCKET_TIMEOUT_MS)) {
+                AdbShellResponse probe = dadb.shell("echo dreamsync-ready");
+                if (probe.getExitCode() != 0) {
+                    throw new IOException("Watch connection check failed: " + probe.getAllOutput());
+                }
+                listener.onStatus("Step 2/3 - Connected and authorized. Uploading the watch app...");
+                dadb.install(apk, "-r");
+                listener.onStatus("Step 3/3 - Done! Watch app installed. Open Dream Sync on the watch.");
             }
         } catch (Exception error) {
             listener.onStatus(friendlyError(error, host));
@@ -50,7 +61,7 @@ final class WatchDeployer {
         String message = error.getMessage();
         String raw = message == null ? "" : message.toLowerCase();
         if (raw.contains("timeout") || raw.contains("timed out")) {
-            return "Couldn't reach the watch (timed out). Check the phone and watch are on the SAME Wi-Fi, and that the address matches what the watch shows. Guest networks often block this.";
+            return "Install timed out. Wake the watch, accept its debugging prompt, turn Debug over Wi-Fi off/on, confirm the new IP:port, then retry.";
         }
         if (raw.contains("refused")) {
             return "The watch refused the connection. Turn Debug over Wi-Fi off and on again, confirm the port, then retry.";
@@ -59,10 +70,10 @@ final class WatchDeployer {
             return "The watch didn't accept debugging. On the watch, tap Allow on the prompt (tick \"Always allow\"), then retry.";
         }
         if (raw.contains("unreachable") || raw.contains("no route") || raw.contains("connect")) {
-            return "No route to " + host + ". The watch may be on a different network or asleep — wake it, confirm the address, and retry.";
+            return "No route to " + host + ". The watch may be on a different network or asleep - wake it, confirm the address, and retry.";
         }
         return "Install failed: " + (message == null ? error.getClass().getSimpleName() : message)
-                + " — check the address, that Debug over Wi-Fi is on, and that both devices share a network.";
+                + " - check the address, that Debug over Wi-Fi is on, and that both devices share a network.";
     }
 
     private static File extractWearApk(Context context) throws IOException {

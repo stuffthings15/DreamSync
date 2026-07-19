@@ -21,12 +21,9 @@ public class SafetyCoreTest {
         assertEquals(6_000L, estimator.update(true, 16_000L, 10_000L));
     }
 
-    @Test public void threeLinkedArousalsDisableCues() {
+    @Test public void firstLinkedArousalDisablesCues() {
         CuePolicy policy = new CuePolicy();
-        double gain = 0.04;
-        gain = policy.onCueLinkedArousal(gain);
-        gain = policy.onCueLinkedArousal(gain);
-        gain = policy.onCueLinkedArousal(gain);
+        double gain = policy.onCueLinkedArousal(0.04);
         assertTrue(policy.isDisabled());
         assertTrue(gain >= 0.005);
     }

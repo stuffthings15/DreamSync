@@ -15,6 +15,7 @@ Date: 19 July 2026
 - Phone and watch use a single session-bound protocol with duplicate, expiry, version, device, and session rejection.
 - Health data stays local unless the user exports it.
 - One valid cue request can produce at most one playback. Invalid requests produce none.
+- Protecting sleep takes priority: any arousal starts a 20-minute quiet period and the first cue-linked arousal disables further cues for the night.
 
 ## Research alignment
 
@@ -23,6 +24,7 @@ Date: 19 July 2026
 - Fade: 5 ms.
 - Cue window: up to 120 minutes after estimated sleep onset.
 - Cueing stops when motion, heart-rate quality, connection, route, battery, or arousal safety gates fail.
+- User gain is capped at 10%; the default is 4%.
 - DreamSync estimates cue-ready windows from wrist signals. It does not measure EEG or provide medical care.
 
 ## Still required

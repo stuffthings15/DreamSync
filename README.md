@@ -1,6 +1,6 @@
 # DreamSync
 
-DreamSync is an Android and Wear OS wellness app that plays low-volume sleep cues when a paired watch detects conservative cue-ready windows from motion and heart-rate signals.
+DreamSync is an Android and Wear OS wellness app that plays low-volume sleep cues only when a paired watch detects conservative cue-ready windows from motion and heart-rate signals. Protecting sleep always takes priority over delivering a cue.
 
 DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guarantee deeper sleep, or guarantee lucid dreams. Session data stays on the user's devices unless the user chooses Export.
 
@@ -8,7 +8,7 @@ DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guara
 
 - Deep cues use two 50 ms pink-noise bursts separated by 1.075 seconds, matching the acoustic pattern in Besedovsky et al. (2017).
 - The watch waits for an estimated sleep onset, sustained stillness, usable sensor coverage, and an early-night NREM-eligible window.
-- Cueing pauses when the estimated state changes or signs of arousal appear.
+- Cueing pauses for 20 minutes after any arousal sign and stops for the night after the first cue-linked arousal.
 - DreamSync cannot reproduce the paper's EEG phase locking. It therefore uses conservative eligibility labels and makes no sleep-stage or treatment claim.
 - Lucid cues are a separate optional feature and require both reliable motion and cardiac data.
 
@@ -19,7 +19,7 @@ Source: Besedovsky et al., *Nature Communications* 8, 1984 (2017), DOI `10.1038/
 - One session binds one reachable phone and watch.
 - Invalid, duplicate, expired, wrong-session, and wrong-device commands fail closed.
 - A cue counts only after phone audio starts.
-- Cues stop for stale sensors, low battery, storage failure, phone loss, unsupported audio routes, or repeated cue-linked arousals.
+- Cues stop for stale sensors, low battery, storage failure, phone loss, unsupported audio routes, or the first cue-linked arousal.
 - A fresh phone-watch handshake is required after interruption.
 
 ## Build

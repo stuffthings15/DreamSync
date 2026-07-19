@@ -6,7 +6,7 @@ DreamSync is published by Remote. This policy explains how the Android phone and
 
 ## Data used by DreamSync
 
-During a night session, DreamSync uses watch motion and heart-rate readings to estimate cue-ready windows and pause cues when waking is detected. The app may also store session history, cue events, morning check-ins, and optional dream notes.
+During a night session, DreamSync uses watch motion and heart-rate readings to estimate cue-ready windows. Any arousal sign starts a 20-minute quiet period, and the first cue-linked wake sign stops further cues for the night. The app may also store session history, cue events, morning check-ins, and optional dream notes.
 
 ## Local processing
 

@@ -255,13 +255,13 @@ public final class MainActivity extends Activity {
             json.put("deepEndMin", 145);
             json.put("remStartMin", 255);
             json.put("sessionEndMin", 510);
-            json.put("deepStableMin", 8);
-            json.put("remStableMin", 3);
-            json.put("deepCueIntervalSec", 15);
-            json.put("deepCuesPerBlock", 8);
+            json.put("deepStableMin", 10);
+            json.put("remStableMin", 5);
+            json.put("deepCueIntervalSec", 30);
+            json.put("deepCuesPerBlock", 6);
             json.put("maxDeepBlocks", 2);
-            json.put("lucidCueIntervalSec", 90);
-            json.put("maxLucidCues", 3);
+            json.put("lucidCueIntervalSec", 180);
+            json.put("maxLucidCues", 2);
             json.put("calibration", getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_calibration", ""));
         } catch (JSONException impossible) {
@@ -605,7 +605,7 @@ public final class MainActivity extends Activity {
     }
 
     private float cueGain() {
-        return Math.max(0.01f, Math.min(0.20f, gainSeek.getProgress() / 100f));
+        return Math.max(0.01f, Math.min(0.10f, gainSeek.getProgress() / 100f));
     }
 
     private String pref(String key) {

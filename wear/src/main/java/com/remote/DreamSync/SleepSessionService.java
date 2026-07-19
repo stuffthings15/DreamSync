@@ -507,7 +507,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void handleArousal(long now) {
         if (deepBlockActive) endDeepBlock("arousal");
-        long arousalBackoffMs = 10L * 60L * 1000L;
+        long arousalBackoffMs = 20L * 60L * 1000L;
         backoffUntilMs = Math.max(backoffUntilMs, now + arousalBackoffMs);
         if (lastCueMs > 0L
                 && now - lastCueMs <= CUE_AROUSAL_WINDOW_MS
@@ -521,10 +521,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     cueLinkedArousals,
                     currentGain
             ));
-            if (cueLinkedArousals >= 3) {
-                cuesDisabled = true;
-                logEvent("CUES_DISABLED", "Three cue-linked arousals");
-            }
+            cuesDisabled = true;
+            logEvent("CUES_DISABLED", "First cue-linked arousal; sleep protection takes priority");
         }
     }
 

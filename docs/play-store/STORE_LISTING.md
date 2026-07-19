@@ -12,13 +12,13 @@
 
 ## Short description
 
-Gentle sleep cues timed by your Wear OS watch, with private on-device data.
+Sleep-first cues that stop at a wake sign, with private on-device data.
 
 ## Full description
 
-DreamSync pairs your Android phone with a Wear OS watch to deliver quiet sleep cues during conservative cue-ready windows.
+DreamSync pairs your Android phone with a Wear OS watch to deliver quiet sleep cues during conservative cue-ready windows. Protecting your sleep always takes priority over delivering a cue.
 
-Choose deep sleep cues, lucid dream cues, or both. Set a barely audible volume, open DreamSync on your watch, and start the night. The watch uses motion and heart-rate signals to estimate when cues may be less disruptive. DreamSync pauses when signals are stale or signs of waking appear.
+Choose deep sleep cues, lucid dream cues, or both. Set a barely audible volume, open DreamSync on your watch, and start the night. The watch uses motion and heart-rate signals to estimate when cues may be less disruptive. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops further cues for the night.
 
 Deep cues use two brief pink-noise bursts based on published auditory sleep research. DreamSync does not use EEG and cannot reproduce laboratory phase locking, so it makes no sleep-stage or treatment claim.
 

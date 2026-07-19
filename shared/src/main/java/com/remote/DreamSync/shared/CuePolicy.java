@@ -21,7 +21,7 @@ public final class CuePolicy {
 
     public double onCueLinkedArousal(double currentGain) {
         cueLinkedArousals++;
-        if (cueLinkedArousals >= 3) disabled = true;
+        disabled = true;
         return Math.max(0.005, currentGain * 0.70);
     }
 

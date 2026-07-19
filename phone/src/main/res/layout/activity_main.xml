@@ -44,7 +44,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Smart sleep cues, guided by your watch"
+                    android:text="Sleep-first cues, guided by your watch"
                     android:textColor="@color/ds_muted"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -204,7 +204,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:max="20"
+                android:max="10"
                 android:min="1"
                 android:progress="4"
                 android:progressTint="@color/ds_indigo"
@@ -214,7 +214,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Keep cues barely audible. DreamSync pauses after signs of waking."
+                android:text="Keep cues barely audible. One cue-linked wake sign stops cues for the night."
                 android:textColor="@color/ds_muted"
                 android:textSize="13sp" />
 

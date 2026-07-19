@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Moon disc -->
+    <path
+        android:fillColor="#F5F0E1"
+        android:pathData="M24,54a18,18 0 1,0 36,0a18,18 0 1,0 -36,0z" />
+
+    <!-- Crescent cut (matches the icon background colour) -->
+    <path
+        android:fillColor="#1E2247"
+        android:pathData="M37,48a15,15 0 1,0 30,0a15,15 0 1,0 -30,0z" />
+
+    <!-- Sync waves -->
+    <path
+        android:strokeColor="#C7D2FE"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M63.3,39.1 A26,26 0 0,1 63.3,68.9" />
+    <path
+        android:strokeColor="#A5B4FC"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M69,35.1 A33,33 0 0,1 69,72.9" />
+    <path
+        android:strokeColor="#818CF8"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M74.8,31.1 A40,40 0 0,1 74.8,76.9" />
+
+    <!-- Stars -->
+    <path
+        android:fillColor="#F5F0E1"
+        android:pathData="M30,32a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+    <path
+        android:fillColor="#F5F0E1"
+        android:pathData="M62.5,28a1.5,1.5 0 1,0 3,0a1.5,1.5 0 1,0 -3,0z" />
+</vector>

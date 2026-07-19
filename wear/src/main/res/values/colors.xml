@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1E2247</color>
+
+    <color name="ds_indigo">#5B6CE8</color>
+    <color name="ds_violet">#818CF8</color>
+    <color name="ds_ice">#CADCFC</color>
+    <color name="ds_cream">#F5F0E1</color>
+    <color name="ds_muted">#9AA3C7</color>
+    <color name="ds_danger">#C05C63</color>
+</resources>

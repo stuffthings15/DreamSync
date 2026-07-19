@@ -3,14 +3,14 @@ plugins {
 }
 
 android {
-    namespace 'com.nathanw.somnicue'
+    namespace 'com.remote.DreamSync'
     compileSdk 36
 
     defaultConfig {
-        applicationId 'com.nathanw.somnicue'
+        applicationId 'com.remote.DreamSync'
         minSdk 31
         targetSdk 36
-        versionCode 1
+        versionCode 3
         versionName '0.1.0-nightly'
         javaCompileOptions {
             annotationProcessorOptions {

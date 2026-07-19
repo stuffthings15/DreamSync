@@ -51,7 +51,7 @@ Health Connect, and medical claims are deliberately out of scope.
 
 ## License and publication status
 
-The live tree keeps the historical package ID `com.nathanw.somnicue` for private capstone use.
+The private capstone uses the Dream Sync package ID `com.remote.DreamSync`.
 No reliable license/provenance file was present in the supplied prototype. Ownership and
 third-party provenance must be resolved before any publication. Do not publish this tree
 or its APKs to a public store.

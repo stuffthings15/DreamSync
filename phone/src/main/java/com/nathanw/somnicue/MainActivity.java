@@ -651,7 +651,13 @@ public final class MainActivity extends Activity {
         final int finalPort = port;
         remoteExecutor.execute(() -> {
             WatchDeployer.deploy(this, finalHost, finalPort,
-                    message -> runOnUiThread(() -> statusText.setText(message)));
+                    message -> runOnUiThread(() -> {
+                        statusText.setText(message);
+                        if (message.startsWith("Step 1/")) deployWatchButton.setText("Connecting...");
+                        else if (message.startsWith("Step 2/")) deployWatchButton.setText("Uploading...");
+                        else if (message.startsWith("Step 3/")) deployWatchButton.setText("Installing on watch...");
+                        else if (message.startsWith("Step 4/")) deployWatchButton.setText("Installed");
+                    }));
             runOnUiThread(() -> {
                 deployWatchButton.setText("Install watch app over Wi-Fi");
                 deployWatchButton.setEnabled(true);

@@ -21,6 +21,7 @@ import dadb.Dadb;
 final class WatchDeployer {
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     private static final int SOCKET_TIMEOUT_MS = 120_000;
+    private static final String REMOTE_APK = "/data/local/tmp/dreamsync-wear.apk";
 
     interface StatusListener {
         void onStatus(String message);
@@ -33,7 +34,7 @@ final class WatchDeployer {
     static void deploy(Context context, String host, int port, StatusListener listener) {
         try {
             File apk = extractWearApk(context);
-            listener.onStatus("Step 1/3 - Connecting to the watch at " + host + ":" + port
+            listener.onStatus("Step 1/4 - Connecting to the watch at " + host + ":" + port
                     + ". Look at the watch and tap Allow (tick \"Always allow\").");
             AdbKeyPair keyPair = loadOrCreateKeyPair(context);
             // dadb connects lazily. A zero socket timeout can leave an install
@@ -44,9 +45,24 @@ final class WatchDeployer {
                 if (probe.getExitCode() != 0) {
                     throw new IOException("Watch connection check failed: " + probe.getAllOutput());
                 }
-                listener.onStatus("Step 2/3 - Connected and authorized. Uploading the watch app...");
-                dadb.install(apk, "-r");
-                listener.onStatus("Step 3/3 - Done! Watch app installed. Open Dream Sync on the watch.");
+                listener.onStatus("Step 2/4 - Connected. Uploading the watch app...");
+                try {
+                    dadb.push(apk, REMOTE_APK, 0644, apk.lastModified() / 1000L);
+                    listener.onStatus("Step 3/4 - Upload complete. Installing on the watch...");
+                    AdbShellResponse install = dadb.shell("pm install -r \"" + REMOTE_APK + "\"");
+                    String installOutput = install.getAllOutput() == null
+                            ? "" : install.getAllOutput().trim();
+                    if (!installOutput.contains("Success")) {
+                        throw new IOException("Watch package installer: " + installOutput);
+                    }
+                } finally {
+                    try {
+                        dadb.shell("rm -f \"" + REMOTE_APK + "\"");
+                    } catch (Exception ignored) {
+                        // Best-effort cleanup. Preserve the real install error.
+                    }
+                }
+                listener.onStatus("Step 4/4 - Done! Watch app installed. Open Dream Sync on the watch.");
             }
         } catch (Exception error) {
             listener.onStatus(friendlyError(error, host));

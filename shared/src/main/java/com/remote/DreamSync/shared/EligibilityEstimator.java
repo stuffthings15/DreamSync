@@ -42,6 +42,9 @@ public final class EligibilityEstimator {
         if (!quality.motionReady) {
             return new Result(State.INSUFFICIENT_SIGNAL, 0.0, 0.0, 0.0);
         }
+        if (!quality.deepCueAllowed) {
+            return new Result(State.INSUFFICIENT_SIGNAL, 0.0, 0.0, 0.0);
+        }
         double stillness = clamp01(1.0 - motionRms30 / 0.65);
         double heartDrop = quality.heartReady && !Double.isNaN(baselineHeartRate)
                 ? clamp01((baselineHeartRate - heartMedian2)

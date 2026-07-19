@@ -8,7 +8,9 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.SystemClock;
 
 import com.google.android.gms.wearable.MessageClient;
@@ -35,18 +37,57 @@ public final class CuePlaybackService extends Service
     private static final String CHANNEL_ID = "dreamsync_audio";
     private static final String PREFS = "dreamsync_phone";
     private static final int NOTIFICATION_ID = 2001;
+    private static final long ARM_CONFIRM_TIMEOUT_MS = 10L * 60L * 1000L;
 
     private final MessageGuard messageGuard = new MessageGuard();
     private ExecutorService playbackExecutor;
+    private ExecutorService databaseExecutor;
     private AudioOutput audioOutput;
     private PhoneDao dao;
+    private Handler mainHandler;
     private volatile float armedGain = 0.04f;
+    private volatile String armedSessionId = "";
+
+    private final Runnable armWatchdog = () -> {
+        String sessionId = armedSessionId;
+        if (sessionId.isEmpty()
+                || sessionId.equals(prefs("watch_live_session_id"))) return;
+        EventEntity event = new EventEntity();
+        event.sessionId = sessionId;
+        event.type = "ARM_TIMEOUT";
+        event.monotonicMs = SystemClock.elapsedRealtime();
+        event.utcMs = System.currentTimeMillis();
+        event.details = "No watch heartbeat within 10 minutes; phone audio service stopped";
+        databaseExecutor.execute(() -> {
+            dao.insertEvent(event);
+            SessionEntity session = dao.session(sessionId);
+            if (session != null) {
+                session.state = "ARM_TIMEOUT";
+                session.endUtcMs = System.currentTimeMillis();
+                dao.upsertSession(session);
+            }
+        });
+        if (sessionId.equals(prefs("active_session_id"))) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .remove("active_session_id")
+                    .remove("watch_live_session_id")
+                    .apply();
+        }
+        sendBroadcast(new Intent(PhoneDataListenerService.ACTION_STATUS_CHANGED)
+                .setPackage(getPackageName())
+                .putExtra("status", "Arming timed out. No watch session started; audio is off.")
+                .putExtra("state", "ARM_TIMEOUT")
+                .putExtra("sessionId", sessionId));
+        stopSelf();
+    };
 
     @Override public void onCreate() {
         super.onCreate();
         playbackExecutor = Executors.newSingleThreadExecutor();
+        databaseExecutor = Executors.newSingleThreadExecutor();
         audioOutput = new AudioOutput(this);
         dao = PhoneDatabase.get(this).dao();
+        mainHandler = new Handler(Looper.getMainLooper());
         Wearable.getMessageClient(this).addListener(this);
         createNotificationChannel();
     }
@@ -55,18 +96,25 @@ public final class CuePlaybackService extends Service
         startAsForeground();
         if (intent == null) return START_NOT_STICKY;
         if (ACTION_STOP.equals(intent.getAction())) {
+            armedSessionId = "";
+            mainHandler.removeCallbacks(armWatchdog);
             stopSelf();
             return START_NOT_STICKY;
         }
         armedGain = clampGain(intent.getFloatExtra(EXTRA_GAIN, armedGain));
         String action = intent.getAction();
         if (ACTION_ARM.equals(action)) {
+            armedSessionId = intent.getStringExtra(EXTRA_SESSION_ID);
+            if (armedSessionId == null) armedSessionId = "";
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putString("active_session_id", intent.getStringExtra(EXTRA_SESSION_ID))
+                    .putString("active_session_id", armedSessionId)
                     .putString("local_phone_node", intent.getStringExtra(EXTRA_LOCAL_NODE_ID))
                     .putString("bound_watch_node", intent.getStringExtra(EXTRA_WATCH_NODE_ID))
+                    .remove("watch_live_session_id")
                     .putFloat("armed_gain", armedGain)
                     .apply();
+            mainHandler.removeCallbacks(armWatchdog);
+            mainHandler.postDelayed(armWatchdog, ARM_CONFIRM_TIMEOUT_MS);
         } else if (ACTION_PREVIEW_DEEP.equals(action) || ACTION_PREVIEW_LUCID.equals(action)) {
             String type = ACTION_PREVIEW_LUCID.equals(action) ? "LUCID" : "DEEP";
             playbackExecutor.execute(() -> {
@@ -77,6 +125,7 @@ public final class CuePlaybackService extends Service
                             .putLong("last_calibration_utc", System.currentTimeMillis())
                             .apply();
                 }
+                if (armedSessionId.isEmpty()) stopSelf(startId);
             });
         }
         return START_NOT_STICKY;
@@ -223,8 +272,10 @@ public final class CuePlaybackService extends Service
     }
 
     @Override public void onDestroy() {
+        if (mainHandler != null) mainHandler.removeCallbacks(armWatchdog);
         Wearable.getMessageClient(this).removeListener(this);
         playbackExecutor.shutdownNow();
+        databaseExecutor.shutdown();
         super.onDestroy();
     }
 

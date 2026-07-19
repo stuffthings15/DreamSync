@@ -14,7 +14,7 @@ public final class SignalQualityMonitor {
         Result(boolean motionReady, boolean heartReady, String reason) {
             this.motionReady = motionReady;
             this.heartReady = heartReady;
-            this.deepCueAllowed = motionReady;
+            this.deepCueAllowed = motionReady && heartReady;
             this.lucidCueAllowed = motionReady && heartReady;
             this.reason = reason;
         }

@@ -3,15 +3,19 @@ package com.remote.DreamSync;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.TextView;
+
+import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +37,8 @@ public final class MainActivity extends Activity {
     private boolean foregroundRequestAttempted;
     private boolean backgroundRequestAttempted;
     private boolean receiverRegistered;
+    private boolean activityResumed;
+    private Intent pendingAutoArmIntent;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -41,7 +47,7 @@ public final class MainActivity extends Activity {
                 statusText.setText(intent.getStringExtra(SleepSessionService.EXTRA_STATUS));
             } else if (ACTION_CONFIG_CHANGED.equals(intent.getAction())) {
                 refreshMode();
-                statusText.setText("Phone settings received. Tap Start night session.");
+                statusText.setText("Tonight's settings are ready. Automatic sleep estimation can arm now.");
             }
         }
     };
@@ -57,19 +63,73 @@ public final class MainActivity extends Activity {
         Button stopButton = findViewById(R.id.stopButton);
         Button privacyButton = findViewById(R.id.privacyButton);
 
-        startButton.setOnClickListener(v -> {
-            pendingStart = true;
-            foregroundRequestAttempted = false;
-            backgroundRequestAttempted = false;
-            showDisclosureThenStart();
-        });
+        startButton.setOnClickListener(v -> beginAutomaticDetection());
         stopButton.setOnClickListener(v -> {
             pendingStart = false;
             stopService(new Intent(this, SleepSessionService.class));
+            SessionConfig.clear(this);
             statusText.setText("Session stopped.");
         });
         privacyButton.setOnClickListener(v -> showPrivacyAndSafety());
         refreshMode();
+        queueAutoArm(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        queueAutoArm(intent);
+    }
+
+    private void queueAutoArm(Intent intent) {
+        pendingAutoArmIntent = intent;
+        if (activityResumed) {
+            getWindow().getDecorView().post(this::runPendingAutoArm);
+        }
+    }
+
+    private void runPendingAutoArm() {
+        Intent intent = pendingAutoArmIntent;
+        pendingAutoArmIntent = null;
+        if (intent != null) maybeAutoArm(intent);
+    }
+
+    private void maybeAutoArm(Intent intent) {
+        Uri data = intent == null ? null : intent.getData();
+        if (data == null
+                || !"dreamsync".equals(data.getScheme())
+                || !"watch".equals(data.getHost())
+                || !"/arm".equals(data.getPath())) return;
+        SessionConfig config = SessionConfig.load(this);
+        String requestedSession = data.getQueryParameter("session");
+        if (requestedSession == null || !requestedSession.equals(config.sessionId)) {
+            statusText.setText("Arm request did not match tonight's settings. Try again from the phone.");
+            return;
+        }
+        if (SleepSessionService.isRunning()) {
+            statusText.setText(SleepSessionService.currentStatus());
+            return;
+        }
+        statusText.setText("Phone connected. Arming automatic sleep estimation...");
+        beginAutomaticDetection();
+    }
+
+    private void beginAutomaticDetection() {
+        if (SleepSessionService.isRunning()) {
+            statusText.setText(SleepSessionService.currentStatus());
+            return;
+        }
+        SessionConfig config = SessionConfig.load(this);
+        if (config.sessionId.isEmpty() || !config.isCurrent(System.currentTimeMillis())) {
+            pendingStart = false;
+            statusText.setText("Tonight's settings are missing or expired. Tap Arm for tonight on the phone.");
+            return;
+        }
+        pendingStart = true;
+        foregroundRequestAttempted = false;
+        backgroundRequestAttempted = false;
+        showDisclosureThenStart();
     }
 
     private void showDisclosureThenStart() {
@@ -107,11 +167,8 @@ public final class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter();
         filter.addAction(SleepSessionService.ACTION_STATUS);
         filter.addAction(ACTION_CONFIG_CHANGED);
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(statusReceiver, filter, RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(statusReceiver, filter);
-        }
+        ContextCompat.registerReceiver(
+                this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered = true;
     }
 
@@ -120,8 +177,21 @@ public final class MainActivity extends Activity {
         super.onResume();
         refreshMode();
         if (SleepSessionService.isRunning()) {
-            statusText.setText("Night session is running. You can turn the display off.");
+            statusText.setText(SleepSessionService.currentStatus());
         }
+    }
+
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        activityResumed = true;
+        runPendingAutoArm();
+    }
+
+    @Override
+    protected void onPause() {
+        activityResumed = false;
+        super.onPause();
     }
 
     @Override
@@ -157,7 +227,7 @@ public final class MainActivity extends Activity {
                         REQUEST_FOREGROUND_PERMISSIONS
                 );
                 statusText.setText(
-                        "Grant activity and heart-rate access. Heart rate is optional; motion-only fallback is supported."
+                        "Grant activity and heart-rate access. Without reliable heart data, DreamSync logs only and sends no cues."
                 );
                 return;
             }
@@ -184,7 +254,7 @@ public final class MainActivity extends Activity {
                     REQUEST_BACKGROUND_PERMISSION
             );
             statusText.setText(
-                    "For overnight heart rate, choose Sensors → Allow all the time. You may continue with motion-only fallback if denied."
+                    "For overnight heart rate, choose Sensors → Allow all the time. If denied, DreamSync logs motion but sends no cues."
             );
             return;
         }
@@ -219,8 +289,10 @@ public final class MainActivity extends Activity {
         try {
             startForegroundService(intent);
             statusText.setText(overnightHeartRateExpected
-                    ? "Starting motion + heart-rate sensing… keep the watch snug, then turn the display off."
-                    : "Starting motion-only fallback… heart rate may stop after screen-off; cues remain conservative.");
+                    ? "Automatic detection armed. Keep the watch snug, then turn the display off."
+                    : "Motion logging armed. Heart rate is unavailable, so cues stay off.");
+        } catch (ForegroundServiceStartNotAllowedException error) {
+            statusText.setText("Android blocked background sensing. Keep DreamSync open and tap Arm sleep detection again.");
         } catch (SecurityException error) {
             statusText.setText("Could not start sensor service: " + error.getMessage());
         }
@@ -238,8 +310,8 @@ public final class MainActivity extends Activity {
         if (requestCode == REQUEST_FOREGROUND_PERMISSIONS) {
             ensurePermissionsThenStart();
         } else if (requestCode == REQUEST_BACKGROUND_PERMISSION) {
-            // Background heart-rate access is valuable but not mandatory. If it is denied,
-            // the service still starts and falls back to motion plus time-of-night priors.
+            // The service may still log motion if background heart data is denied,
+            // but cue eligibility requires fresh heart-rate data.
             ensurePermissionsThenStart();
         }
     }

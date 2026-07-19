@@ -20,7 +20,9 @@ DreamSync pairs your Android phone with a Wear OS watch to deliver quiet, resear
 
 HOW IT WORKS
 
-Your watch checks motion, heart-rate freshness, and time since estimated sleep onset. DreamSync waits for a stable, low-motion period from 25 to 145 minutes after estimated sleep onset. A deep cue is two 50 millisecond pink-noise bursts, 1.075 seconds apart, with gentle 5 millisecond fades. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops further cues for the night.
+Tap Arm for tonight once. DreamSync sends fresh settings, opens the watch, and—after any first-use permission prompts—arms visible overnight sensing. Your watch then checks sustained low motion, fresh heart-rate data, and signal quality to estimate likely sleep onset automatically. Cue timing starts from that estimate, not from the button tap. If heart data is not reliable, DreamSync logs only and sends no cues. If sleep is not estimated within three hours, the session ends without sending cues.
+
+DreamSync waits for a stable, low-motion period from 25 to 145 minutes after estimated sleep onset. A deep cue is two 50 millisecond pink-noise bursts, 1.075 seconds apart, with gentle 5 millisecond fades. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops further cues for the night.
 
 SCIENCE, CLEARLY STATED
 
@@ -43,8 +45,8 @@ Your session history, morning check-ins, and optional dream notes stay on your p
 
 DreamSync is intended for adults age 18 and older. It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. It does not guarantee deeper sleep, memory improvement, immune effects, or lucid dreams. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
 
-Requires an Android phone and a compatible Wear OS watch with motion sensors. Heart-rate access is required for lucid cue timing.
+Requires an Android phone and a compatible Wear OS watch with motion and heart-rate sensors. Reliable heart-rate access is required for automatic cueing.
 
 ## Release notes
 
-DreamSync 1.0 explains its peer-reviewed basis, uses research-shaped deep-cue timing, prioritizes uninterrupted sleep, and keeps personal data on the user's devices.
+DreamSync 1.0 adds one-tap arming, automatic estimated sleep-onset detection, research-shaped deep-cue timing, sleep-first shutoffs, and private on-device data.

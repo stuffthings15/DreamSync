@@ -13,9 +13,11 @@ Sleep-first cues shaped by peer-reviewed studies, with private on-device data.
 Supporting points:
 
 - Protecting sleep takes priority over delivering cues.
+- One tap arms the night; the watch then estimates likely sleep onset automatically and starts all cue windows from that estimate.
 - The published acoustic structure is implemented exactly: two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.
 - The default app budget is at most 12 paired deep cues, compared with about 172 paired stimulations on average in the 120-minute laboratory protocol.
-- Motion, heart-rate freshness, estimated sleep onset, and time-of-night gates reduce unnecessary cueing.
+- Motion, heart-rate freshness, estimated sleep onset, and time-of-night gates reduce unnecessary cueing. Motion-only sessions log but do not cue.
+- Fresh settings expire, and a three-hour no-sleep timeout ends monitoring without sending cues.
 - Any arousal starts a 20-minute quiet period; the first cue-linked wake sign ends cueing for the night.
 - Personal data stays on the paired devices unless the user chooses Export.
 
@@ -25,6 +27,7 @@ Supporting points:
 
 - DreamSync plays the published paired-burst acoustic pattern.
 - DreamSync estimates conservative cue-ready windows from wrist motion, heart rate, and elapsed time.
+- DreamSync can say that sleep-onset timing becomes automatic after the user visibly arms health sensing for that night.
 - DreamSync uses explicit signal-quality, arousal, route, battery, connection, and volume safety gates.
 - DreamSync stores data locally and gives the user export and deletion controls.
 
@@ -48,7 +51,7 @@ Supporting points:
 ## Store-page structure
 
 1. Lead with sleep-first behavior and privacy.
-2. Explain the four-step phone-watch workflow in plain language.
+2. Explain one-tap arming, automatic estimated onset, and the visible watch sensing notification in plain language.
 3. State the main study design and results with sample size and attribution.
 4. Explain the EEG-versus-wrist difference immediately after the findings.
 5. List four peer-reviewed sources by author, journal, year, and DOI.

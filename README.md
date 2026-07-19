@@ -4,10 +4,17 @@ DreamSync is an Android and Wear OS wellness app that plays low-volume sleep cue
 
 DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guarantee deeper sleep, or guarantee lucid dreams. Session data stays on the user's devices unless the user chooses Export.
 
+## Automatic sleep estimation
+
+Tap **Arm for tonight** once on the phone. DreamSync sends fresh, time-limited settings, opens the watch, and starts approved foreground sensing after any first-use permission prompts. The watch then waits for 10 sustained minutes of valid low-motion and fresh heart-rate signals, estimates likely sleep onset, and anchors all cue windows to that estimate. No cue is allowed before estimated onset and the later stability gates. Motion-only sessions log data but send no cues.
+
+Android does not allow DreamSync to silently start health sensing every night. The one-tap arm action preserves consent, makes sensing visible, and avoids an unsafe background restart.
+
 ## Research basis
 
 - Deep cues use two 50 ms pink-noise bursts separated by 1.075 seconds, matching the acoustic pattern in Besedovsky et al. (2017).
 - The watch waits for an estimated sleep onset, sustained stillness, usable sensor coverage, and an early-night NREM-eligible window.
+- If sleep is not estimated within three hours of arming, the session ends without sending cues. Once sleep is estimated, the normal session clock starts from that point rather than from the arm tap.
 - Cueing pauses for 20 minutes after any arousal sign and stops for the night after the first cue-linked arousal.
 - DreamSync cannot reproduce the paper's EEG phase locking. It therefore uses conservative eligibility labels and makes no sleep-stage or treatment claim.
 - Lucid cues are a separate optional feature and require both reliable motion and cardiac data.

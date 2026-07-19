@@ -3,6 +3,8 @@ package com.remote.DreamSync;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.remote.DreamSync.shared.SleepSessionClock;
+
 import org.json.JSONObject;
 
 final class SessionConfig {
@@ -12,7 +14,10 @@ final class SessionConfig {
     String phoneNodeId = "";
     String watchNodeId = "";
     String mode = "DEEP";
+    long createdUtcMs;
+    long expiresUtcMs;
     float cueGain = 0.04f;
+    int armTimeoutMin = 180;
     int deepStartMin = 25;
     int deepEndMin = 145;
     int remStartMin = 255;
@@ -33,7 +38,10 @@ final class SessionConfig {
             config.phoneNodeId = object.optString("phoneNodeId", config.phoneNodeId);
             config.watchNodeId = object.optString("watchNodeId", config.watchNodeId);
             config.mode = object.optString("mode", config.mode);
+            config.createdUtcMs = object.optLong("createdUtcMs", config.createdUtcMs);
+            config.expiresUtcMs = object.optLong("expiresUtcMs", config.expiresUtcMs);
             config.cueGain = (float) object.optDouble("cueGain", config.cueGain);
+            config.armTimeoutMin = object.optInt("armTimeoutMin", config.armTimeoutMin);
             config.deepStartMin = object.optInt("deepStartMin", config.deepStartMin);
             config.deepEndMin = object.optInt("deepEndMin", config.deepEndMin);
             config.remStartMin = object.optInt("remStartMin", config.remStartMin);
@@ -60,6 +68,7 @@ final class SessionConfig {
         watchNodeId = safeIdentifier(watchNodeId);
         mode = sanitizeMode(mode);
         cueGain = clampFloat(cueGain, 0.005f, 0.10f);
+        armTimeoutMin = clampInt(armTimeoutMin, 30, 360);
         deepStartMin = clampInt(deepStartMin, 10, 120);
         deepEndMin = clampInt(deepEndMin, 60, 300);
         remStartMin = clampInt(remStartMin, 180, 420);
@@ -86,7 +95,10 @@ final class SessionConfig {
         c.phoneNodeId = p.getString("phoneNodeId", c.phoneNodeId);
         c.watchNodeId = p.getString("watchNodeId", c.watchNodeId);
         c.mode = sanitizeMode(p.getString("mode", c.mode));
+        c.createdUtcMs = p.getLong("createdUtcMs", c.createdUtcMs);
+        c.expiresUtcMs = p.getLong("expiresUtcMs", c.expiresUtcMs);
         c.cueGain = p.getFloat("cueGain", c.cueGain);
+        c.armTimeoutMin = p.getInt("armTimeoutMin", c.armTimeoutMin);
         c.deepStartMin = p.getInt("deepStartMin", c.deepStartMin);
         c.deepEndMin = p.getInt("deepEndMin", c.deepEndMin);
         c.remStartMin = p.getInt("remStartMin", c.remStartMin);
@@ -109,7 +121,10 @@ final class SessionConfig {
                 .putString("phoneNodeId", phoneNodeId)
                 .putString("watchNodeId", watchNodeId)
                 .putString("mode", mode)
+                .putLong("createdUtcMs", createdUtcMs)
+                .putLong("expiresUtcMs", expiresUtcMs)
                 .putFloat("cueGain", cueGain)
+                .putInt("armTimeoutMin", armTimeoutMin)
                 .putInt("deepStartMin", deepStartMin)
                 .putInt("deepEndMin", deepEndMin)
                 .putInt("remStartMin", remStartMin)
@@ -122,6 +137,14 @@ final class SessionConfig {
                 .putInt("lucidCueIntervalSec", lucidCueIntervalSec)
                 .putInt("maxLucidCues", maxLucidCues)
                 .apply();
+    }
+
+    static void clear(Context context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+    }
+
+    boolean isCurrent(long nowUtcMs) {
+        return SleepSessionClock.isCurrentArmWindow(createdUtcMs, expiresUtcMs, nowUtcMs);
     }
 
     boolean usesDeepCues() {

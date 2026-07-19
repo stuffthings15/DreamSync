@@ -9,7 +9,8 @@ Date: 19 July 2026
 - Package: `com.remote.DreamSync`.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS signed release bundles pass.
-- Shared safety checks pass: 9 checks, 0 failures.
+- Shared safety and protocol checks pass: 12 checks, 0 failures.
+- Phone and Wear OS Android lint checks pass with no blocking errors.
 - Phone app installs and launches on Android 16.
 - Onboarding, disclosure, main screen, research explanation, export, deletion, and privacy controls are present.
 - Phone and watch use a single session-bound protocol with duplicate, expiry, version, device, and session rejection.
@@ -18,6 +19,14 @@ Date: 19 July 2026
 - Protecting sleep takes priority: any arousal starts a 20-minute quiet period and the first cue-linked arousal disables further cues for the night.
 - The 10% gain ceiling is enforced in the interface, watch configuration, and phone playback service.
 - Conservative sleep-first fallbacks are enforced even when a saved configuration is missing.
+- One phone tap creates fresh, six-hour settings and targets the bound watch only.
+- The watch waits until its Activity is resumed before starting the visible health foreground service.
+- Likely sleep onset is estimated only after 10 sustained minutes of valid low motion plus fresh heart-rate data.
+- Motion-only sessions log data but cannot trigger deep or lucid cues.
+- Cue timing starts from estimated onset, not the arm tap; no estimate within three hours ends the session without cues.
+- Stale, reordered, stopped-session, and wrong-session arm flows fail closed.
+- A 10-minute phone watchdog shuts the audio service down unless a live watch heartbeat arrives.
+- Pending Arm, double-Arm, delayed ACK, and Stop races are generation-guarded.
 
 ## Research alignment
 
@@ -34,5 +43,6 @@ Date: 19 July 2026
 ## Still required
 
 - Physical S23+ and Watch Ultra sensor/audio validation.
+- Physical verification of the phone-to-bound-watch automatic launch and first-use permission flow.
 - Play Console listing and release-asset submission.
 - Google Play closed-release gate: 12 opted-in users for 14 continuous days.

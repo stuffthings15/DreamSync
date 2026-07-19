@@ -56,11 +56,18 @@ public final class PhoneDataListenerService extends WearableListenerService {
     private void handleState(ProtocolEnvelope envelope) {
         if (!com.remote.DreamSync.shared.Protocol.TYPE_CONFIG_ACK.equals(envelope.messageType)
                 && !com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)) return;
+        if (!envelope.sessionId.equals(pref("active_session_id"))) return;
+        if (com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString("watch_live_session_id", envelope.sessionId)
+                    .apply();
+        }
         String status = envelope.payload.getOrDefault("status", "Watch acknowledged session");
+        String state = envelope.payload.getOrDefault("state", "ARMED");
         databaseExecutor.execute(() -> {
             SessionEntity session = PhoneDatabase.get(this).dao().session(envelope.sessionId);
             if (session != null) {
-                session.state = envelope.payload.getOrDefault("state", "ARMED");
+                session.state = state;
                 PhoneDatabase.get(this).dao().upsertSession(session);
             }
             EventEntity event = new EventEntity();
@@ -74,7 +81,9 @@ public final class PhoneDataListenerService extends WearableListenerService {
             PhoneDatabase.get(this).dao().insertEvent(event);
         });
         sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
-                .putExtra("status", status));
+                .putExtra("status", status)
+                .putExtra("state", state)
+                .putExtra("sessionId", envelope.sessionId));
     }
 
     private void handleSummary(ProtocolEnvelope envelope, Asset logAsset) {

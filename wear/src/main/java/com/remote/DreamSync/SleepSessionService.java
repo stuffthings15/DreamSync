@@ -23,6 +23,8 @@ import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
 
+import androidx.core.content.ContextCompat;
+
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
@@ -32,6 +34,7 @@ import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SignalQualityMonitor;
 import com.remote.DreamSync.shared.SleepOnsetEstimator;
+import com.remote.DreamSync.shared.SleepSessionClock;
 
 import org.json.JSONObject;
 
@@ -68,6 +71,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final long CUE_AROUSAL_WINDOW_MS = 20_000L;
 
     private static volatile boolean running;
+    private static volatile String currentStatus = "Not armed.";
 
     private final Object sampleLock = new Object();
     private final Deque<TimedValue> heartSamples = new ArrayDeque<>();
@@ -94,6 +98,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private long lastLucidCueMs;
     private long nextDeepCueMs;
     private long lastCueArousalCountedForMs;
+    private long estimatedSleepOnsetMs;
     private double baselineHeartRate = Double.NaN;
     private double currentGain;
     private double gravityX;
@@ -103,6 +108,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean accelerometerRegistered;
     private boolean heartRateRegistered;
     private boolean storageHealthy = true;
+    private boolean sessionInitialized;
 
     private int deepBlocks;
     private int deepCues;
@@ -161,6 +167,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
         return running;
     }
 
+    static String currentStatus() {
+        return currentStatus;
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -176,8 +186,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         dao = WearDatabase.get(this).dao();
         databaseExecutor.execute(() -> dao.markInterrupted(System.currentTimeMillis()));
         IntentFilter ackFilter = new IntentFilter(ACTION_CUE_ACK);
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(cueAckReceiver, ackFilter, RECEIVER_NOT_EXPORTED);
-        else registerReceiver(cueAckReceiver, ackFilter);
+        ContextCompat.registerReceiver(
+                this, cueAckReceiver, ackFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
         createNotificationChannel();
     }
 
@@ -197,20 +207,24 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void startSession() {
         config = SessionConfig.load(this);
-        if (config.sessionId.isEmpty() || config.phoneNodeId.isEmpty() || config.watchNodeId.isEmpty()) {
-            broadcastStatus("No acknowledged phone session. Send settings from the phone first.");
+        if (config.sessionId.isEmpty()
+                || config.phoneNodeId.isEmpty()
+                || config.watchNodeId.isEmpty()
+                || !config.isCurrent(System.currentTimeMillis())) {
+            broadcastStatus("Tonight's settings are missing or expired. Tap Arm for tonight on the phone.");
             stopSelf();
             return;
         }
         currentGain = config.cueGain;
         sessionStartMs = SystemClock.elapsedRealtime();
         sessionStartUtcMs = System.currentTimeMillis();
+        sessionInitialized = true;
         running = true;
         startAsForeground();
         acquireWakeLock();
         openLog();
         registerSensors();
-        persistSession("RUNNING", "");
+        persistSession("WAITING_FOR_SLEEP", "");
         if (!accelerometerRegistered) {
             terminalState = "SENSOR_FAILED";
             cuesDisabled = true;
@@ -219,14 +233,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
             stopSelf();
             return;
         }
-        logEvent("SESSION_START", String.format(
+        persistEvent("AUTO_SLEEP_ESTIMATION_ARMED", "", "armTimeoutMin=" + config.armTimeoutMin);
+        logEvent("AUTO_SLEEP_ESTIMATION_ARMED", String.format(
                 Locale.US,
-                "mode=%s gain=%.3f hrSensor=%s",
+                "mode=%s gain=%.3f hrSensor=%s armTimeoutMin=%d",
                 config.mode,
                 currentGain,
-                heartRate != null
+                heartRate != null,
+                config.armTimeoutMin
         ));
-        broadcastStatus("Session running • calibrating motion and heart rate");
+        broadcastStatus("Automatic sleep estimation armed • waiting for sustained sleep signals");
         evaluatorHandler.postDelayed(evaluator, EVALUATION_INTERVAL_MS);
     }
 
@@ -307,14 +323,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void evaluateAndAct() {
         long now = SystemClock.elapsedRealtime();
-        double elapsedMin = (now - sessionStartMs) / 60_000.0;
-        if (elapsedMin >= config.sessionEndMin) {
-            terminalState = "TIMED_OUT";
-            logEvent("SESSION_TIMEOUT", "Configured end reached");
-            stopSelf();
-            return;
-        }
-        if (batteryPercent() >= 0 && batteryPercent() <= 10) {
+        double armedElapsedMin = (now - sessionStartMs) / 60_000.0;
+        int battery = batteryPercent();
+        if (battery >= 0 && battery <= 10) {
             terminalState = "LOW_BATTERY";
             cuesDisabled = true;
             logEvent("LOW_BATTERY", "Watch battery reached shutdown threshold");
@@ -322,8 +333,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             return;
         }
 
-        FeatureSnapshot features = calculateFeatures(now, elapsedMin);
-        updateBaseline(now, elapsedMin, features);
+        FeatureSnapshot features = calculateFeatures(now, armedElapsedMin);
+        updateBaseline(now, armedElapsedMin, features);
         features = features.withBaseline(baselineHeartRate);
 
         boolean arousal = isArousal(features);
@@ -332,13 +343,41 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 features.motionSampleCount30, features.heartSampleCount2,
                 accelerometerRegistered, heartRateRegistered);
         latestSignalQuality = quality.reason;
-        boolean quietCandidate = quality.motionReady
+        boolean quietCandidate = quality.deepCueAllowed
                 && !arousal && !Double.isNaN(features.motionRms30)
                 && features.motionRms30 < 0.30;
         long onset = sleepOnsetEstimator.update(
                 quietCandidate, now, 10L * 60_000L);
-        double sleepElapsedMin = onset > 0L ? (now - onset) / 60_000.0 : -1.0;
-        double priorElapsed = Math.max(0.0, sleepElapsedMin);
+        boolean onsetJustDetected = estimatedSleepOnsetMs == 0L && onset > 0L;
+        if (onsetJustDetected) {
+            estimatedSleepOnsetMs = onset;
+            long onsetUtcMs = sessionStartUtcMs + Math.max(0L, onset - sessionStartMs);
+            String details = String.format(
+                    Locale.US,
+                    "minutesAfterArming=%.1f;onsetUtcMs=%d;basis=sustained_low_motion",
+                    (onset - sessionStartMs) / 60_000.0,
+                    onsetUtcMs
+            );
+            persistEvent("SLEEP_ONSET_ESTIMATED", "", details);
+            persistSession("SLEEP_ONSET_ESTIMATED", "");
+            logEvent("SLEEP_ONSET_ESTIMATED", details);
+            updateSessionNotification("Sleep estimated • cue safety checks active");
+        }
+        double sleepElapsedMin = SleepSessionClock.sleepElapsedMinutes(onset, now);
+        if (SleepSessionClock.armTimedOut(
+                sessionStartMs, onset, now, config.armTimeoutMin)) {
+            terminalState = "TIMED_OUT";
+            persistEvent("SLEEP_NOT_DETECTED", "", "arm timeout reached; no cues sent");
+            logEvent("SESSION_TIMEOUT", "Sleep was not detected before the arm timeout");
+            stopSelf();
+            return;
+        }
+        if (SleepSessionClock.sleepTimedOut(onset, now, config.sessionEndMin)) {
+            terminalState = "TIMED_OUT";
+            logEvent("SESSION_TIMEOUT", "Configured time since estimated sleep onset reached");
+            stopSelf();
+            return;
+        }
         EligibilityEstimator.Result estimate = eligibilityEstimator.estimate(
                 sleepElapsedMin,
                 features.motionRms30,
@@ -347,8 +386,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 baselineHeartRate,
                 arousal,
                 quality,
-                earlyNightPrior(priorElapsed),
-                remPrior(priorElapsed),
+                earlyNightPrior(sleepElapsedMin),
+                remPrior(sleepElapsedMin),
                 config.deepStartMin,
                 config.deepEndMin,
                 config.remStartMin);
@@ -361,10 +400,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (arousal) {
             handleArousal(now);
         } else {
-            handleDeepCueing(now, priorElapsed, stage);
-            handleLucidCueing(now, priorElapsed, stage);
+            handleDeepCueing(now, sleepElapsedMin, stage);
+            handleLucidCueing(now, sleepElapsedMin, stage);
         }
-        if (!quality.motionReady && elapsedMin >= 15.0) {
+        if (!quality.motionReady && armedElapsedMin >= 15.0) {
             cuesDisabled = true;
             terminalState = "SENSOR_FAILED";
             persistEvent("SENSOR_DEGRADED", "", quality.reason);
@@ -380,6 +419,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             return;
         }
         expirePendingCues(now);
+        if (onsetJustDetected) {
+            publishHeartbeat(quality.reason);
+        }
         if (now - lastHeartbeatMs >= 60_000L) {
             lastHeartbeatMs = now;
             publishHeartbeat(quality.reason);
@@ -387,8 +429,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
 
         String event = "TICK";
-        writeLogRow(now, elapsedMin, features, nremScore, remScore, stage.name(), event);
-        broadcastStatus(statusLine(elapsedMin, features, nremScore, remScore, stage));
+        writeLogRow(now, armedElapsedMin, features, nremScore, remScore, stage.name(), event);
+        broadcastStatus(statusLine(armedElapsedMin, sleepElapsedMin, features, stage));
     }
 
     private FeatureSnapshot calculateFeatures(long now, double elapsedMin) {
@@ -462,34 +504,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && f.heartMedian2 > baselineHeartRate + 14.0
                 && f.heartSlopePerMin > 2.0;
         return movementArousal || heartArousal;
-    }
-
-    private Stage classifyStage(
-            double elapsedMin,
-            FeatureSnapshot features,
-            boolean arousal,
-            double stillness,
-            double heartIrregularity,
-            double nremScore,
-            double remScore
-    ) {
-        if (arousal) return Stage.AROUSAL;
-        if (!features.hasMotion) return Stage.INSUFFICIENT_SIGNAL;
-        if (elapsedMin < 10.0) return Stage.SETTLING;
-        if (elapsedMin >= config.deepStartMin
-                && elapsedMin <= config.deepEndMin
-                && stillness >= 0.72
-                && nremScore >= 0.72) {
-            return Stage.NREM_ELIGIBLE;
-        }
-        if (elapsedMin >= config.remStartMin
-                && stillness >= 0.68
-                && remScore >= 0.68
-                && (heartIrregularity >= 0.20 || !features.hasHeartRate)) {
-            return Stage.REM_LIKE_ELIGIBLE;
-        }
-        if (stillness >= 0.62) return Stage.QUIET_UNCERTAIN;
-        return Stage.AWAKE_OR_MOVING;
     }
 
     private void updateStability(Stage stage, long now) {
@@ -657,31 +671,37 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private String statusLine(
-            double elapsedMin,
+            double armedElapsedMin,
+            double sleepElapsedMin,
             FeatureSnapshot features,
-            double nremScore,
-            double remScore,
             Stage stage
     ) {
         String heart = features.hasHeartRate
                 ? String.format(Locale.US, "HR %.0f", features.heartMedian2)
                 : "HR --";
+        if (sleepElapsedMin < 0.0) {
+            return String.format(
+                    Locale.US,
+                    "Waiting for sleep • %.0f min armed • %s • cues off",
+                    armedElapsedMin,
+                    heart
+            );
+        }
         String cueState = cuesDisabled
                 ? " • cues off"
                 : String.format(Locale.US, " • D%d/L%d", deepCues, lucidCues);
         return String.format(
                 Locale.US,
-                "%s • %.0f min • %s • N %.2f R %.2f%s",
+                "%s • %.0f min since sleep estimate • %s%s",
                 stage.name().replace('_', ' '),
-                elapsedMin,
+                sleepElapsedMin,
                 heart,
-                nremScore,
-                remScore,
                 cueState
         );
     }
 
     private void broadcastStatus(String status) {
+        currentStatus = status;
         sendBroadcast(new Intent(ACTION_STATUS)
                 .setPackage(getPackageName())
                 .putExtra(EXTRA_STATUS, status));
@@ -707,6 +727,19 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void startAsForeground() {
+        Notification notification = buildNotification("Automatic sleep estimation is armed");
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+            );
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+    }
+
+    private Notification buildNotification(String contentText) {
         Intent openIntent = new Intent(this, MainActivity.class);
         PendingIntent openPendingIntent = PendingIntent.getActivity(
                 this,
@@ -721,10 +754,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 stopIntent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
+        return new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle("DreamSync night session")
-                .setContentText("Motion and heart-rate staging is active")
+                .setContentText(contentText)
                 .setOngoing(true)
                 .setContentIntent(openPendingIntent)
                 .addAction(new Notification.Action.Builder(
@@ -733,15 +766,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         stopPendingIntent
                 ).build())
                 .build();
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
-            );
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
-        }
+    }
+
+    private void updateSessionNotification(String contentText) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification(contentText));
     }
 
     private void createNotificationChannel() {
@@ -761,9 +790,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 "DreamSync::NightSession"
         );
         wakeLock.setReferenceCounted(false);
-        // Cover the whole configured session (sessionEndMin is clamped to <= 720 min)
-        // plus margin, so the evaluator cannot outlive the lock in doze.
-        wakeLock.acquire(config.sessionEndMin * 60_000L + WAKELOCK_MARGIN_MS);
+        // Cover both the pre-sleep arm window and the post-onset session.
+        long monitoringMs = (config.armTimeoutMin + (long) config.sessionEndMin) * 60_000L;
+        wakeLock.acquire(monitoringMs + WAKELOCK_MARGIN_MS);
     }
 
     private void openLog() {
@@ -871,16 +900,25 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void publishHeartbeat(String qualityReason) {
         if (config == null) return;
+        String state = monitoringState();
+        String status;
+        if ("DEGRADED".equals(state)) {
+            status = "Logging only: " + qualityReason;
+        } else if ("WAITING_FOR_SLEEP".equals(state)) {
+            status = "Automatic sleep estimation armed. Waiting for sustained sleep signals.";
+        } else if ("CUE_WINDOW_ACTIVE".equals(state)) {
+            status = "Sleep estimated. Conservative cue window is active.";
+        } else {
+            status = "Sleep estimated. Cue safety checks are active.";
+        }
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
                 com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT,
                 config.sessionId, "", config.watchNodeId, config.phoneNodeId,
                 System.currentTimeMillis(),
                 com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS,
                 Map.of(
-                        "state", cuesDisabled ? "DEGRADED" : "RUNNING",
-                        "status", cuesDisabled
-                                ? "Logging only: " + qualityReason
-                                : "Watch live: " + latestStage,
+                        "state", state,
+                        "status", status,
                         "signalQuality", qualityReason,
                         "batteryPercent", Integer.toString(batteryPercent())
                 ));
@@ -889,6 +927,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
         map.getDataMap().putByteArray("envelope", envelope.encode());
         map.getDataMap().putLong("updatedUtcMs", System.currentTimeMillis());
         Wearable.getDataClient(this).putDataItem(map.asPutDataRequest());
+    }
+
+    private String monitoringState() {
+        if (cuesDisabled) return "DEGRADED";
+        if (estimatedSleepOnsetMs <= 0L) return "WAITING_FOR_SLEEP";
+        if ("NREM_ELIGIBLE".equals(latestStage)
+                || "REM_LIKE_ELIGIBLE".equals(latestStage)) {
+            return "CUE_WINDOW_ACTIVE";
+        }
+        return "SLEEP_ONSET_ESTIMATED";
     }
 
     private void verifyPhoneReachable() {
@@ -940,13 +988,21 @@ public final class SleepSessionService extends Service implements SensorEventLis
         snapshot.state = state;
         snapshot.startUtcMs = sessionStartUtcMs;
         snapshot.startElapsedMs = sessionStartMs;
-        snapshot.endUtcMs = "RUNNING".equals(state) ? 0L : System.currentTimeMillis();
+        snapshot.endUtcMs = isActiveState(state) ? 0L : System.currentTimeMillis();
         snapshot.deepCues = deepCues;
         snapshot.lucidCues = lucidCues;
         snapshot.cueLinkedArousals = cueLinkedArousals;
         snapshot.gain = currentGain;
         snapshot.terminationReason = terminationReason == null ? "" : terminationReason;
         databaseExecutor.execute(() -> dao.upsertSession(snapshot));
+    }
+
+    private boolean isActiveState(String state) {
+        return "RUNNING".equals(state)
+                || "WAITING_FOR_SLEEP".equals(state)
+                || "SLEEP_ONSET_ESTIMATED".equals(state)
+                || "CUE_WINDOW_ACTIVE".equals(state)
+                || "DEGRADED".equals(state);
     }
 
     private void sendSummary() {
@@ -956,6 +1012,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("minutes", sessionStartMs == 0L
                     ? 0
                     : Math.round((SystemClock.elapsedRealtime() - sessionStartMs) / 60_000.0));
+            summary.put("automaticSleepOnsetEstimation", true);
+            summary.put("sleepOnsetEstimated", estimatedSleepOnsetMs > 0L);
+            summary.put("estimatedSleepOnsetMinutesAfterArming", estimatedSleepOnsetMs <= 0L
+                    ? -1
+                    : Math.round((estimatedSleepOnsetMs - sessionStartMs) / 60_000.0));
+            summary.put("sleepMinutes", estimatedSleepOnsetMs <= 0L
+                    ? 0
+                    : Math.round((SystemClock.elapsedRealtime()
+                    - estimatedSleepOnsetMs) / 60_000.0));
             summary.put("deepBlocks", deepBlocks);
             summary.put("deepCues", deepCues);
             summary.put("lucidCues", lucidCues);
@@ -1003,6 +1068,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         sessionFinished = true;
         running = false;
+        if (!sessionInitialized) {
+            if (evaluatorHandler != null) evaluatorHandler.removeCallbacks(evaluator);
+            if (sensorManager != null) sensorManager.unregisterListener(this);
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            if (sensorThread != null) sensorThread.quitSafely();
+            try { unregisterReceiver(cueAckReceiver); } catch (IllegalArgumentException ignored) {}
+            if (databaseExecutor != null) databaseExecutor.shutdown();
+            super.onDestroy();
+            return;
+        }
         evaluatorHandler.removeCallbacks(evaluator);
         if (sensorManager != null) sensorManager.unregisterListener(this);
         endDeepBlock("service_stopped");

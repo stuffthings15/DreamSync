@@ -54,6 +54,7 @@ public final class WearCommandListenerService extends WearableListenerService {
         if (result != MessageGuard.Result.ACCEPT) return;
         if (Protocol.PATH_STOP.equals(event.getPath())
                 && com.remote.DreamSync.shared.Protocol.TYPE_STOP.equals(envelope.messageType)) {
+            SessionConfig.clear(this);
             stopService(new Intent(this, SleepSessionService.class)
                     .setAction(SleepSessionService.ACTION_STOP)
                     .putExtra("terminationReason", "USER_STOPPED"));
@@ -75,7 +76,13 @@ public final class WearCommandListenerService extends WearableListenerService {
         SessionConfig config = SessionConfig.fromJson(json);
         if (!envelope.sessionId.equals(config.sessionId)
                 || !envelope.senderDeviceId.equals(config.phoneNodeId)
-                || !localNodeId.equals(config.watchNodeId)) return;
+                || !localNodeId.equals(config.watchNodeId)
+                || !config.isCurrent(System.currentTimeMillis())) return;
+        if (SleepSessionService.isRunning()) return;
+        SessionConfig current = SessionConfig.load(this);
+        if (current.isCurrent(System.currentTimeMillis())
+                && !current.sessionId.equals(config.sessionId)
+                && current.createdUtcMs >= config.createdUtcMs) return;
         config.save(this);
         databaseExecutor.execute(() -> {
             WearSessionEntity session = new WearSessionEntity();
@@ -91,9 +98,10 @@ public final class WearCommandListenerService extends WearableListenerService {
             event.utcMs = System.currentTimeMillis();
             event.details = "protocol v" + envelope.protocolVersion;
             WearDatabase.get(this).dao().insertEvent(event);
+            publishState(config, "ARMED", "Watch ready. Opening automatic sleep estimation.");
+            sendBroadcast(new Intent(MainActivity.ACTION_CONFIG_CHANGED)
+                    .setPackage(getPackageName()));
         });
-        publishState(config, "ARMED", "Watch acknowledged settings. Tap Start night session.");
-        sendBroadcast(new Intent(MainActivity.ACTION_CONFIG_CHANGED).setPackage(getPackageName()));
     }
 
     private void publishState(SessionConfig config, String state, String status) {

@@ -6,6 +6,7 @@ local.properties
 *.aab
 *.jks
 *.keystore
+.signing/
 captures/
 .idea/
 *.iml

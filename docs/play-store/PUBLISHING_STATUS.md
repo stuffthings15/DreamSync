@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.2.6-test with unique phone and Wear OS version codes published to internal testing. Version 1.2.7-test is built and awaiting upload approval.
+- Version 1.2.7-test with unique phone and Wear OS version codes published to internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -41,26 +41,28 @@
 - Wear OS version code 26 (`1.2.5-test`) published on 2026-07-20.
 - Phone version code 27 (`1.2.6-test`) published on 2026-07-20.
 - Wear OS version code 28 (`1.2.6-test`) published on 2026-07-20.
+- Phone version code 29 (`1.2.7-test`) published on 2026-07-20.
+- Wear OS version code 30 (`1.2.7-test`) published on 2026-07-20.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 27 (`1.2.6-test`) is available to internal testers.
-- Wear OS version code 28 (`1.2.6-test`) is available to internal testers.
-- Fifty-three shared tests, nine phone unit tests, eleven Android instrumentation tests, phone and watch lint, signed-bundle, signature, and release-integrity checks passed before publishing.
+- Phone version code 29 (`1.2.7-test`) is available to internal testers.
+- Wear OS version code 30 (`1.2.7-test`) is available to internal testers.
+- Fifty-five shared tests, nine phone unit tests, and six phone instrumentation tests passed. Six Wear OS instrumentation tests compile but still require a physical watch. Phone and watch lint, signed-bundle, signature, and release-integrity checks also passed before publishing.
 - The phone sound check uses a local WAV player with streaming PCM fallback and requires the user to confirm that the cue was audible. A saved calibration without that confirmation is rejected.
 - **Run phone + watch check** confirms phone audio, then runs a 45-second watch check for permissions, actual accelerometer and heart-rate samples, sensor registration, off-wrist state, and available Samsung advanced signals. The exact pass, fail, or two-minute timeout result is stored in Export Debug Log.
 - The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, user-run system check, no-haptics policy, and terminal summary.
-- Release bundle SHA-256: phone `875B76D5BFE3FE5CB2FB9AB6B0F9EC98FE190419F3F848B3D6E68FB54FFB7DEE`; Wear OS `47E9E31B0FCD9BB2C040ADFA08B72E77A08B5B3306FAE8B2E8D4E48B754D64C7`.
+- Release bundle SHA-256: phone `AEF1A37AF9050CDF1A2DDA348D3CF26C2E200F92B179CE8F7AFBB6253F9BB38D`; Wear OS `3ADB32AEC5C42D3FB1634B17400E76EC538382CADE8FAB16BA7A2D8BEA2183A1`.
 - This build adds persistent automatic nightly operation, broad Android 8.0+/Wear OS 3+ packaging, conservative passive-HR fallback, learned charge reminders, and full-sensor feature selection for capable watches.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.
 - The watch has no product settings or power controls. Manual launch sends the user to phone controls; only required first-time watch health-permission prompts remain on the watch.
 - Advanced Samsung status remains Basic monitoring only until the official SDK AAR, Samsung partnership approval, package/signature registration, and live Ultra self-test are complete.
-- The 1.2.6 sound path explicitly prefers the built-in phone speaker, uses AudioTrack on Android 8, and no longer treats an available Bluetooth watch route as active headphones. The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states.
+- The 1.2.7 sound path explicitly prefers the built-in phone speaker, uses AudioTrack on Android 8, and no longer treats an available Bluetooth watch route as active headphones. The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 
-## Next internal-test build ready
+## Version 1.2.7 fixes
 
 - Phone version code 29 and Wear OS version code 30 (`1.2.7-test`).
 - Fixes watch-result rejection caused by normal phone/watch clock drift while keeping cue timing strict.

@@ -7,6 +7,10 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
+- Phone release code: 9 (`1.0.0`).
+- Official slogan and mission are consistent across the app and Play marketing copy.
+- Public compatibility copy names Samsung Galaxy Watch4 and later Wear OS models, requires usable heart-rate and motion signals, and marks Apple Watch as planned.
+- Live Google Play short and full descriptions are saved with the official slogan and mission.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS signed release bundles pass.
 - Shared safety and protocol checks pass: 12 checks, 0 failures.
@@ -44,5 +48,5 @@ Date: 19 July 2026
 
 - Physical S23+ and Watch Ultra sensor/audio validation.
 - Physical verification of the phone-to-bound-watch automatic launch and first-use permission flow.
-- Play Console listing and release-asset submission.
+- Play Console graphics upload and release-asset submission.
 - Google Play closed-release gate: 12 opted-in users for 14 continuous days.

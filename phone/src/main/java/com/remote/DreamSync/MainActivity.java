@@ -681,7 +681,9 @@ public final class MainActivity extends Activity {
                 .getBoolean("onboarding_seen", false)) return;
         new AlertDialog.Builder(this)
                 .setTitle("Welcome to DreamSync")
-                .setMessage("Tap Arm for tonight once. DreamSync opens the watch, waits for sustained sleep signals, estimates sleep onset, then activates conservative cue timing automatically. "
+                .setMessage("Dreams Redefined. DreamSync's mission is to protect sleep continuity. It estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance. "
+                        + "Tap Arm for tonight once. DreamSync opens the watch, waits for sustained sleep signals, estimates sleep onset, then activates conservative cue timing automatically. "
+                        + "Designed for Samsung Galaxy Watch4 and later models running compatible Wear OS software, including Galaxy Watch Ultra. Apple Watch is planned but is not supported in this release. "
                         + "DreamSync is an adult wellness app that estimates cue-ready windows from wrist motion and heart rate. "
                         + "Its deep cue pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
                         + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
@@ -704,7 +706,11 @@ public final class MainActivity extends Activity {
         content.setLineSpacing(0f, 1.2f);
         content.setMovementMethod(LinkMovementMethod.getInstance());
         content.setText(Html.fromHtml(
-                "<b>What DreamSync does</b><br>"
+                "<b>Dreams Redefined.</b><br>"
+                        + "Our mission is to protect sleep continuity. DreamSync estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance.<br><br>"
+                        + "<b>Watch compatibility</b><br>"
+                        + "Designed for Samsung Galaxy Watch4 and later models running compatible Wear OS software, including Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025). Cueing requires usable heart-rate and motion signals plus the required permissions. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release.<br><br>"
+                        + "<b>What DreamSync does</b><br>"
                         + "1. Tap <b>Arm for tonight</b> once. DreamSync opens the watch and waits quietly for sustained sleep signals.<br>"
                         + "2. Your watch estimates sleep onset from sustained low motion and signal quality. This is an estimate, not a sleep-stage diagnosis.<br>"
                         + "3. Cues are allowed only after a stable, low-motion period, from 25 to 145 minutes after estimated sleep onset.<br>"

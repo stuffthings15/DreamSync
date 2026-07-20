@@ -1,10 +1,18 @@
 # DreamSync
 
-**Dream uninterrupted.**
+**Dreams Redefined.**
 
 DreamSync is an Android and Wear OS wellness app that plays low-volume sleep cues only when a paired watch detects conservative cue-ready windows from motion and heart-rate signals. Protecting sleep always takes priority over delivering a cue.
 
 DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guarantee deeper sleep, or guarantee lucid dreams. Session data stays on the user's devices unless the user chooses Export.
+
+## Mission
+
+DreamSync's mission is to protect sleep continuity by automatically estimating likely sleep from wearable signals, staying quiet when confidence is low, and using gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
+
+## Watch compatibility
+
+DreamSync is designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS version, including Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025). Cueing requires usable heart-rate and motion signals and the required permissions. Google Play device compatibility and sensor availability can vary by watch software. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release.
 
 ## Automatic sleep estimation
 

@@ -2,17 +2,21 @@
 
 ## Positioning
 
-DreamSync is the sleep-first cue companion for adults who want a transparent, private way to explore research-shaped auditory cues with a Wear OS watch.
+DreamSync is the sleep-first cue companion for adults who want a transparent, private way to explore research-shaped auditory cues with a compatible Samsung Galaxy Watch.
 
 The marketing promise is simple: DreamSync explains what it does, shows the peer-reviewed work that shaped it, and clearly separates laboratory findings from what a consumer watch can estimate.
 
 ## Brand slogan
 
-Dream uninterrupted.
+Dreams Redefined.
+
+## Official mission
+
+DreamSync's mission is to protect sleep continuity by automatically estimating likely sleep from wearable signals, staying quiet when confidence is low, and using gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
 
 ## Primary message
 
-Sleep-first cues guided by your Wear OS watch, with private on-device data.
+Automatic sleep estimation, sleep-first safety, and private on-device data.
 
 Supporting points:
 
@@ -25,6 +29,12 @@ Supporting points:
 - Any arousal starts a 20-minute quiet period; the first cue-linked wake sign ends cueing for the night.
 - Personal data stays on the paired devices unless the user chooses Export.
 
+## Device message
+
+Designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS version: Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025).
+
+Public copy must also say that cueing depends on usable heart-rate and motion signals, permissions, Google Play device compatibility, and watch software. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release. Do not describe an untested model as physically validated.
+
 ## Evidence and claim boundaries
 
 ### Claims DreamSync can make
@@ -32,6 +42,7 @@ Supporting points:
 - DreamSync plays the published paired-burst acoustic pattern.
 - DreamSync estimates conservative cue-ready windows from wrist motion, heart rate, and elapsed time.
 - DreamSync can say that sleep-onset timing becomes automatic after the user visibly arms health sensing for that night.
+- DreamSync is designed to protect sleep continuity by staying quiet when required safety checks are uncertain.
 - DreamSync uses explicit signal-quality, arousal, route, battery, connection, and volume safety gates.
 - DreamSync stores data locally and gives the user export and deletion controls.
 
@@ -50,6 +61,7 @@ Supporting points:
 - EEG phase locking.
 - Improved memory, immunity, hormones, or treatment of insomnia or depression.
 - Guaranteed lucid dreams.
+- Guaranteed uninterrupted sleep or guaranteed prevention of waking.
 - Medical-device, diagnostic, preventive, curative, or treatment claims.
 
 ## Store-page structure
@@ -63,8 +75,9 @@ Supporting points:
 
 ## Screenshot messages
 
-- Dream uninterrupted.
-- Research-shaped paired pink-noise cues.
+- Dreams Redefined.
+- Automatic sleep estimation. Sleep protection first.
+- Designed for Galaxy Watch Ultra and Galaxy Watch4 or later.
 - A wake sign stops cueing for the night.
 - Private history, check-ins, export, and deletion.
 - Science and limitations explained inside the app.

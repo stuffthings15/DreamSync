@@ -44,7 +44,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Dream uninterrupted."
+                    android:text="Dreams Redefined."
                     android:textColor="@color/ds_muted"
                     android:textSize="13sp" />
             </LinearLayout>

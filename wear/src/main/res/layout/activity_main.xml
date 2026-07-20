@@ -22,12 +22,11 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/modeText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="Mode: DEEP"
+            android:text="Dreams Redefined"
             android:textColor="@color/ds_violet"
             android:textSize="12sp" />
 
@@ -35,59 +34,23 @@
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:gravity="center"
-            android:text="Tap Arm for tonight on the phone. DreamSync will open here."
+            android:text="DreamSync is controlled by the phone app."
             android:textColor="@color/ds_muted"
             android:textSize="12sp" />
 
         <Button
-            android:id="@+id/startButton"
+            android:id="@+id/openPhoneButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/btn_primary"
             android:stateListAnimator="@null"
-            android:text="Arm sleep estimate"
+            android:text="Open phone controls"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
             android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/stopButton"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/btn_danger"
-            android:stateListAnimator="@null"
-            android:text="Stop"
-            android:textAllCaps="false"
-            android:textColor="@color/ds_danger"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/privacyButton"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/btn_primary"
-            android:stateListAnimator="@null"
-            android:text="Privacy"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/deleteDataButton"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/btn_danger"
-            android:stateListAnimator="@null"
-            android:text="Delete watch data"
-            android:textAllCaps="false"
-            android:textColor="@color/ds_danger"
-            android:textSize="12sp" />
     </LinearLayout>
 </ScrollView>

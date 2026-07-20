@@ -1,7 +1,5 @@
 package com.remote.DreamSync.shared;
 
-import java.util.Locale;
-
 /** Capability-based watch support classification; model names alone never unlock cueing. */
 public final class DeviceCompatibility {
     public enum Status {
@@ -55,9 +53,7 @@ public final class DeviceCompatibility {
                 || !capabilities.motion || !capabilities.heartRate) {
             return Status.NOT_SUPPORTED;
         }
-        boolean samsung = capabilities.manufacturer.toLowerCase(Locale.US)
-                .contains("samsung");
-        if (samsung && capabilities.samsungSdk && capabilities.ibi
+        if (capabilities.samsungSdk && capabilities.ibi
                 && capabilities.skinTemperature && capabilities.offWrist
                 && capabilities.liveSelfTestPassed) {
             return Status.FULLY_SUPPORTED;
@@ -73,6 +69,19 @@ public final class DeviceCompatibility {
         if (status == Status.NOT_SUPPORTED) {
             return "Wear OS motion and heart-rate sensors are required.";
         }
-        return "Basic motion and heart-rate monitoring is available; advanced Samsung signals are incomplete or unverified.";
+        return "Core motion and heart-rate monitoring is available; advanced sensor signals are incomplete or unverified.";
+    }
+
+    /** Features are selected from live capability checks, never a model allow-list. */
+    public String featureProfile(Capabilities capabilities) {
+        Status status = classify(capabilities);
+        if (status == Status.FULLY_SUPPORTED) return "FULL_SENSOR_SUITE";
+        if (status == Status.BASIC_MONITORING_ONLY) return "CORE_WEAR_OS";
+        return "UNSUPPORTED";
+    }
+
+    public boolean shouldUseRawPpg(Capabilities capabilities) {
+        return classify(capabilities) == Status.FULLY_SUPPORTED
+                && capabilities.rawPpg;
     }
 }

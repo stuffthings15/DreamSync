@@ -3,7 +3,6 @@ package com.remote.DreamSync;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.ForegroundServiceStartNotAllowedException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,8 +15,13 @@ import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
+import androidx.wear.remote.interactions.RemoteActivityHelper;
 
-import java.io.File;
+import com.google.android.gms.wearable.CapabilityClient;
+import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.Wearable;
+import com.google.common.util.concurrent.ListenableFuture;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -25,187 +29,245 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     static final String ACTION_CONFIG_CHANGED = "com.remote.DreamSync.CONFIG_CHANGED";
+    static final String ACTION_AUTO_STATUS = "com.remote.DreamSync.AUTO_STATUS";
 
     private static final int REQUEST_FOREGROUND_PERMISSIONS = 501;
     private static final int REQUEST_BACKGROUND_PERMISSION = 502;
-    private static final String READ_HEART_RATE =
-            "android.permission.health.READ_HEART_RATE";
+    private static final String READ_HEART_RATE = "android.permission.health.READ_HEART_RATE";
     private static final String READ_HEALTH_DATA_IN_BACKGROUND =
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND";
     private static final String READ_SKIN_TEMPERATURE =
             "android.permission.health.READ_SKIN_TEMPERATURE";
     private static final String USER_PREFS = "dreamsync_watch_user";
+    private static final int CONFIG_SYNC_RETRY_LIMIT = 20;
 
     private TextView statusText;
-    private TextView modeText;
-    private boolean pendingStart;
+    private boolean pendingEnable;
     private boolean foregroundRequestAttempted;
     private boolean backgroundRequestAttempted;
     private boolean receiverRegistered;
-    private boolean activityResumed;
-    private Intent pendingAutoArmIntent;
-    private final ExecutorService databaseExecutor = Executors.newSingleThreadExecutor();
+    private String pendingEnrollment = "";
+    private int configSyncAttempt;
+    private final ExecutorService remoteExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (SleepSessionService.ACTION_STATUS.equals(intent.getAction())) {
-                statusText.setText(intent.getStringExtra(SleepSessionService.EXTRA_STATUS));
-            } else if (ACTION_CONFIG_CHANGED.equals(intent.getAction())) {
-                refreshMode();
-                statusText.setText("Tonight's settings are ready. Automatic sleep estimation can arm now.");
-            }
+        @Override public void onReceive(Context context, Intent intent) {
+            String status = intent.getStringExtra("status");
+            if (status != null && !status.isBlank()) statusText.setText(status);
+            else refreshState();
+            if (!pendingEnrollment.isEmpty()) continueSetupWhenSynced();
         }
     };
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
         statusText = findViewById(R.id.statusText);
-        modeText = findViewById(R.id.modeText);
-        Button startButton = findViewById(R.id.startButton);
-        Button stopButton = findViewById(R.id.stopButton);
-        Button privacyButton = findViewById(R.id.privacyButton);
-        Button deleteDataButton = findViewById(R.id.deleteDataButton);
-
-        startButton.setOnClickListener(v -> beginAutomaticDetection());
-        stopButton.setOnClickListener(v -> {
-            pendingStart = false;
-            startService(new Intent(this, SleepSessionService.class)
-                    .setAction(SleepSessionService.ACTION_STOP)
-                    .putExtra("terminationReason", "USER_STOPPED"));
-            SessionConfig.clear(this);
-            statusText.setText("Session stopped.");
-        });
-        privacyButton.setOnClickListener(v -> showPrivacyAndSafety());
-        deleteDataButton.setOnClickListener(v -> confirmDeleteWatchData());
-        refreshMode();
-        queueAutoArm(getIntent());
+        Button openPhoneButton = findViewById(R.id.openPhoneButton);
+        openPhoneButton.setOnClickListener(v -> openPhoneApp());
+        refreshState();
+        boolean setupLink = maybeHandleSetupLink(getIntent());
+        if (!setupLink) statusText.postDelayed(this::openPhoneApp, 350L);
     }
 
-    @Override
-    protected void onNewIntent(Intent intent) {
+    @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        queueAutoArm(intent);
+        maybeHandleSetupLink(intent);
     }
 
-    private void queueAutoArm(Intent intent) {
-        pendingAutoArmIntent = intent;
-        if (activityResumed) {
-            getWindow().getDecorView().post(this::runPendingAutoArm);
-        }
-    }
-
-    private void runPendingAutoArm() {
-        Intent intent = pendingAutoArmIntent;
-        pendingAutoArmIntent = null;
-        if (intent != null) maybeAutoArm(intent);
-    }
-
-    private void maybeAutoArm(Intent intent) {
+    private boolean maybeHandleSetupLink(Intent intent) {
         Uri data = intent == null ? null : intent.getData();
-        if (data == null
-                || !"dreamsync".equals(data.getScheme())
-                || !"watch".equals(data.getHost())
-                || !"/arm".equals(data.getPath())) return;
-        SessionConfig config = SessionConfig.load(this);
-        String requestedSession = data.getQueryParameter("session");
-        if (requestedSession == null || !requestedSession.equals(config.sessionId)) {
-            statusText.setText("Arm request did not match tonight's settings. Try again from the phone.");
-            return;
+        if (data == null || !"dreamsync".equals(data.getScheme())
+                || !"watch".equals(data.getHost()) || !"/enable".equals(data.getPath())) {
+            return false;
         }
-        if (SleepSessionService.isRunning()) {
-            statusText.setText(SleepSessionService.currentStatus());
-            return;
-        }
-        statusText.setText("Phone connected. Arming automatic sleep estimation...");
-        beginAutomaticDetection();
+        String enrollment = data.getQueryParameter("enrollment");
+        pendingEnrollment = enrollment == null ? "" : enrollment;
+        configSyncAttempt = 0;
+        continueSetupWhenSynced();
+        return true;
     }
 
-    private void beginAutomaticDetection() {
-        if (SleepSessionService.isRunning()) {
-            statusText.setText(SleepSessionService.currentStatus());
+    private void continueSetupWhenSynced() {
+        if (pendingEnrollment.isEmpty()) {
+            statusText.setText("Phone setup is incomplete. Return to the DreamSync phone app.");
             return;
         }
-        SessionConfig config = SessionConfig.load(this);
-        if (config.sessionId.isEmpty() || !config.isCurrent(System.currentTimeMillis())) {
-            pendingStart = false;
-            statusText.setText("Tonight's settings are missing or expired. Tap Arm for tonight on the phone.");
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        if (pendingEnrollment.equals(config.enrollmentId)) {
+            pendingEnrollment = "";
+            beginEnable();
             return;
         }
-        pendingStart = true;
+        configSyncAttempt++;
+        if (configSyncAttempt >= CONFIG_SYNC_RETRY_LIMIT) {
+            pendingEnrollment = "";
+            statusText.setText("Setup did not reach the watch. Return to the phone and tap Turn DreamSync On again.");
+            return;
+        }
+        statusText.setText("Receiving setup from the DreamSync phone app...");
+        statusText.postDelayed(this::continueSetupWhenSynced, 750L);
+    }
+
+    private void beginEnable() {
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        if (config.enrollmentId.isEmpty() || config.phoneNodeId.isEmpty()) {
+            statusText.setText("Setup is controlled by the DreamSync phone app.");
+            return;
+        }
+        pendingEnable = true;
         foregroundRequestAttempted = false;
         backgroundRequestAttempted = false;
-        showDisclosureThenStart();
-    }
-
-    private void showDisclosureThenStart() {
         if (getSharedPreferences(USER_PREFS, MODE_PRIVATE)
                 .getBoolean("health_disclosure_accepted", false)) {
-            ensurePermissionsThenStart();
+            ensurePermissionsThenEnable();
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("Sleep-signal access")
-                .setMessage("DreamSync uses watch motion and heart-rate readings during a night session to estimate cue-ready windows and pause cues when waking is detected. On compatible Samsung watches, it also uses IBI, skin-temperature trend, and off-wrist status. Raw PPG is off by default. "
-                        + "These readings and session records stay on your paired devices unless you choose Export on the phone. They are not used for diagnosis, ads, or automatic cloud upload.")
+                .setTitle("Automatic sleep-signal access")
+                .setMessage("While DreamSync is On, the watch uses low-power activity signals to notice sleep every night. After likely sleep, it starts motion and heart-rate checks. Cues stay off when data is stale, heart data is missing, or waking is detected. Data stays on your paired devices unless you export it from the phone.")
                 .setPositiveButton("Continue", (dialog, which) -> {
                     getSharedPreferences(USER_PREFS, MODE_PRIVATE).edit()
                             .putBoolean("health_disclosure_accepted", true).apply();
-                    ensurePermissionsThenStart();
+                    ensurePermissionsThenEnable();
                 })
-                .setNegativeButton("Not now", (dialog, which) -> pendingStart = false)
+                .setNegativeButton("Not now", (dialog, which) -> {
+                    pendingEnable = false;
+                    statusText.setText("Access was not approved. DreamSync remains inactive on this watch.");
+                })
                 .setCancelable(false)
                 .show();
     }
 
-    private void showPrivacyAndSafety() {
-        new AlertDialog.Builder(this)
-                .setTitle("Privacy & safety")
-                .setMessage("Motion and heart-rate readings are used on your watch only for cue timing and safety. Session data stays on your paired devices unless you export it from the phone. "
-                        + "DreamSync has no account, ads, analytics, or automatic cloud upload.\n\nWellness only. DreamSync does not diagnose or treat medical conditions.")
-                .setPositiveButton("Done", null)
-                .show();
+    private void ensurePermissionsThenEnable() {
+        String heartPermission = heartPermission();
+        if (!foregroundRequestAttempted) {
+            List<String> missing = new ArrayList<>();
+            addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
+            addIfMissing(missing, heartPermission);
+            if (Build.VERSION.SDK_INT >= 36) addIfMissing(missing, READ_SKIN_TEMPERATURE);
+            if (Build.VERSION.SDK_INT >= 33) addIfMissing(
+                    missing, Manifest.permission.POST_NOTIFICATIONS);
+            if (!missing.isEmpty()) {
+                foregroundRequestAttempted = true;
+                requestPermissions(missing.toArray(new String[0]),
+                        REQUEST_FOREGROUND_PERMISSIONS);
+                statusText.setText("Allow activity and heart-rate access.");
+                return;
+            }
+        }
+        if (!hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)) {
+            pendingEnable = false;
+            statusText.setText("Activity access is required. Change it from the watch system settings, then retry from the phone.");
+            return;
+        }
+        String backgroundPermission = backgroundHeartPermission();
+        if (hasPermission(heartPermission) && backgroundPermission != null
+                && !hasPermission(backgroundPermission) && !backgroundRequestAttempted) {
+            backgroundRequestAttempted = true;
+            requestPermissions(new String[]{backgroundPermission}, REQUEST_BACKGROUND_PERMISSION);
+            statusText.setText("Choose Allow all the time for overnight heart-rate safety checks.");
+            return;
+        }
+        pendingEnable = false;
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        config.enabled = true;
+        config.save(this);
+        AutoSleepMonitor.enable(this, config);
+        statusText.setText("DreamSync is ready. All controls are on the phone.");
     }
 
-    @Override
-    protected void onStart() {
+    private void refreshState() {
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        if (SleepSessionService.isRunning()) statusText.setText(SleepSessionService.currentStatus());
+        else if (!config.status.isBlank()) statusText.setText(config.status);
+        else statusText.setText("DreamSync is controlled by the phone app.");
+    }
+
+    private void openPhoneApp() {
+        statusText.setText("Opening DreamSync controls on the phone...");
+        Wearable.getCapabilityClient(this).getCapability(
+                        com.remote.DreamSync.shared.Protocol.PHONE_CAPABILITY,
+                        CapabilityClient.FILTER_REACHABLE)
+                .addOnSuccessListener(capability -> {
+                    Node phone = chooseNode(capability.getNodes());
+                    if (phone != null) launchPhoneControls(phone.getId());
+                    else openPhoneStoreOnConnectedDevice();
+                })
+                .addOnFailureListener(error -> openPhoneStoreOnConnectedDevice());
+    }
+
+    private void openPhoneStoreOnConnectedDevice() {
+        Wearable.getNodeClient(this).getConnectedNodes()
+                .addOnSuccessListener(nodes -> {
+                    Node phone = chooseNode(nodes);
+                    if (phone == null) {
+                        statusText.setText("No paired Android phone is connected.");
+                        return;
+                    }
+                    Intent store = new Intent(Intent.ACTION_VIEW)
+                            .setData(Uri.parse("market://details?id=" + getPackageName()))
+                            .addCategory(Intent.CATEGORY_BROWSABLE);
+                    launchRemote(store, phone.getId(),
+                            "Open DreamSync on the phone to control this watch.");
+                })
+                .addOnFailureListener(error -> statusText.setText(
+                        "Could not reach the paired phone."));
+    }
+
+    private void launchPhoneControls(String phoneNodeId) {
+        Intent controls = new Intent(Intent.ACTION_VIEW)
+                .setData(Uri.parse("dreamsync://phone/control"))
+                .addCategory(Intent.CATEGORY_BROWSABLE);
+        launchRemote(controls, phoneNodeId, "DreamSync controls opened on the phone.");
+    }
+
+    private void launchRemote(Intent intent, String nodeId, String successMessage) {
+        try {
+            ListenableFuture<Void> launch = new RemoteActivityHelper(this, remoteExecutor)
+                    .startRemoteActivity(intent, nodeId);
+            launch.addListener(() -> {
+                try {
+                    launch.get();
+                    runOnUiThread(() -> statusText.setText(successMessage));
+                } catch (Exception error) {
+                    runOnUiThread(() -> statusText.setText(
+                            "Could not open the phone. Use the DreamSync phone app directly."));
+                }
+            }, remoteExecutor);
+        } catch (RuntimeException error) {
+            statusText.setText("Could not open the phone. Use the DreamSync phone app directly.");
+        }
+    }
+
+    private Node chooseNode(Iterable<Node> nodes) {
+        if (nodes == null) return null;
+        Node first = null;
+        for (Node node : nodes) {
+            if (first == null) first = node;
+            if (node.isNearby()) return node;
+        }
+        return first;
+    }
+
+    @Override protected void onStart() {
         super.onStart();
         IntentFilter filter = new IntentFilter();
         filter.addAction(SleepSessionService.ACTION_STATUS);
         filter.addAction(ACTION_CONFIG_CHANGED);
+        filter.addAction(ACTION_AUTO_STATUS);
         ContextCompat.registerReceiver(
                 this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered = true;
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
-        refreshMode();
-        if (SleepSessionService.isRunning()) {
-            statusText.setText(SleepSessionService.currentStatus());
-        }
+        if (pendingEnrollment.isEmpty()) refreshState();
     }
 
-    @Override
-    protected void onPostResume() {
-        super.onPostResume();
-        activityResumed = true;
-        runPendingAutoArm();
-    }
-
-    @Override
-    protected void onPause() {
-        activityResumed = false;
-        super.onPause();
-    }
-
-    @Override
-    protected void onStop() {
+    @Override protected void onStop() {
         if (receiverRegistered) {
             unregisterReceiver(statusReceiver);
             receiverRegistered = false;
@@ -213,112 +275,13 @@ public final class MainActivity extends Activity {
         super.onStop();
     }
 
-    @Override
-    protected void onDestroy() {
-        databaseExecutor.shutdown();
+    @Override protected void onDestroy() {
+        remoteExecutor.shutdown();
         super.onDestroy();
     }
 
-    private void confirmDeleteWatchData() {
-        if (SleepSessionService.isRunning()) {
-            statusText.setText("Stop the current session before deleting watch data.");
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Delete watch data?")
-                .setMessage("This removes watch sessions, sensor events, personal baselines, and local session logs. It cannot be undone.")
-                .setPositiveButton("Delete", (dialog, which) -> databaseExecutor.execute(() -> {
-                    WearDao dao = WearDatabase.get(this).dao();
-                    dao.deleteAllEvents();
-                    dao.deleteAllSessions();
-                    dao.deleteAllBaselines();
-                    SessionConfig.clear(this);
-                    deleteSessionLogs(getExternalFilesDir("sessions"));
-                    deleteSessionLogs(new File(getFilesDir(), "sessions"));
-                    runOnUiThread(() -> {
-                        refreshMode();
-                        statusText.setText("All watch session data deleted.");
-                    });
-                }))
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private static void deleteSessionLogs(File directory) {
-        if (directory == null) return;
-        File[] files = directory.listFiles();
-        if (files == null) return;
-        for (File file : files) {
-            if (file.isFile() && file.getName().startsWith("dreamsync-")) file.delete();
-        }
-    }
-
-    private void refreshMode() {
-        SessionConfig config = SessionConfig.load(this);
-        modeText.setText("Plan: " + config.mode.replace('_', ' ')
-                + " • volume " + Math.round(config.cueGain * 100f) + "%");
-    }
-
-    private void ensurePermissionsThenStart() {
-        String heartPermission = heartPermission();
-
-        if (!foregroundRequestAttempted) {
-            List<String> missing = new ArrayList<>();
-            addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
-            addIfMissing(missing, heartPermission);
-            if (Build.VERSION.SDK_INT >= 36) {
-                addIfMissing(missing, READ_SKIN_TEMPERATURE);
-            }
-            if (Build.VERSION.SDK_INT >= 33) {
-                addIfMissing(missing, Manifest.permission.POST_NOTIFICATIONS);
-            }
-
-            if (!missing.isEmpty()) {
-                foregroundRequestAttempted = true;
-                requestPermissions(
-                        missing.toArray(new String[0]),
-                        REQUEST_FOREGROUND_PERMISSIONS
-                );
-                statusText.setText(
-                        "Grant activity and heart-rate access. Without reliable heart data, DreamSync logs only and sends no cues."
-                );
-                return;
-            }
-        }
-
-        boolean hasActivityPermission = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION);
-        boolean hasHeartPermission = hasPermission(heartPermission);
-        if (!hasActivityPermission && !hasHeartPermission) {
-            pendingStart = false;
-            statusText.setText(
-                    "DreamSync needs activity recognition or heart-rate access to start."
-            );
-            return;
-        }
-
-        String backgroundPermission = backgroundHeartPermission();
-        if (hasHeartPermission
-                && backgroundPermission != null
-                && !hasPermission(backgroundPermission)
-                && !backgroundRequestAttempted) {
-            backgroundRequestAttempted = true;
-            requestPermissions(
-                    new String[]{backgroundPermission},
-                    REQUEST_BACKGROUND_PERMISSION
-            );
-            statusText.setText(
-                    "For overnight heart rate, choose Sensors → Allow all the time. If denied, DreamSync logs motion but sends no cues."
-            );
-            return;
-        }
-
-        startNightService(hasHeartPermission
-                && (backgroundPermission == null || hasPermission(backgroundPermission)));
-    }
-
     private String heartPermission() {
-        if (Build.VERSION.SDK_INT >= 36) return READ_HEART_RATE;
-        return Manifest.permission.BODY_SENSORS;
+        return Build.VERSION.SDK_INT >= 36 ? READ_HEART_RATE : Manifest.permission.BODY_SENSORS;
     }
 
     private String backgroundHeartPermission() {
@@ -335,41 +298,11 @@ public final class MainActivity extends Activity {
         if (!hasPermission(permission)) permissions.add(permission);
     }
 
-    private void startNightService(boolean overnightHeartRateExpected) {
-        pendingStart = false;
-        SessionConfig config = SessionConfig.load(this);
-        Intent intent = new Intent(this, SleepSessionService.class)
-                .setAction(SleepSessionService.ACTION_START)
-                .putExtra(SleepSessionService.EXTRA_START_SESSION_ID, config.sessionId)
-                .putExtra(SleepSessionService.EXTRA_HANDSHAKE_MESSAGE_ID,
-                        config.handshakeMessageId);
-        try {
-            startForegroundService(intent);
-            statusText.setText(overnightHeartRateExpected
-                    ? "Automatic detection armed. Keep the watch snug, then turn the display off."
-                    : "Motion logging armed. Heart rate is unavailable, so cues stay off.");
-        } catch (ForegroundServiceStartNotAllowedException error) {
-            statusText.setText("Android blocked background sensing. Keep DreamSync open and tap Arm sleep detection again.");
-        } catch (SecurityException error) {
-            statusText.setText("Could not start sensor service: " + error.getMessage());
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            String[] permissions,
-            int[] grantResults
-    ) {
+    @Override public void onRequestPermissionsResult(
+            int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (!pendingStart) return;
-
-        if (requestCode == REQUEST_FOREGROUND_PERMISSIONS) {
-            ensurePermissionsThenStart();
-        } else if (requestCode == REQUEST_BACKGROUND_PERMISSION) {
-            // The service may still log motion if background heart data is denied,
-            // but cue eligibility requires fresh heart-rate data.
-            ensurePermissionsThenStart();
-        }
+        if (!pendingEnable) return;
+        if (requestCode == REQUEST_FOREGROUND_PERMISSIONS
+                || requestCode == REQUEST_BACKGROUND_PERMISSION) ensurePermissionsThenEnable();
     }
 }

@@ -29,7 +29,6 @@ import androidx.wear.remote.interactions.RemoteActivityHelper;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.gms.wearable.CapabilityClient;
-import com.google.android.gms.wearable.CapabilityInfo;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
@@ -46,7 +45,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -55,16 +53,23 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_NOTIFICATIONS = 101;
     private static final int REQUEST_EXPORT = 602;
     private static final String PREFS = "dreamsync_phone";
+    private static final int CALIBRATION_POLL_LIMIT = 10;
+    private static final int WATCH_INSTALL_POLL_LIMIT = 40;
 
     private TextView statusText;
     private TextView readinessText;
     private TextView gainLabel;
     private RadioGroup modeGroup;
     private SeekBar gainSeek;
+    private Button powerButton;
     private ExecutorService remoteExecutor;
     private ExecutorService databaseExecutor;
     private PhoneDao dao;
     private boolean summaryReceiverRegistered;
+    private boolean calibrationPromptShowing;
+    private boolean calibrationEnablePending;
+    private int calibrationPollAttempt;
+    private int watchInstallPollAttempt;
     private String pendingExportJson = "";
 
     private final BroadcastReceiver summaryReceiver = new BroadcastReceiver() {
@@ -72,16 +77,8 @@ public final class MainActivity extends Activity {
             if (PhoneDataListenerService.ACTION_STATUS_CHANGED.equals(intent.getAction())) {
                 String status = intent.getStringExtra("status");
                 if (status != null) statusText.setText(status);
-                String state = intent.getStringExtra("state");
-                String sessionId = intent.getStringExtra("sessionId");
-                if ("ARMED".equals(state)
-                        && sessionId != null
-                        && sessionId.equals(pref("active_session_id"))
-                        && !sessionId.equals(pref("auto_opened_watch_session"))) {
-                    statusText.setText("Watch ready. Opening automatic sleep estimation...");
-                    openWatchApp(true, sessionId);
-                }
                 updateReadiness();
+                updatePowerState();
                 return;
             }
             String summary = intent.getStringExtra("summary");
@@ -99,6 +96,7 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         bindViews();
+        restoreSavedAutoControls();
         remoteExecutor = Executors.newSingleThreadExecutor();
         databaseExecutor = Executors.newSingleThreadExecutor();
         dao = PhoneDatabase.get(this).dao();
@@ -106,6 +104,7 @@ public final class MainActivity extends Activity {
         if (pref("active_session_id").isEmpty()) restoreNotificationProtection();
         showOnboardingOnce();
         wireActions();
+        if (autoEnabled()) PhoneAutoControl.startStandby(this);
         updateReadiness();
     }
 
@@ -115,6 +114,17 @@ public final class MainActivity extends Activity {
         gainLabel = findViewById(R.id.gainLabel);
         modeGroup = findViewById(R.id.modeGroup);
         gainSeek = findViewById(R.id.gainSeek);
+        powerButton = findViewById(R.id.powerButton);
+    }
+
+    private void restoreSavedAutoControls() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        gainSeek.setProgress(Math.max(1, Math.min(10,
+                Math.round(prefs.getFloat("auto_gain", 0.04f) * 100f))));
+        String mode = prefs.getString("auto_mode", "DEEP");
+        if ("LUCID".equals(mode)) modeGroup.check(R.id.modeLucid);
+        else if ("COMBINED".equals(mode)) modeGroup.check(R.id.modeCombined);
+        else modeGroup.check(R.id.modeDeep);
     }
 
     private void wireActions() {
@@ -124,13 +134,15 @@ public final class MainActivity extends Activity {
                 updateReadiness();
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                syncAutoSettingsIfEnabled();
+            }
         });
         findViewById(R.id.previewDeepButton).setOnClickListener(v -> previewCue("DEEP"));
         findViewById(R.id.practiceLucidButton).setOnClickListener(v -> runLucidPractice());
-        findViewById(R.id.openWatchButton).setOnClickListener(v -> openWatchApp(false, ""));
-        findViewById(R.id.armButton).setOnClickListener(v -> startTransactionalSession());
-        findViewById(R.id.stopButton).setOnClickListener(v -> stopSession());
+        findViewById(R.id.openWatchButton).setOnClickListener(v -> setupOrOpenWatch());
+        powerButton.setOnClickListener(v -> toggleAutomaticMode());
+        modeGroup.setOnCheckedChangeListener((group, checkedId) -> syncAutoSettingsIfEnabled());
         findViewById(R.id.morningButton).setOnClickListener(v -> {
             String sessionId = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_summary_session", "");
@@ -184,11 +196,12 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    private void startTransactionalSession() {
-        if (!pref("active_session_id").isEmpty()) {
-            statusText.setText("A night is already armed. Tap Stop before starting another.");
-            return;
-        }
+    private void toggleAutomaticMode() {
+        if (autoEnabled()) turnDreamSyncOff();
+        else turnDreamSyncOn();
+    }
+
+    private void turnDreamSyncOn() {
         AudioOutput audio = new AudioOutput(this);
         AudioOutput.Result preflight = audio.preflight();
         if (!preflight.success) {
@@ -198,7 +211,7 @@ public final class MainActivity extends Activity {
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
         if (calibration.isEmpty()) {
-            statusText.setText("Preview a cue at the final volume before starting.");
+            beginGuidedCalibration();
             return;
         }
         if (("LUCID".equals(selectedMode()) || "COMBINED".equals(selectedMode()))
@@ -207,235 +220,259 @@ public final class MainActivity extends Activity {
             statusText.setText("Complete the 10-step lucid conditioning block first.");
             return;
         }
-        String armGeneration = UUID.randomUUID().toString();
+        String generation = UUID.randomUUID().toString();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putString("pending_arm_generation", armGeneration)
-                .remove("pending_session_id")
+                .putString("pending_enable_generation", generation)
                 .apply();
-        statusText.setText("Ready. Finding the DreamSync watch...");
+        statusText.setText("Finding the paired Wear OS watch...");
+        findWatchForEnable(generation, CapabilityClient.FILTER_REACHABLE);
+    }
+
+    private void beginGuidedCalibration() {
+        if (calibrationPromptShowing || calibrationEnablePending) return;
+        calibrationPromptShowing = true;
+        new AlertDialog.Builder(this)
+                .setTitle("One quick sound check")
+                .setMessage("DreamSync must play one quiet test cue before it can turn on. "
+                        + "Set the cue volume low. Setup continues automatically after the sound.")
+                .setPositiveButton("Play test cue", (dialog, which) -> {
+                    calibrationPromptShowing = false;
+                    calibrationEnablePending = true;
+                    calibrationPollAttempt = 0;
+                    previewCue("DEEP");
+                    statusText.setText("Playing the test cue. DreamSync will continue setup automatically.");
+                    statusText.postDelayed(this::continueAfterCalibration, 700L);
+                })
+                .setNegativeButton("Not now", (dialog, which) -> {
+                    calibrationPromptShowing = false;
+                    statusText.setText("DreamSync stays Off until the sound check is complete.");
+                })
+                .setOnCancelListener(dialog -> calibrationPromptShowing = false)
+                .show();
+    }
+
+    private void continueAfterCalibration() {
+        if (!calibrationEnablePending) return;
+        String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_calibration", "");
+        if (!calibration.isEmpty()) {
+            calibrationEnablePending = false;
+            turnDreamSyncOn();
+            return;
+        }
+        calibrationPollAttempt++;
+        if (calibrationPollAttempt < CALIBRATION_POLL_LIMIT) {
+            statusText.postDelayed(this::continueAfterCalibration, 500L);
+        } else {
+            calibrationEnablePending = false;
+            statusText.setText("The sound check did not finish. Tap Turn DreamSync On to try again.");
+        }
+    }
+
+    private void findWatchForEnable(String generation, int filter) {
         Wearable.getCapabilityClient(this).getCapability(
                 com.remote.DreamSync.shared.Protocol.WATCH_CAPABILITY,
-                CapabilityClient.FILTER_REACHABLE)
-                .addOnSuccessListener(capability ->
-                        onWatchCapability(capability, armGeneration))
-                .addOnFailureListener(error -> failPendingArm(
-                        armGeneration,
+                filter)
+                .addOnSuccessListener(capability -> {
+                    if (!isCurrentEnableGeneration(generation)) return;
+                    Node watch = chooseNode(capability.getNodes());
+                    if (watch != null) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putBoolean("watch_install_pending", false)
+                                .putString("bound_watch_node", watch.getId())
+                                .apply();
+                        watchInstallPollAttempt = 0;
+                        enableForWatch(watch, generation);
+                    } else if (filter == CapabilityClient.FILTER_REACHABLE) {
+                        findWatchForEnable(generation, CapabilityClient.FILTER_ALL);
+                    } else if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .getBoolean("watch_install_pending", false)) {
+                        scheduleWatchInstallCheck(generation);
+                    } else {
+                        openWatchPlayStoreForInstall(generation);
+                    }
+                })
+                .addOnFailureListener(error -> failPendingEnable(
+                        generation,
                         "Watch capability check failed: " + safeMessage(error)));
     }
 
-    private void onWatchCapability(CapabilityInfo capability, String armGeneration) {
-        if (!isCurrentArmGeneration(armGeneration)) return;
-        Node watch = chooseNode(capability.getNodes());
-        if (watch == null) {
-            failPendingArm(armGeneration,
-                    "DreamSync is not reachable on the paired watch. Open it there first.");
-            return;
-        }
+    private void enableForWatch(Node watch, String generation) {
+        if (!isCurrentEnableGeneration(generation)) return;
         Wearable.getNodeClient(this).getLocalNode()
                 .addOnSuccessListener(phone ->
-                        createAndSendSession(phone, watch, armGeneration))
-                .addOnFailureListener(error -> failPendingArm(
-                        armGeneration,
+                        enableForDevices(phone, watch, generation))
+                .addOnFailureListener(error -> failPendingEnable(
+                        generation,
                         "Phone identity check failed: " + safeMessage(error)));
     }
 
-    private void createAndSendSession(
-            Node phone,
-            Node watch,
-            String armGeneration
-    ) {
-        if (!isCurrentArmGeneration(armGeneration)) return;
-        String sessionId = UUID.randomUUID().toString();
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putString("pending_session_id", sessionId)
-                .apply();
+    private void enableForDevices(Node phone, Node watch, String generation) {
+        if (!isCurrentEnableGeneration(generation)) return;
+        String enrollment = pref("auto_enrollment_id");
+        if (enrollment.isEmpty()) enrollment = UUID.randomUUID().toString();
         String mode = selectedMode();
         float gain = cueGain();
-        JSONObject config = buildConfig(
-                sessionId, phone.getId(), watch.getId(), mode, gain);
-        SessionEntity session = new SessionEntity();
-        session.sessionId = sessionId;
-        session.mode = mode;
-        session.state = "ARMING";
-        session.startUtcMs = System.currentTimeMillis();
-        session.configurationJson = config.toString();
-        session.calibrationRecord = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("last_calibration", "");
-        session.protocolVersion = com.remote.DreamSync.shared.Protocol.VERSION;
-        session.waveformVersion = com.remote.DreamSync.shared.CueWaveforms.VERSION;
-        databaseExecutor.execute(() -> {
-            try {
-                dao.upsertSession(session);
-                runOnUiThread(() -> sendPreparedSession(
-                        phone, watch, sessionId, mode, gain, config, armGeneration));
-            } catch (RuntimeException error) {
-                runOnUiThread(() -> failPendingArm(
-                        armGeneration,
-                        "Could not save tonight's session: " + safeMessage(error)));
-            }
-        });
-    }
-
-    private void sendPreparedSession(
-            Node phone,
-            Node watch,
-            String sessionId,
-            String mode,
-            float gain,
-            JSONObject config,
-            String armGeneration
-    ) {
-        if (!isCurrentArmGeneration(armGeneration)
-                || !sessionId.equals(pref("pending_session_id"))) return;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putString("active_session_id", sessionId)
+                .putBoolean("auto_enabled", true)
+                .putBoolean("watch_auto_confirmed", false)
+                .putString("auto_enrollment_id", enrollment)
                 .putString("local_phone_node", phone.getId())
                 .putString("bound_watch_node", watch.getId())
-                .putString("active_mode", mode)
-                .remove("pending_arm_generation")
-                .remove("pending_session_id")
+                .putString("auto_mode", mode)
+                .putFloat("auto_gain", gain)
+                .remove("pending_enable_generation")
                 .apply();
-        applyNotificationProtection();
         try {
-            armAudioService(CuePlaybackService.ACTION_ARM, gain,
-                    sessionId, phone.getId(), watch.getId());
+            PhoneAutoControl.startStandby(this);
         } catch (RuntimeException error) {
-            cancelArming(sessionId, "Could not arm phone audio: " + safeMessage(error));
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean("auto_enabled", false).apply();
+            statusText.setText("Could not keep DreamSync ready: " + safeMessage(error));
+            updatePowerState();
             return;
         }
-
-        ProtocolEnvelope envelope = ProtocolEnvelope.create(
-                com.remote.DreamSync.shared.Protocol.TYPE_CONFIG,
-                sessionId, "", phone.getId(), watch.getId(),
-                System.currentTimeMillis(),
-                com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS,
-                Map.of("config", config.toString(), "mode", mode));
-        PutDataMapRequest map = PutDataMapRequest.create(
-                com.remote.DreamSync.shared.Protocol.PATH_CONFIG_PREFIX + sessionId);
-        map.getDataMap().putByteArray("envelope", envelope.encode());
-        PutDataRequest request = map.asPutDataRequest();
-        request.setUrgent();
-        Wearable.getDataClient(this).putDataItem(request)
+        final String enrollmentId = enrollment;
+        PhoneAutoControl.publishAutoConfig(this, true, enrollmentId,
+                        phone.getId(), watch.getId(), mode, gain)
                 .addOnSuccessListener(item -> {
-                    statusText.setText("Settings sent. Waiting for the watch, then it will open automatically.");
+                    statusText.setText("DreamSync is On. Approve watch access once; then it runs every night.");
+                    openWatchApp(true, enrollmentId);
+                    updatePowerState();
                     updateReadiness();
                 })
-                .addOnFailureListener(error -> cancelArming(
-                        sessionId, "Could not synchronize settings: " + safeMessage(error)));
+                .addOnFailureListener(error -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putBoolean("auto_enabled", false).apply();
+                    stopService(new Intent(this, CuePlaybackService.class));
+                    statusText.setText("Could not synchronize automatic setup: "
+                            + safeMessage(error));
+                    updatePowerState();
+                });
     }
 
-    private JSONObject buildConfig(
-            String sessionId,
-            String phoneNode,
-            String watchNode,
-            String mode,
-            float gain
-    ) {
-        JSONObject json = new JSONObject();
-        try {
-            long createdUtcMs = System.currentTimeMillis();
-            json.put("sessionId", sessionId);
-            json.put("phoneNodeId", phoneNode);
-            json.put("watchNodeId", watchNode);
-            json.put("mode", mode);
-            json.put("createdUtcMs", createdUtcMs);
-            json.put("expiresUtcMs", createdUtcMs + 6L * 60L * 60L * 1000L);
-            json.put("cueGain", gain);
-            json.put("armTimeoutMin", 180);
-            json.put("deepStartMin", 25);
-            json.put("deepEndMin", 145);
-            json.put("remStartMin", 255);
-            json.put("sessionEndMin", 510);
-            json.put("deepStableMin", 10);
-            json.put("remStableMin", 5);
-            json.put("deepCueIntervalSec", 30);
-            json.put("deepCuesPerBlock", 6);
-            json.put("maxDeepBlocks", 2);
-            json.put("lucidCueIntervalSec", 180);
-            json.put("maxLucidCues", 2);
-            json.put("enableRawPpg", false);
-            json.put("calibration", getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .getString("last_calibration", ""));
-        } catch (JSONException impossible) {
-            throw new IllegalStateException(impossible);
+    private void openWatchPlayStoreForInstall(String generation) {
+        Wearable.getNodeClient(this).getConnectedNodes()
+                .addOnSuccessListener(nodes -> {
+                    if (!generation.isEmpty() && !isCurrentEnableGeneration(generation)) return;
+                    Node watch = chooseNode(nodes);
+                    if (watch == null) {
+                        if (!generation.isEmpty()) failPendingEnable(generation,
+                                "Pair and connect a Wear OS watch, then tap Turn DreamSync On again.");
+                        else statusText.setText(
+                                "No connected Wear OS watch was found. Pair a watch first.");
+                        return;
+                    }
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putString("pending_watch_node", watch.getId())
+                            .putBoolean("watch_install_pending", true)
+                            .apply();
+                    Intent storeIntent = new Intent(Intent.ACTION_VIEW)
+                            .setData(Uri.parse("market://details?id=" + getPackageName()))
+                            .addCategory(Intent.CATEGORY_BROWSABLE);
+                    launchRemoteIntent(storeIntent, watch.getId(),
+                            "DreamSync's official Play Store page opened on the watch. Tap Install; setup will continue automatically.",
+                            "Could not open the watch Play Store: ",
+                            () -> {
+                                if (!generation.isEmpty()) scheduleWatchInstallCheck(generation);
+                            });
+                })
+                .addOnFailureListener(error -> {
+                    if (!generation.isEmpty()) failPendingEnable(generation,
+                            "Could not find the paired watch: " + safeMessage(error));
+                    else statusText.setText("Could not find the paired watch: " + safeMessage(error));
+                });
+    }
+
+    private void scheduleWatchInstallCheck(String generation) {
+        if (!isCurrentEnableGeneration(generation)) return;
+        watchInstallPollAttempt++;
+        if (watchInstallPollAttempt > WATCH_INSTALL_POLL_LIMIT) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .remove("pending_enable_generation").apply();
+            statusText.setText("Finish installing DreamSync on the watch, then tap Turn DreamSync On again.");
+            return;
         }
-        return json;
+        statusText.postDelayed(() -> {
+            if (!isCurrentEnableGeneration(generation)) return;
+            Wearable.getCapabilityClient(this).getCapability(
+                            com.remote.DreamSync.shared.Protocol.WATCH_CAPABILITY,
+                            CapabilityClient.FILTER_REACHABLE)
+                    .addOnSuccessListener(capability -> {
+                        Node watch = chooseNode(capability.getNodes());
+                        if (watch == null) scheduleWatchInstallCheck(generation);
+                        else {
+                            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                    .putBoolean("watch_install_pending", false)
+                                    .putString("bound_watch_node", watch.getId())
+                                    .apply();
+                            enableForWatch(watch, generation);
+                        }
+                    })
+                    .addOnFailureListener(error -> scheduleWatchInstallCheck(generation));
+        }, 3_000L);
     }
 
-    private void stopSession() {
-        String activeSessionId = pref("active_session_id");
-        String sessionId = activeSessionId.isEmpty()
-                ? pref("pending_session_id") : activeSessionId;
+    private void turnDreamSyncOff() {
+        String sessionId = pref("active_session_id");
         String watchNode = pref("bound_watch_node");
         String phoneNode = pref("local_phone_node");
-        if (!sessionId.isEmpty() && !watchNode.isEmpty()) {
-            ProtocolEnvelope envelope = ProtocolEnvelope.create(
-                    com.remote.DreamSync.shared.Protocol.TYPE_STOP,
-                    sessionId, "", phoneNode, watchNode,
-                    System.currentTimeMillis(),
-                    com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS, Map.of());
-            Wearable.getMessageClient(this).sendMessage(
-                    watchNode, Protocol.PATH_STOP, envelope.encode());
+        String enrollment = pref("auto_enrollment_id");
+        if (!sessionId.isEmpty()) sendStopToWatch(sessionId, phoneNode, watchNode);
+        if (!enrollment.isEmpty() && !phoneNode.isEmpty() && !watchNode.isEmpty()) {
+            PhoneAutoControl.publishAutoConfig(this, false, enrollment,
+                    phoneNode, watchNode, selectedMode(), cueGain());
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean("auto_enabled", false)
                 .putString("cancelled_session_id", sessionId)
                 .remove("active_session_id")
-                .remove("pending_arm_generation")
-                .remove("pending_session_id")
-                .remove("auto_opened_watch_session")
+                .remove("watch_live_session_id")
+                .remove("pending_enable_generation")
                 .apply();
         stopService(new Intent(this, CuePlaybackService.class));
         restoreNotificationProtection();
-        databaseExecutor.execute(() -> {
+        if (!sessionId.isEmpty()) databaseExecutor.execute(() -> {
             SessionEntity session = dao.session(sessionId);
             if (session != null) {
-                session.state = "USER_STOPPED";
+                session.state = "USER_TURNED_OFF";
                 session.endUtcMs = System.currentTimeMillis();
                 dao.upsertSession(session);
             }
         });
-        statusText.setText("Stop requested. Cues are disabled.");
+        statusText.setText("DreamSync is Off. Automatic sleep detection and cues are disabled.");
+        updatePowerState();
+        updateReadiness();
     }
 
-    private void cancelArming(String sessionId, String message) {
-        runOnUiThread(() -> {
-            if (!sessionId.equals(pref("active_session_id"))
-                    && !sessionId.equals(pref("pending_session_id"))) return;
-            sendStopToWatch(sessionId, pref("local_phone_node"), pref("bound_watch_node"));
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putString("cancelled_session_id", sessionId)
-                    .remove("active_session_id")
-                    .remove("pending_arm_generation")
-                    .remove("pending_session_id")
-                    .remove("auto_opened_watch_session")
-                    .apply();
-            stopService(new Intent(this, CuePlaybackService.class));
-            restoreNotificationProtection();
-            databaseExecutor.execute(() -> {
-                SessionEntity session = dao.session(sessionId);
-                if (session != null) {
-                    session.state = "ARM_FAILED";
-                    session.endUtcMs = System.currentTimeMillis();
-                    dao.upsertSession(session);
-                }
-            });
-            statusText.setText(message + " Audio is off. Tap Arm for tonight to retry.");
-        });
-    }
-
-    private boolean isCurrentArmGeneration(String generation) {
+    private boolean isCurrentEnableGeneration(String generation) {
         return generation != null
                 && !generation.isEmpty()
-                && generation.equals(pref("pending_arm_generation"));
+                && generation.equals(pref("pending_enable_generation"));
     }
 
-    private void failPendingArm(String generation, String message) {
-        if (!isCurrentArmGeneration(generation)) return;
+    private void failPendingEnable(String generation, String message) {
+        if (!isCurrentEnableGeneration(generation)) return;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .remove("pending_arm_generation")
-                .remove("pending_session_id")
+                .remove("pending_enable_generation")
                 .apply();
         statusText.setText(message);
+    }
+
+    private void syncAutoSettingsIfEnabled() {
+        if (!autoEnabled()) return;
+        String enrollment = pref("auto_enrollment_id");
+        String phone = pref("local_phone_node");
+        String watch = pref("bound_watch_node");
+        if (enrollment.isEmpty() || phone.isEmpty() || watch.isEmpty()) return;
+        String mode = selectedMode();
+        float gain = cueGain();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("auto_mode", mode)
+                .putFloat("auto_gain", gain)
+                .apply();
+        PhoneAutoControl.publishAutoConfig(
+                this, true, enrollment, phone, watch, mode, gain);
     }
 
     private void sendStopToWatch(String sessionId, String phoneNode, String watchNode) {
@@ -617,9 +654,13 @@ public final class MainActivity extends Activity {
 
     private JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schemaVersion", 2);
+        root.put("schemaVersion", 3);
         root.put("generatedUtcMs", System.currentTimeMillis());
         root.put("productLanguage", "wellness sleep-cue tool; non-medical");
+        root.put("automaticModeEnabled", autoEnabled());
+        root.put("chargeReminderLeadMinutes", ChargeReminderScheduler.LEAD_MINUTES);
+        root.put("chargeReminderRecordCount", getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt("charge_reminder_record_count", 0));
         JSONArray sessionArray = new JSONArray();
         for (SessionEntity session : dao.sessions()) {
             JSONObject item = new JSONObject();
@@ -701,14 +742,13 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmDeleteAll() {
-        if (!pref("active_session_id").isEmpty()
-                || !pref("pending_session_id").isEmpty()) {
-            statusText.setText("Stop the current session before deleting phone data.");
+        if (autoEnabled() || !pref("active_session_id").isEmpty()) {
+            statusText.setText("Turn DreamSync Off before deleting data.");
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("Delete phone data?")
-                .setMessage("This removes phone session history, cue events, surveys, and received watch logs. Delete watch history separately with Delete watch data on the watch. It cannot be undone.")
+                .setTitle("Delete DreamSync data?")
+                .setMessage("This removes session history, cue events, surveys, and received logs from the phone. It also sends a secure deletion request to the bound watch. It cannot be undone.")
                 .setPositiveButton("Delete", (dialog, which) -> databaseExecutor.execute(() -> {
                     dao.deleteAllSurveys();
                     dao.deleteAllEvents();
@@ -716,11 +756,38 @@ public final class MainActivity extends Activity {
                     deleteReceivedLogs();
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .remove("last_summary").remove("last_summary_session").apply();
-                    runOnUiThread(() -> statusText.setText(
-                            "All phone session data deleted. Delete watch data on the watch if needed."));
+                    runOnUiThread(this::publishWatchDeleteRequest);
                 }))
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void publishWatchDeleteRequest() {
+        String enrollment = pref("auto_enrollment_id");
+        String phoneNode = pref("local_phone_node");
+        String watchNode = pref("bound_watch_node");
+        if (enrollment.isEmpty() || phoneNode.isEmpty() || watchNode.isEmpty()) {
+            statusText.setText("Phone data deleted. No bound watch data was found.");
+            return;
+        }
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.remote.DreamSync.shared.Protocol.TYPE_DELETE_DATA,
+                enrollment, "", phoneNode, watchNode,
+                System.currentTimeMillis(),
+                com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS,
+                Map.of("reason", "USER_CONFIRMED_DELETE"));
+        PutDataMapRequest map = PutDataMapRequest.create(
+                com.remote.DreamSync.shared.Protocol.PATH_DELETE_DATA_PREFIX
+                        + envelope.messageId);
+        map.getDataMap().putByteArray("envelope", envelope.encode());
+        PutDataRequest request = map.asPutDataRequest();
+        request.setUrgent();
+        Wearable.getDataClient(this).putDataItem(request)
+                .addOnSuccessListener(item -> statusText.setText(
+                        "Phone data deleted. Watch deletion will finish when the watch connects."))
+                .addOnFailureListener(error -> statusText.setText(
+                        "Phone data deleted. Watch deletion could not be queued: "
+                                + safeMessage(error)));
     }
 
     private void deleteReceivedLogs() {
@@ -746,10 +813,26 @@ public final class MainActivity extends Activity {
                         .toLowerCase(Locale.US);
             }
         } catch (JSONException ignored) {}
-        readinessText.setText("Readiness: speaker " + (audio.success ? "ready" : audio.reason)
+        int chargeRecords = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt("charge_reminder_record_count", 0);
+        readinessText.setText((autoEnabled() ? "ON" : "OFF")
+                + " | speaker " + (audio.success ? "ready" : audio.reason)
                 + " | calibration " + (calibration.isEmpty() ? "needed" : "saved")
                 + " | lucid practice " + practice + "/10"
-                + " | watch " + compatibility);
+                + " | watch " + compatibility
+                + " | charge reminder " + (chargeRecords >= ChargeReminderScheduler.MIN_RECORDS
+                ? "learned" : chargeRecords + "/3 nights"));
+        updatePowerState();
+    }
+
+    private void updatePowerState() {
+        if (powerButton != null) powerButton.setText(
+                autoEnabled() ? "Turn DreamSync Off" : "Turn DreamSync On");
+    }
+
+    private boolean autoEnabled() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("auto_enabled", false);
     }
 
     private void showOnboardingOnce() {
@@ -758,7 +841,8 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Welcome to DreamSync")
                 .setMessage("Dreams Redefined. DreamSync's mission is to protect sleep continuity. It estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance. "
-                        + "Tap Arm for tonight once. DreamSync opens the watch, waits for sustained sleep signals, estimates sleep onset, then activates conservative cue timing automatically. "
+                        + "Turn DreamSync On once. It passively watches for supported sleep signals every night and starts conservative confirmation after likely sleep. Turn it Off at any time. "
+                        + "After three recorded sleep starts, the phone learns your usual sleep time and reminds you to charge the watch three hours earlier. Until then, charge it several hours before your normal sleep time. "
                         + "First validation targets Galaxy Watch Ultra 2024 and 2025. Other Galaxy Watch4-and-later models receive basic monitoring unless DreamSync's live sensor check confirms advanced support. Apple Watch is planned but is not supported in this release. "
                         + "DreamSync is an adult wellness app that estimates cue-ready windows from wrist motion and heart rate. "
                         + "Its deep cue pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
@@ -782,6 +866,7 @@ public final class MainActivity extends Activity {
                         + "- Get daylight and exercise earlier in the day.\n"
                         + "- Try a warm bath 1-2 hours before bed.\n"
                         + "- Use slow, comfortable breathing while winding down.\n\n"
+                        + "Charge your watch several hours before your normal sleep time. After three recorded nights, DreamSync schedules this reminder three hours before your learned usual sleep time.\n\n"
                         + "During sleep DreamSync keeps screens and haptics off, pauses cues for 20 minutes after an arousal sign, and stops after the first cue-linked wake sign.\n\n"
                         + "Phone notification protection: " + (enabled ? "ON" : "OFF")
                         + ". If Samsung's Sync Do not disturb with phone setting is enabled, the watch follows the phone. Alarms and allowed priority contacts follow your system settings.\n\n"
@@ -795,11 +880,11 @@ public final class MainActivity extends Activity {
                                 NotificationManager manager = getSystemService(NotificationManager.class);
                                 if (manager == null
                                         || !manager.isNotificationPolicyAccessGranted()) {
-                                    statusText.setText("Allow DreamSync notification access, then Arm for tonight.");
+                                    statusText.setText("Allow notification access. Protection applies automatically during detected sleep.");
                                     startActivity(new Intent(
                                             Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
                                 } else {
-                                    statusText.setText("Notification protection will turn on only during an armed night.");
+                                    statusText.setText("Notification protection will turn on only during a detected sleep session.");
                                 }
                             } else {
                                 restoreNotificationProtection();
@@ -844,7 +929,7 @@ public final class MainActivity extends Activity {
                 .getString("watch_capabilities", "");
         String live;
         if (json.isEmpty()) {
-            live = "No live sensor check yet. Arm a night with the watch open to run it.";
+            live = "No live sensor check yet. Turn DreamSync On and open the watch once.";
         } else {
             try {
                 JSONObject values = new JSONObject(json);
@@ -854,16 +939,15 @@ public final class MainActivity extends Activity {
                         + values.optString("model", "") + "\n"
                         + status + "\n" + values.optString("reason", "");
             } catch (JSONException error) {
-                live = "Live compatibility data could not be read. Run a new armed test.";
+                live = "Live compatibility data could not be read. Run a new automatic session.";
             }
         }
         new AlertDialog.Builder(this)
                 .setTitle("Watch compatibility")
-                .setMessage(live + "\n\nValidation order:\n"
-                        + "1. Galaxy Watch Ultra 2024 and 2025\n"
-                        + "2. Galaxy Watch8, Watch8 Classic, and Watch7\n"
-                        + "3. Watch4, Watch5, and Watch6 only when the live check passes\n\n"
-                        + "Basic monitoring uses standard Wear OS motion and heart rate. Full support requires Samsung IBI, skin temperature, off-wrist checks, and a passed live self-test. Apple Watch, Pixel Watch, Fitbit, and Garmin are not supported in this release.")
+                .setMessage(live + "\n\nCore support:\n"
+                        + "Android 8.0+ phone with Google Play services\n"
+                        + "Wear OS 3+ watch with motion and heart rate\n\n"
+                        + "DreamSync checks the actual watch sensors. Core watches use standard motion and heart rate. More capable watches automatically keep every available approved feature, including IBI/HRV, skin temperature, off-wrist checks, and raw PPG when the sensor provider supports them. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.")
                 .setPositiveButton("Done", null)
                 .show();
     }
@@ -881,9 +965,9 @@ public final class MainActivity extends Activity {
                 "<b>Dreams Redefined.</b><br>"
                         + "Our mission is to protect sleep continuity. DreamSync estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance.<br><br>"
                         + "<b>Watch compatibility</b><br>"
-                        + "First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 are conditional: the in-app motion, heart-rate, software, permission, and Samsung-signal check must pass. A watch can show Fully supported, Basic monitoring only, or Not supported. Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.<br><br>"
+                        + "DreamSync supports Android 8.0+ phones with Google Play services and targets Wear OS 3+ watches that pass the live motion, heart-rate, software, and permission checks. Core watches use standard Wear OS signals. High-end watches automatically keep every available approved advanced feature; Galaxy Watch models can add IBI/HRV, skin-temperature, off-wrist, and raw-PPG signals when the Samsung sensor package and live self-test pass. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.<br><br>"
                         + "<b>What DreamSync does</b><br>"
-                        + "1. Tap <b>Arm for tonight</b> once. DreamSync opens the watch and waits quietly for sustained sleep signals.<br>"
+                        + "1. Turn <b>DreamSync On</b> once. Low-power watch monitoring checks for an asleep-state signal, or uses a conservative passive heart-rate fallback on compatible watches, every night until you turn it Off.<br>"
                         + "2. Your watch estimates sleep onset from sustained low motion, heart-rate change, signal quality, time of night, and—when the approved Samsung SDK is packaged—IBI stability, skin-temperature trend, and off-wrist status. This is an estimate, not a sleep-stage diagnosis.<br>"
                         + "3. Cues are allowed only after a stable, low-motion period, from 25 to 145 minutes after estimated sleep onset.<br>"
                         + "4. A deep cue is two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.<br>"
@@ -937,63 +1021,102 @@ public final class MainActivity extends Activity {
                 .getString("last_summary", "");
         if (!summary.isEmpty()) showFriendlySummary(summary);
         updateReadiness();
+        updatePowerState();
+        String pendingGeneration = pref("pending_enable_generation");
+        if (!pendingGeneration.isEmpty() && !autoEnabled()
+                && getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("watch_install_pending", false)
+                && watchInstallPollAttempt == 0) {
+            scheduleWatchInstallCheck(pendingGeneration);
+        }
     }
 
-    private void openWatchApp(boolean autoArm, String sessionId) {
+    private void setupOrOpenWatch() {
+        statusText.setText("Finding the paired Wear OS watch...");
+        findWatchForOpen(CapabilityClient.FILTER_REACHABLE);
+    }
+
+    private void findWatchForOpen(int filter) {
+        Wearable.getCapabilityClient(this).getCapability(
+                        com.remote.DreamSync.shared.Protocol.WATCH_CAPABILITY, filter)
+                .addOnSuccessListener(capability -> {
+                    Node watch = chooseNode(capability.getNodes());
+                    if (watch != null) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putString("bound_watch_node", watch.getId())
+                                .putBoolean("watch_install_pending", false)
+                                .apply();
+                        openWatchApp(false, "", watch.getId());
+                    } else if (filter == CapabilityClient.FILTER_REACHABLE) {
+                        findWatchForOpen(CapabilityClient.FILTER_ALL);
+                    } else {
+                        openWatchPlayStoreForInstall("");
+                    }
+                })
+                .addOnFailureListener(error -> statusText.setText(
+                        "Could not check the paired watch: " + safeMessage(error)));
+    }
+
+    private void openWatchApp(boolean setup, String enrollmentId) {
         String targetNodeId = pref("bound_watch_node");
         if (targetNodeId.isEmpty()) {
-            statusText.setText("No watch is bound yet. Tap Arm for tonight first.");
+            if (setup) statusText.setText("Watch setup is waiting for the Play Store install.");
+            else setupOrOpenWatch();
             return;
         }
+        openWatchApp(setup, enrollmentId, targetNodeId);
+    }
+
+    private void openWatchApp(boolean setup, String enrollmentId, String targetNodeId) {
         Intent remoteIntent = new Intent(Intent.ACTION_VIEW)
-                .setData(autoArm
-                        ? Uri.parse("dreamsync://watch/arm").buildUpon()
-                        .appendQueryParameter("session", sessionId).build()
+                .setData(setup
+                        ? Uri.parse("dreamsync://watch/enable").buildUpon()
+                        .appendQueryParameter("enrollment", enrollmentId).build()
                         : Uri.parse("dreamsync://watch/start"))
                 .addCategory(Intent.CATEGORY_BROWSABLE);
+        launchRemoteIntent(remoteIntent, targetNodeId,
+                setup
+                        ? "Watch opened. Approve health access once. DreamSync is then controlled by the phone."
+                        : "Watch opened. DreamSync controls remain on the phone.",
+                "Could not open the watch: ", null);
+    }
+
+    private void launchRemoteIntent(
+            Intent intent,
+            String targetNodeId,
+            String successMessage,
+            String failurePrefix,
+            Runnable onDelivered
+    ) {
         try {
             ListenableFuture<Void> launch = new RemoteActivityHelper(this, remoteExecutor)
-                    .startRemoteActivity(remoteIntent, targetNodeId);
+                    .startRemoteActivity(intent, targetNodeId);
             launch.addListener(() -> {
                 try {
                     launch.get();
-                    if (autoArm && !sessionId.equals(pref("active_session_id"))) {
-                        runOnUiThread(() -> statusText.setText(
-                                "Arm was cancelled. The watch will not start this session."));
-                        return;
-                    }
-                    if (autoArm) {
-                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                                .putString("auto_opened_watch_session", sessionId)
-                                .apply();
-                    }
-                    runOnUiThread(() -> statusText.setText(autoArm
-                            ? "Watch opened. Approve any first-use prompts; sleep estimation then runs automatically."
-                            : "Watch opened."));
+                    runOnUiThread(() -> {
+                        statusText.setText(successMessage);
+                        if (onDelivered != null) onDelivered.run();
+                    });
                 } catch (Exception error) {
                     Throwable cause = error.getCause() == null ? error : error.getCause();
-                    if (autoArm) {
-                        cancelArming(sessionId,
-                                "Could not open the bound watch: " + safeMessage(cause));
-                    } else {
-                        runOnUiThread(() -> statusText.setText(
-                                "Could not open the bound watch: " + safeMessage(cause)));
-                    }
+                    runOnUiThread(() -> statusText.setText(
+                            failurePrefix + safeMessage(cause)));
                 }
             }, remoteExecutor);
         } catch (RuntimeException error) {
-            if (autoArm) {
-                cancelArming(sessionId, "Remote launch failed: " + safeMessage(error));
-            } else {
-                statusText.setText("Remote launch failed: " + safeMessage(error));
-            }
+            statusText.setText(failurePrefix + safeMessage(error));
         }
     }
 
-    private Node chooseNode(Set<Node> nodes) {
-        if (nodes == null || nodes.isEmpty()) return null;
-        for (Node node : nodes) if (node.isNearby()) return node;
-        return nodes.iterator().next();
+    private Node chooseNode(Iterable<Node> nodes) {
+        if (nodes == null) return null;
+        Node first = null;
+        for (Node node : nodes) {
+            if (first == null) first = node;
+            if (node.isNearby()) return node;
+        }
+        return first;
     }
 
     private String selectedMode() {

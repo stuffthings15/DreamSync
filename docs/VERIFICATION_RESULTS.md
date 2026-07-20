@@ -7,15 +7,18 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Published phone internal-test code: 13 (`1.1.2-test`).
-- Published Wear OS internal-test code: 14 (`1.1.2-test`).
-- Both releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
+- Published phone internal-test code: 17 (`1.2.1-test`).
+- Published Wear OS internal-test code: 18 (`1.2.1-test`).
+- Both 1.2.1-test releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
-- Clean shared tests: 33 checks, 0 failures, 0 errors, and 0 skipped.
-- Phone and Wear OS Android instrumentation test APKs compile; device execution remains pending because no test device was attached.
+- Clean shared tests: 40 checks, 0 failures, 0 errors, and 0 skipped, including persistent automatic-session start gating, passive-HR fallback timing, and manufacturer-neutral full-sensor selection.
+- Phone instrumentation passes 3/3 on an Android 16 phone emulator: Room 2-to-3 migration, large-font scrolling, persistent power control, and required companion/audio/connected-device permissions.
+- Wear instrumentation passes 3/3 when installed on the same Android 16 emulator: Room 2-to-3 migration, single-use handshake, and the scrollable phone-controlled watch screen. This executes Android code but is not evidence of a real round Wear OS display or watch sensors.
+- The first emulator run exposed missing Room schema assets in both test APKs. Both modules now package their exported schemas through the `androidTest` asset source set; clean rebuild and rerun pass.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS Android lint completes with no blocking errors.
 - Phone and Wear OS signed release bundles pass Gradle signing validation and `jarsigner` integrity verification.
+- Google Play accepted phone code 17 without device loss and Wear OS code 18 for all 72 previously supported wearable models.
 - Room schema 3 is generated on both devices with explicit version 2-to-3 migrations; existing local records are not intentionally destroyed.
 - Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
 - The research report has real source links and no broken citation markers or text-encoding artifacts.
@@ -25,8 +28,12 @@ Date: 19 July 2026
 
 ## Sleep-continuity implementation
 
-- Visible nightly Arm remains required; after Arm, likely-sleep detection is automatic.
-- Deterministic states: Armed, Preparing for sleep, Likely asleep, Stable sleep, Possible arousal, Recovered, and Stopped.
+- One persistent On/Off choice controls nightly operation. While On, Wear Health Services uses the optional asleep-state signal or a conservative three-sample passive-HR candidate inside the normal sleep window to create a fresh confirmation session every night.
+- Turn On now guides the required one-time quiet cue calibration, finds reachable or previously known watches, opens the official watch Play install when the watch app is missing, polls for completion, then binds and synchronizes setup.
+- The watch contains no user settings. It automatically opens the phone controls on manual launch and automatically retries delayed phone configuration during first-time setup.
+- Passive HR alone never enables a cue. Higher-rate sustained stillness, fresh heart rate, signal quality, and all later safety gates remain required.
+- The phone keeps a visible low-priority connected-device service while On; reboot and package-update receivers restore both phone readiness and watch passive registration.
+- Deterministic flow: On and waiting, passive asleep signal, confirming sleep, stable sleep, possible arousal, recovered, and session stopped.
 - Sleep onset still requires sustained low motion plus fresh cardiac data.
 - Motion-only sessions log but cannot trigger deep or lucid cues.
 - A seven-night rolling median baseline stores resting HR, IBI, RMSSD, skin temperature, and onset timing while early nights use conservative defaults.
@@ -35,14 +42,16 @@ Date: 19 July 2026
 - A morning disturbance rating lowers the next calibration level and requires recalibration.
 - Continuity output includes estimated awakening count, WASO, longest uninterrupted bout, cue-linked arousal rate, and morning disturbance.
 - Signal output includes registration, freshness, sample counts, observed rates, off-wrist status, source, battery, and capability data.
-- Optional user-approved notification protection uses Android priority mode only while a night is armed and restores the previous state on Stop, timeout, summary, or relaunch recovery.
+- Optional user-approved notification protection uses Android priority mode only during a detected sleep session and restores the previous state on Off, timeout, summary, or relaunch recovery.
+- Users are told to charge several hours before normal sleep. After three completed records, an inexact local phone alarm reminds them three hours before the median usual sleep-start time.
 - Pre-sleep coaching includes schedule, daylight, exercise, warm-bath, and comfortable breathing guidance plus non-diagnostic apnea referral language.
 
 ## Samsung sensor implementation
 
-- Optional Samsung Health Sensor SDK adapter supports continuous HR plus IBI, skin temperature, off-wrist status, and optional raw PPG.
-- Raw PPG is disabled by default.
-- Standard Wear OS accelerometer and heart-rate sensing remains the fallback.
+- Optional Samsung Health Sensor SDK adapter supports continuous HR plus IBI, skin temperature, off-wrist status, and raw PPG.
+- The manufacturer-neutral feature classifier keeps all approved reported sensors enabled on full-sensor watches; unsupported trackers are ignored at runtime.
+- Standard Wear OS accelerometer, passive HR, and active heart-rate sensing remain the broad core fallback.
+- Phone minimum is Android 8.0/API 26; watch minimum is Wear OS 3/API 30. Play and live capability checks may narrow delivery further.
 - Live compatibility states are Fully supported, Basic monitoring only, or Not supported.
 - The watch sends durable capability data to the phone and export.
 - The build conditionally packages `wear/libs/samsung-health-sensor-api.aar` when supplied.
@@ -52,13 +61,13 @@ Date: 19 July 2026
 - One valid cue request can produce at most one playback; invalid requests produce none.
 - Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, wrong-sender, and reordered commands fail closed.
 - Durable phone-watch state and summary items validate the source node, sender, receiver, session, type, protocol version, path, expiry, and duplicate ID before changing local state.
-- The first terminal cause is preserved, exact watch terminal outcomes are stored, and a valid summary clears the session binding so the next night can start cleanly.
+- The first terminal cause is preserved, exact watch terminal outcomes are stored, and a valid summary clears only the current session while preserving the recurring On enrollment for the next night.
 - Cue allowance is consumed only after `AUDIO_STARTED`.
 - Speaker route, mute, volume, focus, interruptions, initialization, calibration, and waveform version are checked.
 - No sleep haptics are used.
 - Phone loss, stale sensors, off-wrist state, low battery, storage failure, route problems, and process interruption prevent or disable cueing.
 - Logs, summaries, configuration, cue lifecycle, surveys, capabilities, and failures are local and exportable.
-- Phone and watch deletion controls remove each device's local database and session files; deletion is blocked during an active session.
+- The confirmed phone deletion control removes phone data and queues a bound, expiring, duplicate-guarded watch deletion command; deletion remains blocked while DreamSync is On or a session is active.
 
 ## Research and marketing boundary
 
@@ -80,4 +89,4 @@ Date: 19 July 2026
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
 - Google Play closed-release gate and all production-policy tasks remain external to local code.
-- The hardware runner parsed successfully and its list-only preflight found zero attached Android devices on 2026-07-19; physical execution therefore remains pending.
+- The hardware runner parsed successfully and its list-only preflight found zero attached physical Android devices on 2026-07-19; physical execution therefore remains pending.

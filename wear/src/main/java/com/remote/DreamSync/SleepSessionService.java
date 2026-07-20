@@ -82,7 +82,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final long CUE_AROUSAL_WINDOW_MS = 20_000L;
 
     private static volatile boolean running;
-    private static volatile String currentStatus = "Not armed.";
+    private static volatile String currentStatus = "DreamSync is On and waiting for sleep.";
 
     private final Object sampleLock = new Object();
     private final Deque<SleepFeatureEngine.Sample> heartSamples = new ArrayDeque<>();
@@ -258,7 +258,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 || config.phoneNodeId.isEmpty()
                 || config.watchNodeId.isEmpty()
                 || !config.isCurrent(timeProvider.utcMs())) {
-            broadcastStatus("Tonight's settings are missing or expired. Tap Arm for tonight on the phone.");
+            broadcastStatus("Automatic session settings are missing or expired. DreamSync remains On; check the phone-watch connection.");
             stopSelf();
             return;
         }
@@ -268,7 +268,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 this, requestedSession, requestedHandshake)) {
             sessionCoordinator.recoverAfterProcessDeath();
             terminalState = "PROCESS_INTERRUPTED";
-            broadcastStatus("Fresh phone-watch handshake required. Tap Arm for tonight again.");
+            broadcastStatus("Fresh phone-watch confirmation is required. DreamSync remains On and will retry next sleep period.");
             stopSelf();
             return;
         }
@@ -296,8 +296,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             stopSelf();
             return;
         }
-        persistEvent("AUTO_SLEEP_ESTIMATION_ARMED", "", "armTimeoutMin=" + config.armTimeoutMin);
-        logEvent("AUTO_SLEEP_ESTIMATION_ARMED", String.format(
+        persistEvent("AUTO_SLEEP_CONFIRMATION_STARTED", "", "detectionTimeoutMin=" + config.armTimeoutMin);
+        logEvent("AUTO_SLEEP_CONFIRMATION_STARTED", String.format(
                 Locale.US,
                 "mode=%s gain=%.3f hrSensor=%s armTimeoutMin=%d",
                 config.mode,
@@ -305,7 +305,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 heartRate != null,
                 config.armTimeoutMin
         ));
-        broadcastStatus("Automatic sleep estimation armed • waiting for sustained sleep signals");
+        broadcastStatus("Sleep detected • confirming sustained sleep signals • cues off");
         evaluatorHandler.postDelayed(evaluator, EVALUATION_INTERVAL_MS);
     }
 
@@ -390,6 +390,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         persistEvent("SAMSUNG_SENSOR_ERROR", "", samsungDetail);
                     }
                 });
+        // A high-end watch must not be reduced to the core profile. The bridge still
+        // attaches only tracker types reported by the device at runtime.
         samsungBridge.start(config.enableRawPpg);
     }
 
@@ -545,7 +547,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             long onsetUtcMs = sessionStartUtcMs + Math.max(0L, onset - sessionStartMs);
             String details = String.format(
                     Locale.US,
-                    "minutesAfterArming=%.1f;onsetUtcMs=%d;basis=sustained_low_motion",
+                    "minutesAfterConfirmationStart=%.1f;onsetUtcMs=%d;basis=sustained_low_motion",
                     (onset - sessionStartMs) / 60_000.0,
                     onsetUtcMs
             );
@@ -558,9 +560,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (SleepSessionClock.armTimedOut(
                 sessionStartMs, onset, now, config.armTimeoutMin)) {
             terminateSession(SessionOutcome.forConfiguredLimit(false), "TIMED_OUT",
-                    "sleep was not detected before the arm timeout");
-            persistEvent("SLEEP_NOT_DETECTED", "", "arm timeout reached; no cues sent");
-            logEvent("SESSION_TIMEOUT", "Sleep was not detected before the arm timeout");
+                    "sleep was not confirmed before the safety timeout");
+            persistEvent("SLEEP_NOT_CONFIRMED", "", "confirmation timeout reached; no cues sent");
+            logEvent("SESSION_TIMEOUT", "Sleep was not confirmed before the safety timeout");
             stopSelf();
             return;
         }
@@ -871,7 +873,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (sleepElapsedMin < 0.0) {
             return String.format(
                     Locale.US,
-                    "Waiting for sleep • %.0f min armed • %s • cues off",
+                    "Confirming sleep • %.0f min • %s • cues off",
                     armedElapsedMin,
                     heart
             );
@@ -916,7 +918,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void startAsForeground() {
-        Notification notification = buildNotification("Automatic sleep estimation is armed");
+        Notification notification = buildNotification("Sleep detected; conservative checks are active");
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(
                     NOTIFICATION_ID,
@@ -1111,7 +1113,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if ("DEGRADED".equals(state)) {
             status = "Logging only: " + qualityReason;
         } else if ("WAITING_FOR_SLEEP".equals(state)) {
-            status = "Automatic sleep estimation armed. Waiting for sustained sleep signals.";
+            status = "Sleep detected. Waiting for sustained confirmation signals.";
         } else if ("CUE_WINDOW_ACTIVE".equals(state)) {
             status = "Sleep estimated. Conservative cue window is active.";
         } else {
@@ -1166,7 +1168,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                                 "bound phone disconnected; logging continues");
                         persistEvent("PHONE_LOST", "", "bound phone disconnected; logging continues");
                         logEvent("PHONE_LOST", "Cueing disabled until a new session handshake");
-                        broadcastStatus("Phone lost. Logging only. Start a new session to re-arm cues.");
+                        broadcastStatus("Phone lost. Logging only. DreamSync remains On and will retry next sleep period.");
                     }
                 })
                 .addOnFailureListener(error -> {
@@ -1239,7 +1241,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     : Math.round((timeProvider.elapsedRealtimeMs() - sessionStartMs) / 60_000.0));
             summary.put("automaticSleepOnsetEstimation", true);
             summary.put("sleepOnsetEstimated", estimatedSleepOnsetMs > 0L);
-            summary.put("estimatedSleepOnsetMinutesAfterArming", estimatedSleepOnsetMs <= 0L
+            summary.put("estimatedSleepOnsetMinutesAfterConfirmationStart", estimatedSleepOnsetMs <= 0L
                     ? -1
                     : Math.round((estimatedSleepOnsetMs - sessionStartMs) / 60_000.0));
             summary.put("sleepMinutes", estimatedSleepOnsetMs <= 0L

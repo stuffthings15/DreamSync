@@ -63,7 +63,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
-                android:text="TONIGHT"
+                android:text="AUTOMATIC NIGHTS"
                 android:textColor="@color/ds_violet"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -73,7 +73,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Preview the sound, then arm once. DreamSync opens the watch and waits for sleep."
+                android:text="Turn On once. DreamSync watches for sleep every night until you turn it Off."
                 android:textColor="@color/ds_muted"
                 android:textSize="13sp" />
 
@@ -82,19 +82,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Ready to set up tonight."
+                android:text="DreamSync is Off."
                 android:textColor="@color/ds_text"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
             <Button
-                android:id="@+id/armButton"
+                android:id="@+id/powerButton"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
                 android:layout_marginTop="14dp"
                 android:background="@drawable/btn_primary"
                 android:stateListAnimator="@null"
-                android:text="Arm for tonight"
+                android:text="Turn DreamSync On"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
@@ -108,27 +108,14 @@
 
                 <Button
                     android:id="@+id/openWatchButton"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="52dp"
-                    android:layout_marginEnd="6dp"
-                    android:layout_weight="1"
                     android:background="@drawable/btn_outline"
                     android:stateListAnimator="@null"
-                    android:text="Open watch"
+                    android:text="Set up watch app"
                     android:textAllCaps="false"
                     android:textColor="@color/ds_ice" />
 
-                <Button
-                    android:id="@+id/stopButton"
-                    android:layout_width="0dp"
-                    android:layout_height="52dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/btn_danger"
-                    android:stateListAnimator="@null"
-                    android:text="Stop"
-                    android:textAllCaps="false"
-                    android:textColor="@color/ds_danger" />
             </LinearLayout>
         </LinearLayout>
 

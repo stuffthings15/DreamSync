@@ -26,19 +26,21 @@ Sources: [ACP insomnia guideline](https://doi.org/10.7326/M15-2175), [AASM behav
 
 ### 2. Automatic detection must remain conservative
 
-One visible nightly Arm action is required. After arming, DreamSync can automatically move through:
+One persistent, user-controlled On/Off choice is required. After the one-time health disclosure and permission flow, DreamSync can automatically move through:
 
-`Armed -> Preparing for sleep -> Likely asleep -> Stable sleep -> Possible arousal -> Recovered or stopped`
+`On and waiting -> Passive asleep signal -> Confirming sleep -> Stable sleep -> Possible arousal -> Recovered or session stopped`
 
-The estimator should combine sustained stillness, heart-rate change, signal quality, time since arming, and time since estimated onset. When Samsung signals are available, it can additionally use IBI/HRV stability, skin-temperature trend, and off-wrist status. It must fail closed when motion or heart data is stale, the watch is off wrist, storage fails, the phone is lost, battery is low, or confidence is insufficient.
+Wear Health Services passive monitoring is the low-power wake-up layer. Some watches advertise an asleep activity state; compatible watches without that optional state can use passive heart-rate observations inside a conservative sleep-time window to start confirmation. Passive heart rate is only a candidate signal. Higher-rate sustained stillness, heart-rate change, signal quality, and timing must confirm likely sleep before cue policy is evaluated. When advanced provider signals are available, the estimator also uses IBI/HRV stability, skin-temperature trend, off-wrist status, and supported raw PPG quality. It must fail closed when required passive data is absent, permissions are lost, motion or heart data is stale, the watch is off wrist, storage fails, the phone is lost, battery is low, or confidence is insufficient.
 
 Night one uses conservative defaults. A rolling seven-night median baseline can personalize resting heart rate, IBI, RMSSD, skin temperature, and sleep-onset timing. Personalization does not convert wrist estimates into clinical sleep staging.
 
-Android restricts foreground-service launches from the background, so silent unattended nightly starts are not a reliable or compliant design. [Android foreground-service launch rules](https://developer.android.com/develop/background-work/services/fgs/launch)
+The watch uses an official `PassiveListenerService`; the phone keeps a visible connected-device foreground service while On. Health foreground work starts only after the user has granted background health access. [Wear passive monitoring](https://developer.android.com/health-and-fitness/health-services/monitor-background), [Android foreground-service restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
+
+The user should charge the watch several hours before normal sleep. After at least three completed records, the phone may use the median observed sleep-start time to send a local reminder three hours earlier. This timing is a convenience estimate, not a sleep prediction.
 
 ### 3. Samsung signals add useful context, not EEG
 
-The Samsung Health Sensor SDK supports Galaxy Watch4 and later watches running Wear OS Powered by Samsung, subject to model, software, sensor, and permission availability. Continuous tracker documentation includes accelerometer, heart rate with IBI, skin temperature, and raw PPG. Skin temperature begins with Watch5-class hardware. Raw PPG is optional in DreamSync and remains off by default because it increases battery and permission cost.
+The Samsung Health Sensor SDK supports Galaxy Watch4 and later watches running Wear OS Powered by Samsung, subject to model, software, sensor, and permission availability. Continuous tracker documentation includes accelerometer, heart rate with IBI, skin temperature, and raw PPG. Skin temperature begins with Watch5-class hardware. DreamSync enables every supported approved tracker on a full-sensor watch. Battery and live-signal tests remain release gates because added sensing must not undermine sleep continuity.
 
 Public distribution of an app using the SDK requires Samsung partnership approval plus registration of the package name and signing certificate. Until the official AAR and approval are supplied, DreamSync uses standard Wear OS accelerometer and heart-rate sensors and classifies the watch as basic monitoring only.
 
@@ -54,7 +56,7 @@ Peer-reviewed sources: [Ngo et al., Neuron 2013](https://doi.org/10.1016/j.neuro
 
 ## Implemented product policy
 
-- One visible Arm action creates a fresh, expiring phone-watch session.
+- One persistent On/Off control creates a fresh, expiring phone-watch session after an asleep-state signal or a conservative passive-heart-rate candidate; higher-rate motion and HR still confirm likely sleep before cueing.
 - Motion-only sessions may log but cannot cue.
 - Lucid cues require fresh cardiac data.
 - Wrong-device, wrong-session, expired, duplicate, reordered, and incompatible commands produce no playback.
@@ -72,8 +74,8 @@ Compatibility is based on live capability checks, not the phrase “or better.�
 
 | Status | Meaning |
 |---|---|
-| Fully supported | Samsung SDK is packaged and connected; motion, HR, IBI, skin temperature, off-wrist checks, permissions, and live self-test pass. |
-| Basic monitoring only | Standard Wear OS motion and heart rate work, but advanced Samsung signals or validation are incomplete. |
+| Fully supported | Motion, HR, IBI, skin temperature, off-wrist checks, permissions, advanced provider connection, and live self-test pass; every reported approved feature is enabled. |
+| Basic monitoring only | Standard Wear OS motion and heart rate work, but advanced signals or validation are incomplete. |
 | Not supported | Required Wear OS motion or heart-rate capability is absent. |
 
 Validation order:
@@ -82,7 +84,7 @@ Validation order:
 2. Galaxy Watch8, Watch8 Classic, and Watch7.
 3. Watch4, Watch5, and Watch6 only after the in-app capability check and device testing pass.
 
-Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in the Android release. Hardware groups must not be marketed as tested until their validation record is complete.
+Wear OS 3+ watches, including Pixel Watch and Samsung Galaxy Watch families, are eligible for core support when the in-app capability check passes. Full features depend on live sensors, not a brand allow-list. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in the Android release. Hardware groups must not be marketed as tested until their validation record is complete.
 
 ## Validation gates
 
@@ -111,7 +113,7 @@ Allowed:
 
 - “Dreams Redefined.”
 - “Designed to protect sleep continuity.”
-- “Automatically estimates likely sleep after you arm the night.”
+- “Automatically watches for likely sleep every night while you keep DreamSync On.”
 - “Uses conservative wrist-signal checks and stops cues when disturbance risk rises.”
 - “Experimental wellness software; not a medical device.”
 

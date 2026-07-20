@@ -29,6 +29,8 @@ public final class PhoneWorkflowInstrumentationTest {
         assertNotNull(info.requestedPermissions);
         assertTrue(Arrays.asList(info.requestedPermissions).contains(
                 Manifest.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK));
+        assertTrue(Arrays.asList(info.requestedPermissions).contains(
+                Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE));
     }
 
     @Test public void largeTextWorkflowRemainsScrollable() {
@@ -37,8 +39,7 @@ public final class PhoneWorkflowInstrumentationTest {
                 View content = activity.findViewById(android.R.id.content);
                 assertNotNull(content);
                 assertTrue(containsScrollView(content));
-                assertNotNull(activity.findViewById(R.id.armButton));
-                assertNotNull(activity.findViewById(R.id.stopButton));
+                assertNotNull(activity.findViewById(R.id.powerButton));
                 assertNotNull(activity.findViewById(R.id.exportButton));
                 assertNotNull(activity.findViewById(R.id.deleteDataButton));
             });

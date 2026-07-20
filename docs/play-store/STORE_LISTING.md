@@ -22,13 +22,15 @@ DreamSync's mission is to protect sleep continuity. It automatically estimates l
 
 HOW IT WORKS
 
-Tap Arm for tonight once. DreamSync sends fresh settings, opens the watch, and - after any first-use permission prompts - arms visible overnight sensing. Your watch checks sustained low motion, fresh heart-rate data, signal quality, and time since arming to estimate likely sleep onset automatically. On approved compatible Samsung builds, IBI stability, skin-temperature trend, and off-wrist status add context. Cue timing starts from the onset estimate, not from the button tap.
+Turn DreamSync On once. After one-time watch permission prompts, low-power Wear Health Services monitoring watches for an asleep-state signal every night until you turn DreamSync Off. On compatible watches without that optional signal, a conservative passive-heart-rate candidate inside the normal sleep window starts higher-rate confirmation. Passive HR never authorizes a cue by itself. Sustained low motion, fresh heart-rate data, and signal quality must confirm likely sleep first. High-end watches automatically use every available approved advanced signal, including IBI/HRV, skin-temperature trend, off-wrist status, and raw PPG when supported.
+
+Install DreamSync on the Android phone first. The phone finds a paired Wear OS watch and, when needed, opens DreamSync's official watch Play Store page for one-tap install approval. All DreamSync controls stay on the phone; the watch only shows required first-time health permission prompts.
 
 If heart data is unreliable, DreamSync logs only and sends no cues. If sleep is not estimated within three hours, the session ends without cues. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops further cues for the night and lowers session gain.
 
 DreamSync builds a rolling seven-night baseline while using conservative defaults on earlier nights. It reports estimated awakenings, wake after sleep onset, longest uninterrupted sleep bout, cue-linked arousal rate, and a user-entered morning disturbance rating. These wrist-based values are not clinical sleep-stage measurements.
 
-Pre-sleep guidance covers schedule regularity, daylight, exercise, warm-bath timing, and comfortable paced breathing. Optional, user-approved notification protection is active only while a night is armed and restores the prior setting afterward.
+Pre-sleep guidance covers schedule regularity, daylight, exercise, warm-bath timing, and comfortable paced breathing. Charge the watch several hours before normal sleep. After three recorded nights, DreamSync learns the usual sleep-start time and sends a local charge reminder three hours earlier. Optional, user-approved notification protection is active only during a detected sleep session and restores the prior setting afterward.
 
 SCIENCE, CLEARLY STATED
 
@@ -53,10 +55,10 @@ DreamSync is intended for adults age 18 and older. It is experimental wellness s
 
 WATCH COMPATIBILITY
 
-First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 are conditional on DreamSync's live motion, heart-rate, Samsung-signal, permission, and software checks. The app reports Fully supported, Basic monitoring only, or Not supported.
+DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches that pass its live motion, heart-rate, permission, software, and companion-link checks. This includes eligible Samsung Galaxy Watch and Google Pixel Watch models. Core watches use standard Wear OS motion and heart rate. Full-sensor watches keep all available approved advanced features. Galaxy Watch Ultra 2024 and 2025 are the first physical-validation targets; untested models are not described as validated.
 
-Advanced Samsung support also requires the approved Samsung Health Sensor SDK package and signing registration. Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
+Advanced Samsung signals require the approved Samsung Health Sensor SDK package and signing registration. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
 
 ## Release notes
 
-DreamSync 1.1 test adds richer sleep-continuity states, a seven-night personal baseline, capability-based watch status, estimated continuity metrics, pre-sleep coaching, optional notification protection, and optional Samsung IBI/temperature/off-wrist support when the approved SDK is packaged.
+DreamSync 1.2 test adds persistent On/Off, broad Wear OS automatic sleep candidates, full-sensor feature selection for capable watches, reboot recovery, learned watch-charge reminders, and fail-closed permission/capability checks.

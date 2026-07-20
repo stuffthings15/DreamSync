@@ -8,10 +8,10 @@ android {
 
     defaultConfig {
         applicationId 'com.remote.DreamSync'
-        minSdk 31
+        minSdk 26
         targetSdk 36
-        versionCode 13
-        versionName '1.1.2-test'
+        versionCode 17
+        versionName '1.2.1-test'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         javaCompileOptions {
             annotationProcessorOptions {
@@ -23,6 +23,10 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        androidTest.assets.srcDirs += files("$projectDir/schemas")
     }
 
     def dreamSyncKeystore = System.getenv('DREAMSYNC_KEYSTORE')

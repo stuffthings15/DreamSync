@@ -26,7 +26,9 @@ import java.util.concurrent.Executors;
 
 public final class CuePlaybackService extends Service
         implements MessageClient.OnMessageReceivedListener {
-    static final String ACTION_ARM = "com.remote.DreamSync.ARM";
+    static final String ACTION_AUTO_ENABLE = "com.remote.DreamSync.AUTO_ENABLE";
+    static final String ACTION_AUTO_SESSION = "com.remote.DreamSync.AUTO_SESSION";
+    static final String ACTION_STANDBY = "com.remote.DreamSync.STANDBY";
     static final String ACTION_PREVIEW_DEEP = "com.remote.DreamSync.PREVIEW_DEEP";
     static final String ACTION_PREVIEW_LUCID = "com.remote.DreamSync.PREVIEW_LUCID";
     static final String ACTION_STOP = "com.remote.DreamSync.STOP_AUDIO";
@@ -77,11 +79,14 @@ public final class CuePlaybackService extends Service
         }
         sendBroadcast(new Intent(PhoneDataListenerService.ACTION_STATUS_CHANGED)
                 .setPackage(getPackageName())
-                .putExtra("status", "Arming timed out. No watch session started; audio is off.")
-                .putExtra("state", "ARM_TIMEOUT")
+                .putExtra("status", "Watch confirmation timed out. No cues will play. DreamSync remains On for the next sleep period.")
+                .putExtra("state", "AUTO_START_TIMEOUT")
                 .putExtra("sessionId", sessionId));
         restoreNotificationProtection();
-        stopSelf();
+        armedSessionId = "";
+        if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("auto_enabled", false)) startAsForeground(false);
+        else stopSelf();
     };
 
     @Override public void onCreate() {
@@ -96,8 +101,15 @@ public final class CuePlaybackService extends Service
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        startAsForeground();
-        if (intent == null) return START_NOT_STICKY;
+        if (intent == null) {
+            if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getBoolean("auto_enabled", false)) {
+                startAsForeground(false);
+                return START_STICKY;
+            }
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (ACTION_STOP.equals(intent.getAction())) {
             armedSessionId = "";
             mainHandler.removeCallbacks(armWatchdog);
@@ -107,7 +119,17 @@ public final class CuePlaybackService extends Service
         }
         armedGain = clampGain(intent.getFloatExtra(EXTRA_GAIN, armedGain));
         String action = intent.getAction();
-        if (ACTION_ARM.equals(action)) {
+        if (ACTION_AUTO_ENABLE.equals(action)) {
+            armedSessionId = "";
+            mainHandler.removeCallbacks(armWatchdog);
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean("auto_enabled", true)
+                    .putString("local_phone_node", safeExtra(intent, EXTRA_LOCAL_NODE_ID))
+                    .putString("bound_watch_node", safeExtra(intent, EXTRA_WATCH_NODE_ID))
+                    .putFloat("armed_gain", armedGain)
+                    .apply();
+            startAsForeground(false);
+        } else if (ACTION_AUTO_SESSION.equals(action)) {
             armedSessionId = intent.getStringExtra(EXTRA_SESSION_ID);
             if (armedSessionId == null) armedSessionId = "";
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
@@ -119,7 +141,13 @@ public final class CuePlaybackService extends Service
                     .apply();
             mainHandler.removeCallbacks(armWatchdog);
             mainHandler.postDelayed(armWatchdog, ARM_CONFIRM_TIMEOUT_MS);
+            startAsForeground(false);
+        } else if (ACTION_STANDBY.equals(action)) {
+            armedSessionId = "";
+            mainHandler.removeCallbacks(armWatchdog);
+            startAsForeground(false);
         } else if (ACTION_PREVIEW_DEEP.equals(action) || ACTION_PREVIEW_LUCID.equals(action)) {
+            startAsForeground(true);
             String type = ACTION_PREVIEW_LUCID.equals(action) ? "LUCID" : "DEEP";
             playbackExecutor.execute(() -> {
                 AudioOutput.Result result = audioOutput.play(type, armedGain, () -> {});
@@ -129,10 +157,13 @@ public final class CuePlaybackService extends Service
                             .putLong("last_calibration_utc", System.currentTimeMillis())
                             .apply();
                 }
-                if (armedSessionId.isEmpty()) stopSelf(startId);
+                if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getBoolean("auto_enabled", false)) startAsForeground(false);
+                else if (armedSessionId.isEmpty()) stopSelf(startId);
             });
         }
-        return START_NOT_STICKY;
+        return getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("auto_enabled", false) ? START_STICKY : START_NOT_STICKY;
     }
 
     @Override public void onMessageReceived(MessageEvent event) {
@@ -185,6 +216,7 @@ public final class CuePlaybackService extends Service
         sendAck(watchNode, envelope,
                 com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED, "accepted");
         float gain = validation.gain;
+        startAsForeground(true);
         AudioOutput.Result result = audioOutput.play(cueType, gain, () -> {
             record(envelope, com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_STARTED,
                     audioOutput.calibrationRecord(gain));
@@ -196,6 +228,7 @@ public final class CuePlaybackService extends Service
                 : com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED;
         record(envelope, type, result.reason);
         sendAck(watchNode, envelope, type, result.reason);
+        startAsForeground(false);
     }
 
     private void sendLatestState(String watchNode, ProtocolEnvelope envelope) {
@@ -258,31 +291,45 @@ public final class CuePlaybackService extends Service
         return Math.max(0.005f, Math.min(0.10f, gain));
     }
 
-    private void startAsForeground() {
+    private String safeExtra(Intent intent, String key) {
+        String value = intent.getStringExtra(key);
+        return value == null ? "" : value;
+    }
+
+    private void startAsForeground(boolean audioPlaying) {
         Intent openIntent = new Intent(this, MainActivity.class);
         PendingIntent open = PendingIntent.getActivity(this, 0, openIntent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Intent stopIntent = new Intent(this, CuePlaybackService.class).setAction(ACTION_STOP);
-        PendingIntent stop = PendingIntent.getService(this, 1, stopIntent,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        boolean autoEnabled = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("auto_enabled", false);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("DreamSync audio ready")
-                .setContentText("Verified speaker route; waiting for current-session cues")
+                .setContentTitle(autoEnabled ? "DreamSync is On" : "DreamSync cue preview")
+                .setContentText(audioPlaying
+                        ? "Playing a calibrated cue"
+                        : armedSessionId.isEmpty()
+                        ? "Waiting for sleep automatically"
+                        : "Sleep detected; conservative checks are active")
                 .setOngoing(true)
                 .setContentIntent(open)
-                .addAction(android.R.drawable.ic_media_pause, "Stop", stop)
                 .build();
         if (Build.VERSION.SDK_INT >= 29) {
+            int types = audioPlaying
+                    ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    : ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+            if (audioPlaying && autoEnabled) {
+                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+            }
             startForeground(NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                    types);
         } else startForeground(NOTIFICATION_ID, notification);
     }
 
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "DreamSync audio", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Keeps the verified phone cue engine ready during a session.");
+                CHANNEL_ID, "DreamSync automatic sleep readiness",
+                NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Shows when DreamSync is On and ready for automatic sleep detection.");
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }
 

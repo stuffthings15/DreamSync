@@ -14,7 +14,7 @@ Automatic sleep estimation with sleep-first safety.
 
 ## Watch compatibility
 
-First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 receive basic monitoring unless DreamSync's live motion, heart-rate, Samsung-signal, permission, and software checks pass. The app reports Fully supported, Basic monitoring only, or Not supported. Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
+DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches that pass live motion, heart-rate, permission, software, and companion-link checks. Core watches use standard Wear OS signals. Full-sensor watches automatically keep every available approved advanced feature. Eligible Samsung Galaxy Watch and Google Pixel Watch models can use the core profile. First physical validation targets Galaxy Watch Ultra 2024 and 2025. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
 
 ## Approved claim language
 

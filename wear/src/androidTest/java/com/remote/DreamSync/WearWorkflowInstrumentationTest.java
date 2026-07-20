@@ -41,15 +41,13 @@ public final class WearWorkflowInstrumentationTest {
                 context, "session", "handshake"));
     }
 
-    @Test public void roundScreenWorkflowIsScrollableAndHasStopControl() {
+    @Test public void roundScreenWorkflowIsScrollableAndPhoneControlled() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
                 View content = activity.findViewById(android.R.id.content);
                 assertNotNull(content);
                 assertTrue(containsScrollView(content));
-                assertNotNull(activity.findViewById(R.id.startButton));
-                assertNotNull(activity.findViewById(R.id.stopButton));
-                assertNotNull(activity.findViewById(R.id.deleteDataButton));
+                assertNotNull(activity.findViewById(R.id.openPhoneButton));
             });
         }
     }

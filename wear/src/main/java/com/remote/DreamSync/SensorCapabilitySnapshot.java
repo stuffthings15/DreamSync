@@ -79,6 +79,10 @@ final class SensorCapabilitySnapshot {
             object.put("offWrist", values.offWrist);
             object.put("liveSelfTestPassed", liveSelfTestPassed);
             object.put("status", checker.classify(values).name());
+            object.put("featureProfile", checker.featureProfile(values));
+            object.put("allSupportedFeaturesEnabled",
+                    checker.classify(values)
+                            == DeviceCompatibility.Status.FULLY_SUPPORTED);
             object.put("reason", checker.reason(values));
             object.put("detail", detail);
         } catch (Exception ignored) {

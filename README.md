@@ -12,19 +12,23 @@ DreamSync's mission is to protect sleep continuity by automatically estimating l
 
 ## Watch compatibility
 
-DreamSync is designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS version, including Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025). Cueing requires usable heart-rate and motion signals and the required permissions. Google Play device compatibility and sensor availability can vary by watch software. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release.
+DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches. The watch must pass live motion, heart-rate, software, permission, and companion-link checks. Core watches use standard Wear OS signals. High-end watches are not downgraded: every approved advanced signal reported by the device is enabled, including IBI/HRV, skin temperature, off-wrist status, and raw PPG when the sensor provider supports them. Galaxy Watch4 and later models can use the optional Samsung sensor layer after its package/signing approval. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this Android release.
 
 ## Automatic sleep estimation
 
-Tap **Arm for tonight** once on the phone. DreamSync sends fresh, time-limited settings, opens the watch, and starts approved foreground sensing after any first-use permission prompts. The watch then waits for 10 sustained minutes of valid low-motion and fresh heart-rate signals, estimates likely sleep onset, and anchors all cue windows to that estimate. No cue is allowed before estimated onset and the later stability gates. Motion-only sessions log data but send no cues.
+Turn **DreamSync On** once on the phone. Approve the watch health permissions once. While On, Wear Health Services watches for a supported asleep-state signal every night. Watches without that optional state can use a conservative passive-heart-rate candidate inside the normal sleep window. That candidate only starts higher-rate motion and heart-rate confirmation; it never authorizes a cue by itself. Motion-only sessions log data but send no cues.
 
-Android does not allow DreamSync to silently start health sensing every night. The one-tap arm action preserves consent, makes sensing visible, and avoids an unsafe background restart.
+Install the phone app first. **Set up watch app** finds a connected Wear OS watch. If DreamSync is missing there, the phone opens DreamSync's official Play Store page on the watch. Tap **Install** once; the phone then detects, binds, and configures the watch automatically. Google Play requires that install confirmation, so Android apps cannot silently install the watch app in the background. The watch has no settings; opening it returns to the phone controls.
+
+The phone shows a low-priority ongoing notification while DreamSync is On. The watch registration persists independently of the app screen. Reboot receivers restore the On state. Turning DreamSync Off unregisters passive monitoring, stops the current session, and disables all cues. If required passive data, permissions, or the phone-watch link are unavailable, DreamSync fails closed and sends no cue.
+
+Charge the watch several hours before normal sleep time. After three completed records, DreamSync learns the median usual sleep start and schedules a phone reminder three hours earlier.
 
 ## Research basis
 
 - Deep cues use two 50 ms pink-noise bursts separated by 1.075 seconds, matching the acoustic pattern in Besedovsky et al. (2017).
 - The watch waits for an estimated sleep onset, sustained stillness, usable sensor coverage, and an early-night NREM-eligible window.
-- If sleep is not estimated within three hours of arming, the session ends without sending cues. Once sleep is estimated, the normal session clock starts from that point rather than from the arm tap.
+- After the passive asleep signal, DreamSync allows 30 minutes for sustained signal confirmation. If confirmation fails, the session ends without cues and persistent On mode remains ready for the next sleep period.
 - Cueing pauses for 20 minutes after any arousal sign and stops for the night after the first cue-linked arousal.
 - DreamSync cannot reproduce the paper's EEG phase locking. It therefore uses conservative eligibility labels and makes no sleep-stage or treatment claim.
 - Lucid cues are a separate optional feature and require both reliable motion and cardiac data.
@@ -59,7 +63,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 - Package: `com.remote.DreamSync`
 - Publisher: Remote
 - Product name: DreamSync
-- Test version: phone 13 / Wear OS 14 (`1.1.2-test`)
+- Test version: phone 17 / Wear OS 18 (`1.2.1-test`)
 - Privacy policy and store copy are in `docs/play-store/`.
 
 Copyright 2026 Remote. All rights reserved.

@@ -22,7 +22,7 @@ DreamSync transfers settings, cue requests, status, and session summaries betwee
 
 ## Export and deletion
 
-Export creates a local file only after the user chooses a destination. Delete removes DreamSync session history, cue events, check-ins, and received watch logs from the phone. Uninstalling the apps removes their local app data, subject to device settings and backups.
+Export creates a local file only after the user chooses a destination. Confirmed Delete removes DreamSync session history, cue events, check-ins, and received watch logs from the phone and queues a bound deletion command for the paired watch. Uninstalling the apps removes their local app data, subject to device settings and backups.
 
 ## Permissions
 

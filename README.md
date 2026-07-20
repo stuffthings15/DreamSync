@@ -59,7 +59,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 - Package: `com.remote.DreamSync`
 - Publisher: Remote
 - Product name: DreamSync
-- Version: 1.0.0
+- Test version: phone 10 / Wear OS 8 (`1.1.0-test`)
 - Privacy policy and store copy are in `docs/play-store/`.
 
 Copyright 2026 Remote. All rights reserved.

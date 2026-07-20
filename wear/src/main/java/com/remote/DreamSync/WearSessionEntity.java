@@ -15,6 +15,14 @@ public class WearSessionEntity {
     public int deepCues;
     public int lucidCues;
     public int cueLinkedArousals;
+    public int awakeningCount;
+    public long wakeAfterSleepOnsetMs;
+    public long longestUninterruptedBoutMs;
     public double gain;
+    public String sleepPhase = "ARMED";
+    public long estimatedSleepOnsetElapsedMs;
+    public int baselineNights;
+    public String sensorSource = "STANDARD_WEAR_OS";
+    public String capabilityJson = "{}";
     public String terminationReason = "";
 }

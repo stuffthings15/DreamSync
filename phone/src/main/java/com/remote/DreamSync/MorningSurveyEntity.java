@@ -10,6 +10,7 @@ public class MorningSurveyEntity {
     public int sleepQuality;
     public int restedness;
     public int rememberedAwakenings;
+    public int disturbanceRating;
     public String cueAwareness = "UNSURE";
     public int dreamRecall;
     public String lucidDream = "UNSURE";

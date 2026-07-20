@@ -14,7 +14,7 @@ Automatic sleep estimation with sleep-first safety.
 
 ## Watch compatibility
 
-Designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS version: Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025). Cueing requires usable heart-rate and motion signals plus the required permissions. Google Play device compatibility and sensor availability can vary by watch software. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release.
+First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 receive basic monitoring unless DreamSync's live motion, heart-rate, Samsung-signal, permission, and software checks pass. The app reports Fully supported, Basic monitoring only, or Not supported. Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
 
 ## Approved claim language
 
@@ -23,6 +23,7 @@ Designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS
 - Stays quiet when required safety checks are uncertain.
 - Uses a research-shaped paired pink-noise pattern.
 - Data stays on paired devices unless the user exports it.
+- Shows estimated awakenings, wake after sleep onset, longest uninterrupted bout, cue-linked arousal rate, and morning disturbance rating.
 
 ## Do not claim
 

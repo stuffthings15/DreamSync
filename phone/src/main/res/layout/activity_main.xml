@@ -319,6 +319,26 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/sleepProtectionButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:text="Sleep protection &amp; coaching"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
+
+            <Button
+                android:id="@+id/compatibilityButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:text="Watch compatibility"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
+
+            <Button
                 android:id="@+id/scienceButton"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"

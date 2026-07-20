@@ -39,6 +39,29 @@ public final class EligibilityEstimator {
             double deepEndMin,
             double remStartMin
     ) {
+        return estimate(elapsedSinceOnsetMin, motionRms30, heartMedian2,
+                heartSd2, baselineHeartRate, arousal, quality, earlyPrior,
+                latePrior, deepStartMin, deepEndMin, remStartMin,
+                Double.NaN, Double.NaN, Double.NaN);
+    }
+
+    public Result estimate(
+            double elapsedSinceOnsetMin,
+            double motionRms30,
+            double heartMedian2,
+            double heartSd2,
+            double baselineHeartRate,
+            boolean arousal,
+            SignalQualityMonitor.Result quality,
+            double earlyPrior,
+            double latePrior,
+            double deepStartMin,
+            double deepEndMin,
+            double remStartMin,
+            double ibiRmssdMs,
+            double baselineIbiRmssdMs,
+            double skinTemperatureTrendCPerHour
+    ) {
         if (!quality.motionReady) {
             return new Result(State.INSUFFICIENT_SIGNAL, 0.0, 0.0, 0.0);
         }
@@ -56,10 +79,23 @@ public final class EligibilityEstimator {
         double heartIrregularity = quality.heartReady
                 ? clamp01((heartSd2 - 1.5) / 4.0)
                 : 0.0;
-        double nremScore = 0.55 * stillness
-                + 0.25 * heartDrop
+        boolean advancedReady = quality.ibiReady
+                && quality.temperatureReady
+                && Double.isFinite(ibiRmssdMs)
+                && Double.isFinite(skinTemperatureTrendCPerHour);
+        double ibiStability = advancedReady && Double.isFinite(baselineIbiRmssdMs)
+                ? clamp01(1.0 - Math.abs(ibiRmssdMs - baselineIbiRmssdMs)
+                / Math.max(10.0, baselineIbiRmssdMs))
+                : 0.5;
+        double warmingTrend = advancedReady
+                ? clamp01((skinTemperatureTrendCPerHour + 0.10) / 0.40)
+                : 0.5;
+        double nremScore = (advancedReady ? 0.45 : 0.55) * stillness
+                + (advancedReady ? 0.20 : 0.25) * heartDrop
                 + 0.10 * lowHeartVariation
-                + 0.10 * earlyPrior;
+                + 0.10 * earlyPrior
+                + (advancedReady ? 0.10 * ibiStability : 0.0)
+                + (advancedReady ? 0.05 * warmingTrend : 0.0);
         double remScore = 0.55 * stillness
                 + 0.20 * heartIrregularity
                 + 0.25 * latePrior;

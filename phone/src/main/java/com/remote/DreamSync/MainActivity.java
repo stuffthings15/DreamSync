@@ -3,6 +3,7 @@ package com.remote.DreamSync;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -11,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.Html;
 import android.text.InputType;
 import android.text.method.LinkMovementMethod;
@@ -42,6 +44,7 @@ import org.json.JSONObject;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -84,6 +87,8 @@ public final class MainActivity extends Activity {
             String summary = intent.getStringExtra("summary");
             String sessionId = intent.getStringExtra("sessionId");
             if (summary != null && !summary.isEmpty()) {
+                restoreNotificationProtection();
+                applySummaryGain(summary, sessionId);
                 showFriendlySummary(summary);
                 if (sessionId != null && !sessionId.isEmpty()) showMorningSurvey(sessionId);
             }
@@ -98,6 +103,7 @@ public final class MainActivity extends Activity {
         databaseExecutor = Executors.newSingleThreadExecutor();
         dao = PhoneDatabase.get(this).dao();
         requestNotificationPermissionIfNeeded();
+        if (pref("active_session_id").isEmpty()) restoreNotificationProtection();
         showOnboardingOnce();
         wireActions();
         updateReadiness();
@@ -135,6 +141,10 @@ public final class MainActivity extends Activity {
         findViewById(R.id.exportButton).setOnClickListener(v -> prepareExport());
         findViewById(R.id.deleteDataButton).setOnClickListener(v -> confirmDeleteAll());
         findViewById(R.id.scienceButton).setOnClickListener(v -> showScience());
+        findViewById(R.id.sleepProtectionButton).setOnClickListener(
+                v -> showSleepProtectionAndCoaching());
+        findViewById(R.id.compatibilityButton).setOnClickListener(
+                v -> showWatchCompatibility());
         findViewById(R.id.privacyButton).setOnClickListener(v -> showPrivacyAndSafety());
     }
 
@@ -285,6 +295,7 @@ public final class MainActivity extends Activity {
                 .remove("pending_arm_generation")
                 .remove("pending_session_id")
                 .apply();
+        applyNotificationProtection();
         try {
             armAudioService(CuePlaybackService.ACTION_ARM, gain,
                     sessionId, phone.getId(), watch.getId());
@@ -342,6 +353,7 @@ public final class MainActivity extends Activity {
             json.put("maxDeepBlocks", 2);
             json.put("lucidCueIntervalSec", 180);
             json.put("maxLucidCues", 2);
+            json.put("enableRawPpg", false);
             json.put("calibration", getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_calibration", ""));
         } catch (JSONException impossible) {
@@ -373,6 +385,7 @@ public final class MainActivity extends Activity {
                 .remove("auto_opened_watch_session")
                 .apply();
         stopService(new Intent(this, CuePlaybackService.class));
+        restoreNotificationProtection();
         databaseExecutor.execute(() -> {
             SessionEntity session = dao.session(sessionId);
             if (session != null) {
@@ -397,6 +410,7 @@ public final class MainActivity extends Activity {
                     .remove("auto_opened_watch_session")
                     .apply();
             stopService(new Intent(this, CuePlaybackService.class));
+            restoreNotificationProtection();
             databaseExecutor.execute(() -> {
                 SessionEntity session = dao.session(sessionId);
                 if (session != null) {
@@ -453,7 +467,13 @@ public final class MainActivity extends Activity {
             String line = "Session " + summary.optLong("minutes", 0) + " min"
                     + " | Deep " + summary.optInt("deepCues", 0)
                     + " | Lucid " + summary.optInt("lucidCues", 0)
-                    + " | Cue-linked arousals " + summary.optInt("cueLinkedArousals", 0)
+                    + " | Awakenings " + summary.optInt("awakeningCount", 0)
+                    + " | WASO " + Math.round(summary.optDouble(
+                    "wakeAfterSleepOnsetMinutes", 0.0)) + " min"
+                    + " | Longest bout " + Math.round(summary.optDouble(
+                    "longestUninterruptedBoutMinutes", 0.0)) + " min"
+                    + " | Cue-linked wake rate " + Math.round(100.0 * summary.optDouble(
+                    "cueLinkedArousalRate", 0.0)) + "%"
                     + " | Signal " + summary.optString("signalQuality", "unknown")
                     + " | End " + summary.optString("terminalState", "complete");
             statusText.setText(line);
@@ -470,6 +490,7 @@ public final class MainActivity extends Activity {
         EditText sleep = field(form, "Sleep quality 1-10", true);
         EditText rested = field(form, "Restedness 1-10", true);
         EditText awakenings = field(form, "Remembered awakenings", true);
+        EditText disturbance = field(form, "How disturbing were cues? 0-10", true);
         EditText awareness = field(form, "Cue noticed: no / unsure / yes", false);
         EditText recall = field(form, "Dream recall 0-3", true);
         EditText lucid = field(form, "Lucid dream: no / unsure / yes", false);
@@ -487,12 +508,15 @@ public final class MainActivity extends Activity {
                     survey.restedness = boundedInt(rested.getText().toString(), 1, 10, 0);
                     survey.rememberedAwakenings = boundedInt(
                             awakenings.getText().toString(), 0, 100, 0);
+                    survey.disturbanceRating = boundedInt(
+                            disturbance.getText().toString(), 0, 10, 0);
                     survey.cueAwareness = choice(awareness.getText().toString());
                     survey.dreamRecall = boundedInt(recall.getText().toString(), 0, 3, 0);
                     survey.lucidDream = choice(lucid.getText().toString());
                     survey.adverseEffects = adverse.getText().toString().trim();
                     survey.dreamNotes = notes.getText().toString().trim();
                     survey.submittedUtcMs = System.currentTimeMillis();
+                    applyDisturbanceGain(survey.disturbanceRating, sessionId);
                     databaseExecutor.execute(() -> {
                         dao.upsertSurvey(survey);
                         SessionEntity session = dao.session(sessionId);
@@ -521,6 +545,36 @@ public final class MainActivity extends Activity {
         return input;
     }
 
+    private void applySummaryGain(String summaryText, String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()
+                || sessionId.equals(pref("gain_adjusted_session"))) return;
+        try {
+            JSONObject summary = new JSONObject(summaryText);
+            int finalPercent = (int) Math.round(100.0 * summary.optDouble(
+                    "finalGain", gainSeek.getProgress() / 100.0));
+            if (finalPercent < gainSeek.getProgress()) {
+                gainSeek.setProgress(Math.max(1, finalPercent));
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .remove("last_calibration")
+                        .putString("gain_adjusted_session", sessionId)
+                        .apply();
+            } else {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("gain_adjusted_session", sessionId).apply();
+            }
+        } catch (JSONException ignored) {}
+    }
+
+    private void applyDisturbanceGain(int disturbanceRating, String sessionId) {
+        if (disturbanceRating <= 0) return;
+        int reduction = Math.max(1, (int) Math.ceil(disturbanceRating / 2.0));
+        gainSeek.setProgress(Math.max(1, gainSeek.getProgress() - reduction));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove("last_calibration")
+                .putString("disturbance_adjusted_session", sessionId)
+                .apply();
+    }
+
     private void showHistory() {
         databaseExecutor.execute(() -> {
             List<SessionEntity> sessions = dao.sessions();
@@ -531,7 +585,8 @@ public final class MainActivity extends Activity {
                         .append(" | ").append(session.state);
                 if (survey != null) {
                     text.append(" | sleep ").append(survey.sleepQuality)
-                            .append(" | rested ").append(survey.restedness);
+                            .append(" | rested ").append(survey.restedness)
+                            .append(" | disturbance ").append(survey.disturbanceRating);
                 }
                 text.append('\n');
             }
@@ -562,7 +617,7 @@ public final class MainActivity extends Activity {
 
     private JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schemaVersion", 1);
+        root.put("schemaVersion", 2);
         root.put("generatedUtcMs", System.currentTimeMillis());
         root.put("productLanguage", "wellness sleep-cue tool; non-medical");
         JSONArray sessionArray = new JSONArray();
@@ -576,6 +631,10 @@ public final class MainActivity extends Activity {
             item.put("protocolVersion", session.protocolVersion);
             item.put("waveformVersion", session.waveformVersion);
             item.put("calibration", session.calibrationRecord);
+            item.put("watchCapabilities", new JSONObject(
+                    session.watchCapabilityJson == null
+                            || session.watchCapabilityJson.isEmpty()
+                            ? "{}" : session.watchCapabilityJson));
             if (!session.configurationJson.isEmpty()) {
                 JSONObject safeConfig = new JSONObject(session.configurationJson);
                 safeConfig.remove("phoneNodeId");
@@ -618,6 +677,7 @@ public final class MainActivity extends Activity {
                 .put("sleepQuality", survey.sleepQuality)
                 .put("restedness", survey.restedness)
                 .put("rememberedAwakenings", survey.rememberedAwakenings)
+                .put("disturbanceRating", survey.disturbanceRating)
                 .put("cueAwareness", survey.cueAwareness)
                 .put("dreamRecall", survey.dreamRecall)
                 .put("lucidDream", survey.lucidDream)
@@ -670,10 +730,20 @@ public final class MainActivity extends Activity {
                 .getString("last_calibration", "");
         int practice = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0);
+        String compatibility = "not checked";
+        String capabilityJson = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("watch_capabilities", "");
+        try {
+            if (!capabilityJson.isEmpty()) {
+                compatibility = new JSONObject(capabilityJson)
+                        .optString("status", "not checked").replace('_', ' ')
+                        .toLowerCase(Locale.US);
+            }
+        } catch (JSONException ignored) {}
         readinessText.setText("Readiness: speaker " + (audio.success ? "ready" : audio.reason)
                 + " | calibration " + (calibration.isEmpty() ? "needed" : "saved")
                 + " | lucid practice " + practice + "/10"
-                + " | watch " + (pref("bound_watch_node").isEmpty() ? "not bound" : "bound"));
+                + " | watch " + compatibility);
     }
 
     private void showOnboardingOnce() {
@@ -683,7 +753,7 @@ public final class MainActivity extends Activity {
                 .setTitle("Welcome to DreamSync")
                 .setMessage("Dreams Redefined. DreamSync's mission is to protect sleep continuity. It estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance. "
                         + "Tap Arm for tonight once. DreamSync opens the watch, waits for sustained sleep signals, estimates sleep onset, then activates conservative cue timing automatically. "
-                        + "Designed for Samsung Galaxy Watch4 and later models running compatible Wear OS software, including Galaxy Watch Ultra. Apple Watch is planned but is not supported in this release. "
+                        + "First validation targets Galaxy Watch Ultra 2024 and 2025. Other Galaxy Watch4-and-later models receive basic monitoring unless DreamSync's live sensor check confirms advanced support. Apple Watch is planned but is not supported in this release. "
                         + "DreamSync is an adult wellness app that estimates cue-ready windows from wrist motion and heart rate. "
                         + "Its deep cue pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
                         + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
@@ -693,6 +763,102 @@ public final class MainActivity extends Activity {
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean("onboarding_seen", true).apply())
                 .setCancelable(false)
+                .show();
+    }
+
+    private void showSleepProtectionAndCoaching() {
+        boolean enabled = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("protect_notifications", false);
+        new AlertDialog.Builder(this)
+                .setTitle("Sleep protection")
+                .setMessage("Before bed:\n\n"
+                        + "- Keep a regular sleep schedule.\n"
+                        + "- Get daylight and exercise earlier in the day.\n"
+                        + "- Try a warm bath 1-2 hours before bed.\n"
+                        + "- Use slow, comfortable breathing while winding down.\n\n"
+                        + "During sleep DreamSync keeps screens and haptics off, pauses cues for 20 minutes after an arousal sign, and stops after the first cue-linked wake sign.\n\n"
+                        + "Phone notification protection: " + (enabled ? "ON" : "OFF")
+                        + ". If Samsung's Sync Do not disturb with phone setting is enabled, the watch follows the phone. Alarms and allowed priority contacts follow your system settings.\n\n"
+                        + "Frequent gasping, choking, or severe sleep fragmentation needs professional medical advice; DreamSync does not diagnose apnea.")
+                .setPositiveButton(enabled ? "Turn protection off" : "Turn protection on",
+                        (dialog, which) -> {
+                            boolean next = !enabled;
+                            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                    .putBoolean("protect_notifications", next).apply();
+                            if (next) {
+                                NotificationManager manager = getSystemService(NotificationManager.class);
+                                if (manager == null
+                                        || !manager.isNotificationPolicyAccessGranted()) {
+                                    statusText.setText("Allow DreamSync notification access, then Arm for tonight.");
+                                    startActivity(new Intent(
+                                            Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
+                                } else {
+                                    statusText.setText("Notification protection will turn on only during an armed night.");
+                                }
+                            } else {
+                                restoreNotificationProtection();
+                                statusText.setText("Notification protection is off.");
+                            }
+                        })
+                .setNegativeButton("Done", null)
+                .show();
+    }
+
+    private void applyNotificationProtection() {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("protect_notifications", false)) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null || !manager.isNotificationPolicyAccessGranted()) return;
+        int current = manager.getCurrentInterruptionFilter();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt("previous_interruption_filter", current)
+                .putBoolean("notification_protection_active", true)
+                .apply();
+        manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY);
+    }
+
+    private void restoreNotificationProtection() {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("notification_protection_active", false)) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null && manager.isNotificationPolicyAccessGranted()) {
+            int previous = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
+                    "previous_interruption_filter",
+                    NotificationManager.INTERRUPTION_FILTER_ALL);
+            manager.setInterruptionFilter(previous);
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove("previous_interruption_filter")
+                .putBoolean("notification_protection_active", false)
+                .apply();
+    }
+
+    private void showWatchCompatibility() {
+        String json = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("watch_capabilities", "");
+        String live;
+        if (json.isEmpty()) {
+            live = "No live sensor check yet. Arm a night with the watch open to run it.";
+        } else {
+            try {
+                JSONObject values = new JSONObject(json);
+                String status = values.optString("status", "BASIC_MONITORING_ONLY")
+                        .replace('_', ' ');
+                live = values.optString("manufacturer", "") + " "
+                        + values.optString("model", "") + "\n"
+                        + status + "\n" + values.optString("reason", "");
+            } catch (JSONException error) {
+                live = "Live compatibility data could not be read. Run a new armed test.";
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Watch compatibility")
+                .setMessage(live + "\n\nValidation order:\n"
+                        + "1. Galaxy Watch Ultra 2024 and 2025\n"
+                        + "2. Galaxy Watch8, Watch8 Classic, and Watch7\n"
+                        + "3. Watch4, Watch5, and Watch6 only when the live check passes\n\n"
+                        + "Basic monitoring uses standard Wear OS motion and heart rate. Full support requires Samsung IBI, skin temperature, off-wrist checks, and a passed live self-test. Apple Watch, Pixel Watch, Fitbit, and Garmin are not supported in this release.")
+                .setPositiveButton("Done", null)
                 .show();
     }
 
@@ -709,13 +875,13 @@ public final class MainActivity extends Activity {
                 "<b>Dreams Redefined.</b><br>"
                         + "Our mission is to protect sleep continuity. DreamSync estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle research-shaped cues only when strict safety checks indicate a low risk of disturbance.<br><br>"
                         + "<b>Watch compatibility</b><br>"
-                        + "Designed for Samsung Galaxy Watch4 and later models running compatible Wear OS software, including Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025). Cueing requires usable heart-rate and motion signals plus the required permissions. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release.<br><br>"
+                        + "First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 are conditional: the in-app motion, heart-rate, software, permission, and Samsung-signal check must pass. A watch can show Fully supported, Basic monitoring only, or Not supported. Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.<br><br>"
                         + "<b>What DreamSync does</b><br>"
                         + "1. Tap <b>Arm for tonight</b> once. DreamSync opens the watch and waits quietly for sustained sleep signals.<br>"
-                        + "2. Your watch estimates sleep onset from sustained low motion and signal quality. This is an estimate, not a sleep-stage diagnosis.<br>"
+                        + "2. Your watch estimates sleep onset from sustained low motion, heart-rate change, signal quality, time of night, and—when the approved Samsung SDK is packaged—IBI stability, skin-temperature trend, and off-wrist status. This is an estimate, not a sleep-stage diagnosis.<br>"
                         + "3. Cues are allowed only after a stable, low-motion period, from 25 to 145 minutes after estimated sleep onset.<br>"
                         + "4. A deep cue is two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.<br>"
-                        + "5. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops cues for the night.<br><br>"
+                        + "5. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops cues for the night and lowers the saved session gain. A seven-night rolling baseline personalizes safe estimates; earlier nights use conservative defaults.<br><br>"
                         + "<b>What the peer-reviewed study found</b><br>"
                         + "In a randomized crossover laboratory study of 14 healthy young men, EEG phase-locked paired tones increased slow-oscillation power and amplitude without changing time spent in the measured sleep stages. About 172 paired stimulations were delivered on average across 120 minutes. Hormone analyses used 10 to 14 participants, and immune-cell results used a nine-person subset; growth hormone was unchanged. DreamSync does not measure or claim those outcomes.<br><br>"
                         + "<b>The important difference</b><br>"
@@ -845,7 +1011,7 @@ public final class MainActivity extends Activity {
     }
 
     private String choice(String value) {
-        String normalized = value == null ? "" : value.trim().toUpperCase();
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.US);
         if ("YES".equals(normalized) || "NO".equals(normalized)) return normalized;
         return "UNSURE";
     }

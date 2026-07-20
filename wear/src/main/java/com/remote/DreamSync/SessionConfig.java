@@ -29,6 +29,7 @@ final class SessionConfig {
     int maxDeepBlocks = 2;
     int lucidCueIntervalSec = 180;
     int maxLucidCues = 2;
+    boolean enableRawPpg;
 
     static SessionConfig fromJson(String json) {
         SessionConfig config = new SessionConfig();
@@ -53,6 +54,7 @@ final class SessionConfig {
             config.maxDeepBlocks = object.optInt("maxDeepBlocks", config.maxDeepBlocks);
             config.lucidCueIntervalSec = object.optInt("lucidCueIntervalSec", config.lucidCueIntervalSec);
             config.maxLucidCues = object.optInt("maxLucidCues", config.maxLucidCues);
+            config.enableRawPpg = object.optBoolean("enableRawPpg", false);
         } catch (Exception ignored) {
             // Invalid fields retain conservative defaults.
         }
@@ -110,6 +112,7 @@ final class SessionConfig {
         c.maxDeepBlocks = p.getInt("maxDeepBlocks", c.maxDeepBlocks);
         c.lucidCueIntervalSec = p.getInt("lucidCueIntervalSec", c.lucidCueIntervalSec);
         c.maxLucidCues = p.getInt("maxLucidCues", c.maxLucidCues);
+        c.enableRawPpg = p.getBoolean("enableRawPpg", false);
         c.clamp();
         return c;
     }
@@ -136,6 +139,7 @@ final class SessionConfig {
                 .putInt("maxDeepBlocks", maxDeepBlocks)
                 .putInt("lucidCueIntervalSec", lucidCueIntervalSec)
                 .putInt("maxLucidCues", maxLucidCues)
+                .putBoolean("enableRawPpg", enableRawPpg)
                 .apply();
     }
 

@@ -17,4 +17,5 @@ public class SessionEntity {
     public String calibrationRecord = "";
     public int protocolVersion = 1;
     public String waveformVersion = "";
+    public String watchCapabilityJson = "{}";
 }

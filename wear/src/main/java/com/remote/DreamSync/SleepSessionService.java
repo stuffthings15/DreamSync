@@ -31,9 +31,12 @@ import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import com.remote.DreamSync.shared.EligibilityEstimator;
+import com.remote.DreamSync.shared.PersonalBaseline;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SignalQualityMonitor;
+import com.remote.DreamSync.shared.SleepContinuityTracker;
 import com.remote.DreamSync.shared.SleepOnsetEstimator;
+import com.remote.DreamSync.shared.SleepPhaseMachine;
 import com.remote.DreamSync.shared.SleepSessionClock;
 
 import org.json.JSONObject;
@@ -52,6 +55,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -76,6 +80,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private final Object sampleLock = new Object();
     private final Deque<TimedValue> heartSamples = new ArrayDeque<>();
     private final Deque<TimedValue> motionSamples = new ArrayDeque<>();
+    private final Deque<TimedValue> ibiSamples = new ArrayDeque<>();
+    private final Deque<TimedValue> skinTemperatureSamples = new ArrayDeque<>();
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
@@ -90,6 +96,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private long sessionStartUtcMs;
     private long lastMotionSampleMs;
     private long lastHeartSampleMs;
+    private long lastIbiSampleMs;
+    private long lastTemperatureSampleMs;
     private long lastHeartbeatMs;
     private long probableNremSinceMs;
     private long probableRemSinceMs;
@@ -107,6 +115,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean gravityInitialized;
     private boolean accelerometerRegistered;
     private boolean heartRateRegistered;
+    private volatile boolean offWrist;
+    private volatile boolean samsungSdkConnected;
+    private volatile Set<String> samsungTrackerTypes = Collections.emptySet();
+    private volatile String samsungDetail = "standard Wear OS sensors";
+    private int validPpgSamples;
+    private int sessionStartBatteryPercent = -1;
     private boolean storageHealthy = true;
     private boolean sessionInitialized;
 
@@ -119,15 +133,24 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean cuesDisabled;
     private boolean sessionFinished;
     private String latestStage = "SETTLING";
+    private String latestSleepPhase = "ARMED";
     private String latestSignalQuality = "calibrating";
+    private String lastPersistedSignalQuality = "";
     private String terminalState = "RUNNING";
 
     private final SignalQualityMonitor signalQualityMonitor = new SignalQualityMonitor();
     private final SleepOnsetEstimator sleepOnsetEstimator = new SleepOnsetEstimator();
     private final EligibilityEstimator eligibilityEstimator = new EligibilityEstimator();
+    private final PersonalBaseline personalBaselineEngine = new PersonalBaseline();
+    private volatile PersonalBaseline.Result personalBaseline =
+            new PersonalBaseline().calculate(Collections.emptyList());
+    private final SleepPhaseMachine sleepPhaseMachine =
+            new SleepPhaseMachine(5L * 60_000L, 5L * 60_000L);
+    private final SleepContinuityTracker continuityTracker = new SleepContinuityTracker();
     private final Map<String, PendingCue> pendingCues = new ConcurrentHashMap<>();
     private ExecutorService databaseExecutor;
     private WearDao dao;
+    private SamsungHealthSensorBridge samsungBridge;
 
     private FileWriter logWriter;
     private String logFilePath = "";
@@ -218,12 +241,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
         currentGain = config.cueGain;
         sessionStartMs = SystemClock.elapsedRealtime();
         sessionStartUtcMs = System.currentTimeMillis();
+        sessionStartBatteryPercent = batteryPercent();
         sessionInitialized = true;
         running = true;
         startAsForeground();
         acquireWakeLock();
         openLog();
         registerSensors();
+        loadPersonalBaseline();
+        startSamsungSensors();
         persistSession("WAITING_FOR_SLEEP", "");
         if (!accelerometerRegistered) {
             terminalState = "SENSOR_FAILED";
@@ -244,6 +270,107 @@ public final class SleepSessionService extends Service implements SensorEventLis
         ));
         broadcastStatus("Automatic sleep estimation armed • waiting for sustained sleep signals");
         evaluatorHandler.postDelayed(evaluator, EVALUATION_INTERVAL_MS);
+    }
+
+    private void loadPersonalBaseline() {
+        databaseExecutor.execute(() -> {
+            List<NightBaselineEntity> stored = dao.latestBaselines();
+            List<PersonalBaseline.Night> nights = new ArrayList<>();
+            for (NightBaselineEntity night : stored) {
+                nights.add(new PersonalBaseline.Night(
+                        night.restingHeartRate,
+                        night.medianIbiMs,
+                        night.ibiRmssdMs,
+                        night.skinTemperatureC,
+                        night.sleepOnsetMinutes));
+            }
+            PersonalBaseline.Result result = personalBaselineEngine.calculate(nights);
+            personalBaseline = result;
+            if (result.nights > 0 && Double.isFinite(result.restingHeartRate)) {
+                baselineHeartRate = result.restingHeartRate;
+            }
+            persistEvent("PERSONAL_BASELINE_LOADED", "",
+                    "nights=" + result.nights + ";confidence="
+                            + String.format(Locale.US, "%.2f", result.confidence));
+        });
+    }
+
+    private void startSamsungSensors() {
+        samsungBridge = new SamsungHealthSensorBridge(this,
+                new SamsungHealthSensorBridge.Listener() {
+                    @Override public void onCapabilities(
+                            Set<String> trackerTypes, boolean connected, String detail) {
+                        samsungTrackerTypes = trackerTypes;
+                        samsungSdkConnected = connected;
+                        samsungDetail = detail;
+                        persistEvent("SENSOR_CAPABILITIES", "", capabilitySnapshot().toJson());
+                    }
+
+                    @Override public void onHeartRate(
+                            long timestampMs, double bpm, List<Integer> ibiMs,
+                            boolean watchOffWrist) {
+                        long now = SystemClock.elapsedRealtime();
+                        offWrist = watchOffWrist;
+                        if (Double.isFinite(bpm) && bpm >= 30.0 && bpm <= 220.0) {
+                            lastHeartSampleMs = now;
+                            heartRateRegistered = true;
+                            synchronized (sampleLock) {
+                                heartSamples.addLast(new TimedValue(now, bpm));
+                                prune(heartSamples, now - 20L * 60_000L);
+                            }
+                        }
+                        if (ibiMs != null && !ibiMs.isEmpty()) {
+                            synchronized (sampleLock) {
+                                for (int ibi : ibiMs) {
+                                    if (ibi >= 250 && ibi <= 2_000) {
+                                        ibiSamples.addLast(new TimedValue(now, ibi));
+                                        lastIbiSampleMs = now;
+                                    }
+                                }
+                                prune(ibiSamples, now - 30L * 60_000L);
+                            }
+                        }
+                    }
+
+                    @Override public void onSkinTemperature(
+                            long timestampMs, double skinC, double ambientC) {
+                        if (!Double.isFinite(skinC) || skinC < 20.0 || skinC > 45.0) return;
+                        long now = SystemClock.elapsedRealtime();
+                        lastTemperatureSampleMs = now;
+                        synchronized (sampleLock) {
+                            skinTemperatureSamples.addLast(new TimedValue(now, skinC));
+                            prune(skinTemperatureSamples, now - 60L * 60_000L);
+                        }
+                    }
+
+                    @Override public void onPpgSample(long timestampMs, boolean valid) {
+                        if (valid) validPpgSamples++;
+                    }
+
+                    @Override public void onBridgeError(String code, String detail) {
+                        samsungDetail = code + ": " + detail;
+                        persistEvent("SAMSUNG_SENSOR_ERROR", "", samsungDetail);
+                    }
+                });
+        samsungBridge.start(config.enableRawPpg);
+    }
+
+    private SensorCapabilitySnapshot capabilitySnapshot() {
+        boolean liveSelfTest = accelerometerRegistered
+                && lastMotionSampleMs > 0L
+                && heartRateRegistered
+                && lastHeartSampleMs > 0L
+                && (!samsungSdkConnected
+                || !samsungTrackerTypes.contains("HEART_RATE_CONTINUOUS")
+                || lastIbiSampleMs > 0L);
+        return new SensorCapabilitySnapshot(
+                accelerometerRegistered,
+                heartRateRegistered,
+                SamsungHealthSensorBridge.isPackaged(),
+                samsungSdkConnected,
+                samsungTrackerTypes,
+                liveSelfTest,
+                samsungDetail);
     }
 
     private void registerSensors() {
@@ -341,8 +468,14 @@ public final class SleepSessionService extends Service implements SensorEventLis
         SignalQualityMonitor.Result quality = signalQualityMonitor.evaluate(
                 now, lastMotionSampleMs, lastHeartSampleMs,
                 features.motionSampleCount30, features.heartSampleCount2,
-                accelerometerRegistered, heartRateRegistered);
+                accelerometerRegistered, heartRateRegistered,
+                offWrist, lastIbiSampleMs, features.ibiSampleCount5,
+                lastTemperatureSampleMs, features.temperatureSampleCount30);
         latestSignalQuality = quality.reason;
+        if (!quality.reason.equals(lastPersistedSignalQuality)) {
+            lastPersistedSignalQuality = quality.reason;
+            persistEvent("SIGNAL_QUALITY", "", quality.reason);
+        }
         boolean quietCandidate = quality.deepCueAllowed
                 && !arousal && !Double.isNaN(features.motionRms30)
                 && features.motionRms30 < 0.30;
@@ -351,6 +484,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         boolean onsetJustDetected = estimatedSleepOnsetMs == 0L && onset > 0L;
         if (onsetJustDetected) {
             estimatedSleepOnsetMs = onset;
+            continuityTracker.onSleepOnset(onset);
             long onsetUtcMs = sessionStartUtcMs + Math.max(0L, onset - sessionStartMs);
             String details = String.format(
                     Locale.US,
@@ -390,12 +524,26 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 remPrior(sleepElapsedMin),
                 config.deepStartMin,
                 config.deepEndMin,
-                config.remStartMin);
+                config.remStartMin,
+                features.ibiRmssdMs,
+                personalBaseline.ibiRmssdMs,
+                features.skinTemperatureTrendCPerHour);
         double nremScore = estimate.nremScore;
         double remScore = estimate.remScore;
         Stage stage = Stage.valueOf(estimate.state.name());
         latestStage = stage.name();
         updateStability(stage, now);
+
+        continuityTracker.update(now, arousal);
+        boolean stableCandidate = stage == Stage.NREM_ELIGIBLE
+                || stage == Stage.REM_LIKE_ELIGIBLE;
+        latestSleepPhase = sleepPhaseMachine.update(
+                now,
+                estimatedSleepOnsetMs > 0L,
+                stableCandidate,
+                arousal,
+                quality.motionReady && quality.heartReady && !quality.offWrist
+        ).name();
 
         if (arousal) {
             handleArousal(now);
@@ -429,7 +577,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
 
         String event = "TICK";
-        writeLogRow(now, armedElapsedMin, features, nremScore, remScore, stage.name(), event);
+        writeLogRow(now, armedElapsedMin, features, nremScore, remScore,
+                stage.name(), event);
         broadcastStatus(statusLine(armedElapsedMin, sleepElapsedMin, features, stage));
     }
 
@@ -437,6 +586,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         List<Double> motion30 = new ArrayList<>();
         List<Double> motion10 = new ArrayList<>();
         List<TimedValue> hr2 = new ArrayList<>();
+        List<TimedValue> ibi5 = new ArrayList<>();
+        List<TimedValue> temperature30 = new ArrayList<>();
         synchronized (sampleLock) {
             for (TimedValue sample : motionSamples) {
                 if (sample.timeMs >= now - 30_000L) motion30.add(sample.value);
@@ -444,6 +595,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
             }
             for (TimedValue sample : heartSamples) {
                 if (sample.timeMs >= now - 120_000L) hr2.add(sample);
+            }
+            for (TimedValue sample : ibiSamples) {
+                if (sample.timeMs >= now - 5L * 60_000L) ibi5.add(sample);
+            }
+            for (TimedValue sample : skinTemperatureSamples) {
+                if (sample.timeMs >= now - 30L * 60_000L) temperature30.add(sample);
             }
         }
 
@@ -462,6 +619,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         boolean hasHeartRate = heartValues.size() >= 3 && !Double.isNaN(medianHeart);
         boolean hasMotion = motion30.size() >= 20;
+        List<Double> ibiValues = values(ibi5);
+        List<Double> temperatureValues = values(temperature30);
+        double medianIbi = median(ibiValues);
+        double ibiRmssd = rmssd(ibiValues);
+        double medianTemperature = median(temperatureValues);
+        double temperatureTrend = slopePerHour(temperature30);
         return new FeatureSnapshot(
                 elapsedMin,
                 motionRms30,
@@ -471,9 +634,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 heartSlope,
                 motion30.size(),
                 heartValues.size(),
+                ibi5.size(),
+                temperature30.size(),
                 hasHeartRate,
                 hasMotion,
-                baselineHeartRate
+                baselineHeartRate,
+                medianIbi,
+                ibiRmssd,
+                medianTemperature,
+                temperatureTrend
         );
     }
 
@@ -528,6 +697,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && lastCueArousalCountedForMs != lastCueMs) {
             lastCueArousalCountedForMs = lastCueMs;
             cueLinkedArousals++;
+            continuityTracker.onCueLinkedArousal();
             currentGain = Math.max(0.005, currentGain * 0.70);
             logEvent("CUE_LINKED_AROUSAL", String.format(
                     Locale.US,
@@ -542,6 +712,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void handleDeepCueing(long now, double elapsedMin, Stage stage) {
         if (!config.usesDeepCues() || cuesDisabled) return;
+        if (!SleepPhaseMachine.Phase.STABLE_SLEEP.name().equals(latestSleepPhase)) return;
         if (elapsedMin < config.deepStartMin || elapsedMin > config.deepEndMin) {
             if (deepBlockActive) endDeepBlock("outside_window");
             return;
@@ -584,6 +755,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private void handleLucidCueing(long now, double elapsedMin, Stage stage) {
         if (!config.usesLucidCues() || cuesDisabled || deepBlockActive) return;
+        if (!SleepPhaseMachine.Phase.STABLE_SLEEP.name().equals(latestSleepPhase)) return;
         if (elapsedMin < config.remStartMin
                 || lucidCues >= config.maxLucidCues) return;
         if (now < backoffUntilMs) return;
@@ -655,6 +827,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             if (!pending.audioStarted) {
                 pending.audioStarted = true;
                 lastCueMs = SystemClock.elapsedRealtime();
+                continuityTracker.onCueStarted();
                 pending.onAudioStarted.run();
                 persistEvent("AUDIO_STARTED", cueId, pending.cueType);
                 logEvent("AUDIO_STARTED", pending.cueType + " cueId=" + cueId);
@@ -808,7 +981,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             logWriter = new FileWriter(logFile, false);
             logWriter.write(
                     "utc,elapsed_min,heart_bpm,baseline_bpm,motion_rms_30s,heart_sd_2m,"
-                            + "heart_slope_per_min,nrem_score,rem_score,state,event,gain\n"
+                            + "heart_slope_per_min,median_ibi_ms,ibi_rmssd_ms,skin_temp_c,"
+                            + "skin_temp_trend_c_per_hour,nrem_score,rem_score,eligibility_state,"
+                            + "sleep_phase,event,gain,off_wrist,sensor_source\n"
             );
             logWriter.flush();
         } catch (IOException error) {
@@ -830,7 +1005,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         try {
             logWriter.write(String.format(
                     Locale.US,
-                    "%s,%.2f,%.2f,%.2f,%.4f,%.3f,%.3f,%.3f,%.3f,%s,%s,%.4f\n",
+                    "%s,%.2f,%.2f,%.2f,%.4f,%.3f,%.3f,%.2f,%.2f,%.2f,%.3f,"
+                            + "%.3f,%.3f,%s,%s,%s,%.4f,%s,%s\n",
                     DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(
                             sessionStartUtcMs + (now - sessionStartMs))),
                     elapsedMin,
@@ -839,11 +1015,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     features.motionRms30,
                     features.heartSd2,
                     features.heartSlopePerMin,
+                    features.medianIbiMs,
+                    features.ibiRmssdMs,
+                    features.medianSkinTemperatureC,
+                    features.skinTemperatureTrendCPerHour,
                     nremScore,
                     remScore,
                     state,
+                    latestSleepPhase,
                     event,
-                    currentGain
+                    currentGain,
+                    offWrist,
+                    samsungSdkConnected ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS"
             ));
             logWriter.flush();
         } catch (IOException error) {
@@ -861,14 +1044,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
         try {
             logWriter.write(String.format(
                     Locale.US,
-                    "%s,%.2f,NaN,%.2f,NaN,NaN,NaN,NaN,NaN,%s,%s: %s,%.4f\n",
+                    "%s,%.2f,NaN,%.2f,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,"
+                            + "%s,%s,%s: %s,%.4f,%s,%s\n",
                     DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(nowUtc)),
                     elapsedMin,
                     baselineHeartRate,
                     latestStage,
+                    latestSleepPhase,
                     event,
                     sanitizeCsv(details),
-                    currentGain
+                    currentGain,
+                    offWrist,
+                    samsungSdkConnected ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS"
             ));
             logWriter.flush();
         } catch (IOException error) {
@@ -901,6 +1088,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void publishHeartbeat(String qualityReason) {
         if (config == null) return;
         String state = monitoringState();
+        persistSession(state, "");
+        SleepContinuityTracker.Snapshot continuity = continuityTracker.snapshot(
+                SystemClock.elapsedRealtime());
         String status;
         if ("DEGRADED".equals(state)) {
             status = "Logging only: " + qualityReason;
@@ -920,7 +1110,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         "state", state,
                         "status", status,
                         "signalQuality", qualityReason,
-                        "batteryPercent", Integer.toString(batteryPercent())
+                        "batteryPercent", Integer.toString(batteryPercent()),
+                        "sleepPhase", latestSleepPhase,
+                        "capabilities", capabilitySnapshot().toJson(),
+                        "awakeningCount", Integer.toString(continuity.awakeningCount),
+                        "wakeAfterSleepOnsetMs", Long.toString(continuity.wakeAfterSleepOnsetMs),
+                        "baselineNights", Integer.toString(personalBaseline.nights)
                 ));
         PutDataMapRequest map = PutDataMapRequest.create(
                 com.remote.DreamSync.shared.Protocol.PATH_STATE_PREFIX + config.sessionId);
@@ -992,7 +1187,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
         snapshot.deepCues = deepCues;
         snapshot.lucidCues = lucidCues;
         snapshot.cueLinkedArousals = cueLinkedArousals;
+        SleepContinuityTracker.Snapshot continuity = continuityTracker.snapshot(
+                SystemClock.elapsedRealtime());
+        snapshot.awakeningCount = continuity.awakeningCount;
+        snapshot.wakeAfterSleepOnsetMs = continuity.wakeAfterSleepOnsetMs;
+        snapshot.longestUninterruptedBoutMs = continuity.longestUninterruptedBoutMs;
         snapshot.gain = currentGain;
+        snapshot.sleepPhase = latestSleepPhase;
+        snapshot.estimatedSleepOnsetElapsedMs = estimatedSleepOnsetMs;
+        snapshot.baselineNights = personalBaseline.nights;
+        snapshot.sensorSource = samsungSdkConnected
+                ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS";
+        snapshot.capabilityJson = capabilitySnapshot().toJson();
         snapshot.terminationReason = terminationReason == null ? "" : terminationReason;
         databaseExecutor.execute(() -> dao.upsertSession(snapshot));
     }
@@ -1008,6 +1214,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void sendSummary() {
         JSONObject summary = new JSONObject();
         try {
+            long now = SystemClock.elapsedRealtime();
+            FeatureSnapshot finalFeatures = calculateFeatures(
+                    now, sessionStartMs == 0L ? 0.0 : (now - sessionStartMs) / 60_000.0);
             summary.put("mode", config == null ? "unknown" : config.mode);
             summary.put("minutes", sessionStartMs == 0L
                     ? 0
@@ -1025,9 +1234,44 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("deepCues", deepCues);
             summary.put("lucidCues", lucidCues);
             summary.put("cueLinkedArousals", cueLinkedArousals);
+            SleepContinuityTracker.Snapshot continuity = continuityTracker.snapshot(
+                    SystemClock.elapsedRealtime());
+            summary.put("awakeningCount", continuity.awakeningCount);
+            summary.put("wakeAfterSleepOnsetMinutes",
+                    continuity.wakeAfterSleepOnsetMs / 60_000.0);
+            summary.put("longestUninterruptedBoutMinutes",
+                    continuity.longestUninterruptedBoutMs / 60_000.0);
+            summary.put("cueLinkedArousalRate", continuity.cueLinkedArousalRate());
             summary.put("finalGain", currentGain);
             summary.put("lastState", latestStage);
+            summary.put("sleepPhase", latestSleepPhase);
             summary.put("signalQuality", latestSignalQuality);
+            summary.put("sensorSource", samsungSdkConnected
+                    ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS");
+            summary.put("capabilities", new JSONObject(capabilitySnapshot().toJson()));
+            summary.put("personalBaselineNights", personalBaseline.nights);
+            summary.put("personalizedBaselineReady", personalBaseline.personalized());
+            summary.put("validPpgSamples", validPpgSamples);
+            JSONObject sensorQuality = new JSONObject();
+            sensorQuality.put("motionRegistered", accelerometerRegistered);
+            sensorQuality.put("heartRateRegistered", heartRateRegistered);
+            sensorQuality.put("offWrist", offWrist);
+            sensorQuality.put("motionSamples30s", finalFeatures.motionSampleCount30);
+            sensorQuality.put("observedMotionSampleRateHz",
+                    finalFeatures.motionSampleCount30 / 30.0);
+            sensorQuality.put("heartSamples2m", finalFeatures.heartSampleCount2);
+            sensorQuality.put("observedHeartSampleRateHz",
+                    finalFeatures.heartSampleCount2 / 120.0);
+            sensorQuality.put("ibiSamples5m", finalFeatures.ibiSampleCount5);
+            sensorQuality.put("temperatureSamples30m",
+                    finalFeatures.temperatureSampleCount30);
+            sensorQuality.put("motionFresh", lastMotionSampleMs > 0L
+                    && now - lastMotionSampleMs <= SignalQualityMonitor.MOTION_STALE_MS);
+            sensorQuality.put("heartFresh", lastHeartSampleMs > 0L
+                    && now - lastHeartSampleMs <= SignalQualityMonitor.HEART_STALE_MS);
+            summary.put("sensorQualityDetail", sensorQuality);
+            summary.put("startBatteryPercent", sessionStartBatteryPercent);
+            summary.put("endBatteryPercent", batteryPercent());
             summary.put("terminalState", terminalState);
             summary.put("protocolVersion", com.remote.DreamSync.shared.Protocol.VERSION);
             summary.put("waveformVersion", com.remote.DreamSync.shared.CueWaveforms.VERSION);
@@ -1060,6 +1304,34 @@ public final class SleepSessionService extends Service implements SensorEventLis
         Wearable.getDataClient(this).putDataItem(request);
     }
 
+    private void persistNightBaseline() {
+        if (config == null || estimatedSleepOnsetMs <= 0L
+                || databaseExecutor == null || databaseExecutor.isShutdown()) return;
+        List<Double> heart;
+        List<Double> ibi;
+        List<Double> temperature;
+        synchronized (sampleLock) {
+            heart = values(new ArrayList<>(heartSamples));
+            ibi = values(new ArrayList<>(ibiSamples));
+            temperature = values(new ArrayList<>(skinTemperatureSamples));
+        }
+        NightBaselineEntity night = new NightBaselineEntity();
+        night.sessionId = config.sessionId;
+        night.completedUtcMs = System.currentTimeMillis();
+        night.restingHeartRate = !heart.isEmpty()
+                ? percentile(heart, 0.25) : baselineHeartRate;
+        night.medianIbiMs = median(ibi);
+        night.ibiRmssdMs = rmssd(ibi);
+        night.skinTemperatureC = median(temperature);
+        night.sleepOnsetMinutes = (estimatedSleepOnsetMs - sessionStartMs) / 60_000.0;
+        night.valid = heart.size() >= 8
+                && Double.isFinite(night.restingHeartRate)
+                && night.sleepOnsetMinutes > 0.0
+                && !"SENSOR_FAILED".equals(terminalState)
+                && !"INTERNAL_ERROR".equals(terminalState);
+        databaseExecutor.execute(() -> dao.insertBaseline(night));
+    }
+
     @Override
     public void onDestroy() {
         if (sessionFinished) {
@@ -1071,6 +1343,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (!sessionInitialized) {
             if (evaluatorHandler != null) evaluatorHandler.removeCallbacks(evaluator);
             if (sensorManager != null) sensorManager.unregisterListener(this);
+            if (samsungBridge != null) samsungBridge.stop();
             if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
             if (sensorThread != null) sensorThread.quitSafely();
             try { unregisterReceiver(cueAckReceiver); } catch (IllegalArgumentException ignored) {}
@@ -1080,10 +1353,13 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         evaluatorHandler.removeCallbacks(evaluator);
         if (sensorManager != null) sensorManager.unregisterListener(this);
+        if (samsungBridge != null) samsungBridge.stop();
         endDeepBlock("service_stopped");
+        latestSleepPhase = sleepPhaseMachine.stop().name();
         if ("RUNNING".equals(terminalState)) terminalState = "INTERRUPTED";
         logEvent("SESSION_END", terminalState);
         persistSession("COMPLETE", terminalState);
+        persistNightBaseline();
         if (logWriter != null) {
             try { logWriter.close(); } catch (IOException ignored) {}
             logWriter = null;
@@ -1113,6 +1389,34 @@ public final class SleepSessionService extends Service implements SensorEventLis
         double sum = 0.0;
         for (double value : values) sum += value * value;
         return Math.sqrt(sum / values.size());
+    }
+
+    private static List<Double> values(List<TimedValue> timedValues) {
+        List<Double> output = new ArrayList<>();
+        for (TimedValue value : timedValues) {
+            if (Double.isFinite(value.value)) output.add(value.value);
+        }
+        return output;
+    }
+
+    private static double rmssd(List<Double> values) {
+        if (values.size() < 3) return Double.NaN;
+        double sum = 0.0;
+        int pairs = 0;
+        for (int i = 1; i < values.size(); i++) {
+            double delta = values.get(i) - values.get(i - 1);
+            sum += delta * delta;
+            pairs++;
+        }
+        return pairs == 0 ? Double.NaN : Math.sqrt(sum / pairs);
+    }
+
+    private static double slopePerHour(List<TimedValue> values) {
+        if (values.size() < 2) return Double.NaN;
+        TimedValue first = values.get(0);
+        TimedValue last = values.get(values.size() - 1);
+        double hours = (last.timeMs - first.timeMs) / 3_600_000.0;
+        return hours <= 0.0 ? Double.NaN : (last.value - first.value) / hours;
     }
 
     private static double median(List<Double> values) {
@@ -1195,9 +1499,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
         final double heartSlopePerMin;
         final int motionSampleCount30;
         final int heartSampleCount2;
+        final int ibiSampleCount5;
+        final int temperatureSampleCount30;
         final boolean hasHeartRate;
         final boolean hasMotion;
         final double baselineHeartRate;
+        final double medianIbiMs;
+        final double ibiRmssdMs;
+        final double medianSkinTemperatureC;
+        final double skinTemperatureTrendCPerHour;
 
         FeatureSnapshot(
                 double elapsedMin,
@@ -1208,9 +1518,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 double heartSlopePerMin,
                 int motionSampleCount30,
                 int heartSampleCount2,
+                int ibiSampleCount5,
+                int temperatureSampleCount30,
                 boolean hasHeartRate,
                 boolean hasMotion,
-                double baselineHeartRate
+                double baselineHeartRate,
+                double medianIbiMs,
+                double ibiRmssdMs,
+                double medianSkinTemperatureC,
+                double skinTemperatureTrendCPerHour
         ) {
             this.elapsedMin = elapsedMin;
             this.motionRms30 = motionRms30;
@@ -1220,9 +1536,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
             this.heartSlopePerMin = heartSlopePerMin;
             this.motionSampleCount30 = motionSampleCount30;
             this.heartSampleCount2 = heartSampleCount2;
+            this.ibiSampleCount5 = ibiSampleCount5;
+            this.temperatureSampleCount30 = temperatureSampleCount30;
             this.hasHeartRate = hasHeartRate;
             this.hasMotion = hasMotion;
             this.baselineHeartRate = baselineHeartRate;
+            this.medianIbiMs = medianIbiMs;
+            this.ibiRmssdMs = ibiRmssdMs;
+            this.medianSkinTemperatureC = medianSkinTemperatureC;
+            this.skinTemperatureTrendCPerHour = skinTemperatureTrendCPerHour;
         }
 
         FeatureSnapshot withBaseline(double baseline) {
@@ -1235,9 +1557,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     heartSlopePerMin,
                     motionSampleCount30,
                     heartSampleCount2,
+                    ibiSampleCount5,
+                    temperatureSampleCount30,
                     hasHeartRate,
                     hasMotion,
-                    baseline
+                    baseline,
+                    medianIbiMs,
+                    ibiRmssdMs,
+                    medianSkinTemperatureC,
+                    skinTemperatureTrendCPerHour
             );
         }
     }

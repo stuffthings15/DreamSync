@@ -1,94 +1,80 @@
-# DreamSync Science-Based Google Play Marketing Proposal
+# DreamSync science-based Google Play marketing proposal
 
 ## Positioning
 
-DreamSync is the sleep-first cue companion for adults who want a transparent, private way to explore research-shaped auditory cues with a compatible Samsung Galaxy Watch.
+DreamSync is an experimental sleep-first cue companion for adults using a compatible Samsung Galaxy Watch and Android phone.
 
-The marketing promise is simple: DreamSync explains what it does, shows the peer-reviewed work that shaped it, and clearly separates laboratory findings from what a consumer watch can estimate.
+Slogan: **Dreams Redefined.**
 
-## Brand slogan
+Mission: **Designed to protect sleep continuity.** DreamSync automatically estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
 
-Dreams Redefined.
+## Primary messages
 
-## Official mission
-
-DreamSync's mission is to protect sleep continuity by automatically estimating likely sleep from wearable signals, staying quiet when confidence is low, and using gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
-
-## Primary message
-
-Automatic sleep estimation, sleep-first safety, and private on-device data.
-
-Supporting points:
-
-- Protecting sleep takes priority over delivering cues.
-- One tap arms the night; the watch then estimates likely sleep onset automatically and starts all cue windows from that estimate.
-- The published acoustic structure is implemented exactly: two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.
-- The default app budget is at most 12 paired deep cues, compared with about 172 paired stimulations on average in the 120-minute laboratory protocol.
-- Motion, heart-rate freshness, estimated sleep onset, and time-of-night gates reduce unnecessary cueing. Motion-only sessions log but do not cue.
-- Fresh settings expire, and a three-hour no-sleep timeout ends monitoring without sending cues.
-- Any arousal starts a 20-minute quiet period; the first cue-linked wake sign ends cueing for the night.
-- Personal data stays on the paired devices unless the user chooses Export.
+- One visible tap arms the night; likely-sleep detection then runs automatically.
+- Protecting sleep takes priority over delivering a cue.
+- The first cue-linked wake sign stops cueing for the night.
+- A rolling seven-night baseline personalizes estimates; earlier nights use conservative defaults.
+- Compatible approved Samsung builds add IBI stability, skin-temperature trend, and off-wrist checks. Raw PPG is off by default.
+- Users can view estimated awakenings, wake after sleep onset, longest uninterrupted bout, cue-linked arousal rate, and morning disturbance.
+- Pre-sleep coaching is separated from in-sleep monitoring.
+- Data stays local unless the user exports it.
 
 ## Device message
 
-Designed for Samsung Galaxy Watch4 and later models running a compatible Wear OS version: Watch4/4 Classic, Watch5/5 Pro, Watch6/6 Classic, Watch7, Watch8/8 Classic, Watch FE, and Galaxy Watch Ultra (2024/2025).
+First validation targets Galaxy Watch Ultra 2024 and 2025. Galaxy Watch8, Watch8 Classic, and Watch7 are next. Watch4, Watch5, and Watch6 are conditional on the in-app capability check.
 
-Public copy must also say that cueing depends on usable heart-rate and motion signals, permissions, Google Play device compatibility, and watch software. Galaxy Fit and older Samsung Tizen watches are not supported. Apple Watch support is planned, not available in this release. Do not describe an untested model as physically validated.
+The app must show one of three live states: Fully supported, Basic monitoring only, or Not supported. Full support requires motion, heart rate, Samsung IBI, skin temperature, off-wrist status, required permissions, the approved Samsung SDK package, signing registration, and a passed live self-test.
 
-## Evidence and claim boundaries
+Apple Watch, Pixel Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in the Android release. Never describe an untested model as physically validated.
 
-### Claims DreamSync can make
+## Approved claims
 
-- DreamSync plays the published paired-burst acoustic pattern.
-- DreamSync estimates conservative cue-ready windows from wrist motion, heart rate, and elapsed time.
-- DreamSync can say that sleep-onset timing becomes automatic after the user visibly arms health sensing for that night.
-- DreamSync is designed to protect sleep continuity by staying quiet when required safety checks are uncertain.
-- DreamSync uses explicit signal-quality, arousal, route, battery, connection, and volume safety gates.
-- DreamSync stores data locally and gives the user export and deletion controls.
+- Plays a versioned paired 50 ms pink-noise pattern, 1.075 seconds apart, with 5 ms fades.
+- Estimates likely sleep and conservative cue-ready windows from wrist signals.
+- Designed to protect sleep continuity by staying quiet when safety checks are uncertain.
+- Applies signal-quality, arousal, route, battery, connection, volume, off-wrist, and storage gates.
+- Stores data locally with export and deletion controls.
+- Reports estimated continuity measures and user-entered morning ratings.
 
-### Laboratory findings that may be described only with attribution
+## Laboratory findings that require attribution
 
-- Besedovsky et al. studied 14 healthy young men in a randomized within-subject crossover design.
-- Their EEG phase-locked method increased slow-oscillation power and amplitude.
-- Time spent in measured sleep stages did not significantly change.
-- Hormone analyses used 10 to 14 participants. The study reported cortisol and aldosterone changes; growth hormone was unchanged.
-- Circulating T- and B-cell results came from a nine-person subset.
-- These findings belong to the laboratory method, not to DreamSync.
+- Besedovsky et al. used an EEG phase-locked laboratory protocol in 14 healthy young men.
+- Ngo et al. reported slow-oscillation and memory findings under EEG control.
+- Weigenand et al. found that open-loop timing did not improve word-pair memory.
+- These findings belong to the cited methods, not to DreamSync.
 
-### Claims DreamSync must not make
+## Prohibited claims
 
-- Proven deeper sleep or clinical sleep-stage detection.
-- EEG phase locking.
-- Improved memory, immunity, hormones, or treatment of insomnia or depression.
-- Guaranteed lucid dreams.
-- Guaranteed uninterrupted sleep or guaranteed prevention of waking.
-- Medical-device, diagnostic, preventive, curative, or treatment claims.
+- Keeps the user asleep or guarantees uninterrupted sleep.
+- Clinically detects sleep stages or phase-locks to EEG.
+- Treats insomnia, sleep apnea, depression, or another condition.
+- Improves memory, immunity, hormones, or lucid-dream frequency.
+- Is physically validated on a watch that has not completed documented testing.
 
 ## Store-page structure
 
-1. Lead with sleep-first behavior and privacy.
-2. Explain one-tap arming, automatic estimated onset, and the visible watch sensing notification in plain language.
-3. State the main study design and results with sample size and attribution.
-4. Explain the EEG-versus-wrist difference immediately after the findings.
-5. List four peer-reviewed sources by author, journal, year, and DOI.
-6. End with device requirements, adult audience, risks, and the Google Play health disclaimer.
+1. Lead with the slogan, mission, sleep-first behavior, and privacy.
+2. Explain visible nightly arming and automatic likely-sleep detection.
+3. Explain continuity safeguards and user-facing measures.
+4. State the research-shaped acoustic pattern.
+5. Immediately explain the EEG-versus-wrist limitation.
+6. Give compatibility status and validation order.
+7. End with adult-wellness and medical boundaries.
 
 ## Screenshot messages
 
 - Dreams Redefined.
-- Automatic sleep estimation. Sleep protection first.
-- Designed for Galaxy Watch Ultra and Galaxy Watch4 or later.
+- Automatic likely-sleep detection after you Arm.
 - A wake sign stops cueing for the night.
-- Private history, check-ins, export, and deletion.
+- Live watch status: Full, Basic, or Not supported.
+- Seven-night baseline and private continuity history.
 - Science and limitations explained inside the app.
 
 ## Peer-reviewed sources
 
-1. Besedovsky L, Ngo HVV, Dimitrov S, et al. Auditory closed-loop stimulation of EEG slow oscillations strengthens sleep and signs of its immune-supportive function. *Nature Communications*. 2017;8:1984. DOI: 10.1038/s41467-017-02170-3.
-2. Ngo HVV, Martinetz T, Born J, Molle M. Auditory closed-loop stimulation of the sleep slow oscillation enhances memory. *Neuron*. 2013;78:545-553. DOI: 10.1016/j.neuron.2013.03.006.
-3. Ngo HVV, et al. Driving sleep slow oscillations by auditory closed-loop stimulation - a self-limiting process. *Journal of Neuroscience*. 2015;35:6630-6638. DOI: 10.1523/JNEUROSCI.3133-14.2015.
-4. Weigenand A, Molle M, Werner F, Martinetz T, Marshall L. Timing matters: open-loop stimulation does not improve overnight consolidation of word pairs in humans. *European Journal of Neuroscience*. 2016;44:2357-2368. DOI: 10.1111/ejn.13334.
+1. Besedovsky L, Ngo HVV, Dimitrov S, et al. *Nature Communications*. 2017;8:1984. DOI: 10.1038/s41467-017-02170-3.
+2. Ngo HVV, Martinetz T, Born J, Molle M. *Neuron*. 2013;78:545-553. DOI: 10.1016/j.neuron.2013.03.006.
+3. Ngo HVV, et al. *Journal of Neuroscience*. 2015;35:6630-6638. DOI: 10.1523/JNEUROSCI.3133-14.2015.
+4. Weigenand A, Molle M, Werner F, Martinetz T, Marshall L. *European Journal of Neuroscience*. 2016;44:2357-2368. DOI: 10.1111/ejn.13334.
 
-## Required disclaimer
-
-DreamSync is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
+Feature-to-source detail is maintained in `docs/RESEARCH_EVIDENCE_MATRIX.md`.

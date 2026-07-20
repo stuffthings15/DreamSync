@@ -9,13 +9,30 @@ public final class SignalQualityMonitor {
         public final boolean heartReady;
         public final boolean deepCueAllowed;
         public final boolean lucidCueAllowed;
+        public final boolean offWrist;
+        public final boolean ibiReady;
+        public final boolean temperatureReady;
         public final String reason;
 
         Result(boolean motionReady, boolean heartReady, String reason) {
+            this(motionReady, heartReady, false, false, false, reason);
+        }
+
+        Result(
+                boolean motionReady,
+                boolean heartReady,
+                boolean offWrist,
+                boolean ibiReady,
+                boolean temperatureReady,
+                String reason
+        ) {
             this.motionReady = motionReady;
             this.heartReady = heartReady;
-            this.deepCueAllowed = motionReady && heartReady;
-            this.lucidCueAllowed = motionReady && heartReady;
+            this.offWrist = offWrist;
+            this.ibiReady = ibiReady;
+            this.temperatureReady = temperatureReady;
+            this.deepCueAllowed = motionReady && heartReady && !offWrist;
+            this.lucidCueAllowed = motionReady && heartReady && !offWrist;
             this.reason = reason;
         }
     }
@@ -29,20 +46,47 @@ public final class SignalQualityMonitor {
             boolean accelerometerRegistered,
             boolean heartSensorRegistered
     ) {
+        return evaluate(nowElapsedMs, lastMotionElapsedMs, lastHeartElapsedMs,
+                motionSamples30s, heartSamples2m, accelerometerRegistered,
+                heartSensorRegistered, false, 0L, 0, 0L, 0);
+    }
+
+    public Result evaluate(
+            long nowElapsedMs,
+            long lastMotionElapsedMs,
+            long lastHeartElapsedMs,
+            int motionSamples30s,
+            int heartSamples2m,
+            boolean accelerometerRegistered,
+            boolean heartSensorRegistered,
+            boolean offWrist,
+            long lastIbiElapsedMs,
+            int ibiSamples5m,
+            long lastTemperatureElapsedMs,
+            int temperatureSamples30m
+    ) {
         boolean motionFresh = lastMotionElapsedMs > 0L
                 && nowElapsedMs - lastMotionElapsedMs <= MOTION_STALE_MS;
         boolean heartFresh = lastHeartElapsedMs > 0L
                 && nowElapsedMs - lastHeartElapsedMs <= HEART_STALE_MS;
+        boolean ibiReady = lastIbiElapsedMs > 0L
+                && nowElapsedMs - lastIbiElapsedMs <= HEART_STALE_MS
+                && ibiSamples5m >= 3;
+        boolean temperatureReady = lastTemperatureElapsedMs > 0L
+                && nowElapsedMs - lastTemperatureElapsedMs <= 15L * 60L * 1000L
+                && temperatureSamples30m >= 2;
         boolean motionReady = accelerometerRegistered && motionFresh && motionSamples30s >= 20;
         boolean heartReady = heartSensorRegistered && heartFresh && heartSamples2m >= 3;
         String reason;
-        if (!accelerometerRegistered) reason = "accelerometer unavailable";
+        if (offWrist) reason = "watch is off wrist";
+        else if (!accelerometerRegistered) reason = "accelerometer unavailable";
         else if (!motionFresh) reason = "motion stream stale";
         else if (motionSamples30s < 20) reason = "motion coverage low";
         else if (!heartSensorRegistered) reason = "heart sensor unavailable";
         else if (!heartFresh) reason = "heart stream stale";
         else if (heartSamples2m < 3) reason = "heart coverage low";
         else reason = "signal ready";
-        return new Result(motionReady, heartReady, reason);
+        return new Result(motionReady, heartReady, offWrist,
+                ibiReady, temperatureReady, reason);
     }
 }

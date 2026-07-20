@@ -7,46 +7,69 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Phone release code: 9 (`1.0.0`).
-- Official slogan and mission are consistent across the app and Play marketing copy.
-- Public compatibility copy names Samsung Galaxy Watch4 and later Wear OS models, requires usable heart-rate and motion signals, and marks Apple Watch as planned.
-- Live Google Play short and full descriptions are saved with the official slogan and mission.
+- Published phone internal-test code: 10 (`1.1.0-test`).
+- Published Wear OS internal-test code: 8 (`1.1.0-test`).
+- Both releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
+- Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
+- Clean shared tests: 19 checks, 0 failures.
 - Phone and Wear OS debug builds pass.
-- Phone and Wear OS signed release bundles pass.
-- Shared safety and protocol checks pass: 12 checks, 0 failures.
-- Phone and Wear OS Android lint checks pass with no blocking errors.
-- Phone app installs and launches on Android 16.
-- Onboarding, disclosure, main screen, research explanation, export, deletion, and privacy controls are present.
-- Phone and watch use a single session-bound protocol with duplicate, expiry, version, device, and session rejection.
-- Health data stays local unless the user exports it.
-- One valid cue request can produce at most one playback. Invalid requests produce none.
-- Protecting sleep takes priority: any arousal starts a 20-minute quiet period and the first cue-linked arousal disables further cues for the night.
-- The 10% gain ceiling is enforced in the interface, watch configuration, and phone playback service.
-- Conservative sleep-first fallbacks are enforced even when a saved configuration is missing.
-- One phone tap creates fresh, six-hour settings and targets the bound watch only.
-- The watch waits until its Activity is resumed before starting the visible health foreground service.
-- Likely sleep onset is estimated only after 10 sustained minutes of valid low motion plus fresh heart-rate data.
-- Motion-only sessions log data but cannot trigger deep or lucid cues.
-- Cue timing starts from estimated onset, not the arm tap; no estimate within three hours ends the session without cues.
-- Stale, reordered, stopped-session, and wrong-session arm flows fail closed.
-- A 10-minute phone watchdog shuts the audio service down unless a live watch heartbeat arrives.
-- Pending Arm, double-Arm, delayed ACK, and Stop races are generation-guarded.
+- Phone and Wear OS Android lint completes with no blocking errors.
+- Phone and Wear OS signed release bundles pass Gradle signing validation and `jarsigner` integrity verification.
+- Room schema 3 is generated on both devices with explicit version 2-to-3 migrations; existing local records are not intentionally destroyed.
+- Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
+- The research report has real source links and no broken citation markers or text-encoding artifacts.
 
-## Research alignment
+## Sleep-continuity implementation
 
-- Deep-sleep cue: two 50 ms pink-noise bursts.
-- Pair interval: 1.075 seconds.
-- Fade: 5 ms.
-- Cue window: 25 to 145 minutes after estimated sleep onset.
-- Cueing stops when motion, heart-rate quality, connection, route, battery, or arousal safety gates fail.
-- User gain is capped at 10%; the default is 4%.
-- DreamSync estimates cue-ready windows from wrist signals. It does not measure EEG or provide medical care.
-- The in-app research screen maps each design choice to four peer-reviewed studies and states the evidence limits.
-- Public marketing avoids claims of deeper sleep, memory improvement, biological effects, or guaranteed lucid dreams.
+- Visible nightly Arm remains required; after Arm, likely-sleep detection is automatic.
+- Deterministic states: Armed, Preparing for sleep, Likely asleep, Stable sleep, Possible arousal, Recovered, and Stopped.
+- Sleep onset still requires sustained low motion plus fresh cardiac data.
+- Motion-only sessions log but cannot trigger deep or lucid cues.
+- A seven-night rolling median baseline stores resting HR, IBI, RMSSD, skin temperature, and onset timing while early nights use conservative defaults.
+- Arousal starts a 20-minute quiet period.
+- The first cue-linked wake sign disables cues for the night and lowers gain.
+- A morning disturbance rating lowers the next calibration level and requires recalibration.
+- Continuity output includes estimated awakening count, WASO, longest uninterrupted bout, cue-linked arousal rate, and morning disturbance.
+- Signal output includes registration, freshness, sample counts, observed rates, off-wrist status, source, battery, and capability data.
+- Optional user-approved notification protection uses Android priority mode only while a night is armed and restores the previous state on Stop, timeout, summary, or relaunch recovery.
+- Pre-sleep coaching includes schedule, daylight, exercise, warm-bath, and comfortable breathing guidance plus non-diagnostic apnea referral language.
 
-## Still required
+## Samsung sensor implementation
 
-- Physical S23+ and Watch Ultra sensor/audio validation.
-- Physical verification of the phone-to-bound-watch automatic launch and first-use permission flow.
-- Play Console graphics upload and release-asset submission.
-- Google Play closed-release gate: 12 opted-in users for 14 continuous days.
+- Optional Samsung Health Sensor SDK adapter supports continuous HR plus IBI, skin temperature, off-wrist status, and optional raw PPG.
+- Raw PPG is disabled by default.
+- Standard Wear OS accelerometer and heart-rate sensing remains the fallback.
+- Live compatibility states are Fully supported, Basic monitoring only, or Not supported.
+- The watch sends durable capability data to the phone and export.
+- The build conditionally packages `wear/libs/samsung-health-sensor-api.aar` when supplied.
+
+## Protocol and audio safety
+
+- One valid cue request can produce at most one playback; invalid requests produce none.
+- Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, and reordered commands fail closed.
+- Cue allowance is consumed only after `AUDIO_STARTED`.
+- Speaker route, mute, volume, focus, interruptions, initialization, calibration, and waveform version are checked.
+- No sleep haptics are used.
+- Phone loss, stale sensors, off-wrist state, low battery, storage failure, route problems, and process interruption prevent or disable cueing.
+- Logs, summaries, configuration, cue lifecycle, surveys, capabilities, and failures are local and exportable.
+
+## Research and marketing boundary
+
+- Slogan: Dreams Redefined.
+- Mission: Designed to protect sleep continuity.
+- Public copy uses estimated, likely, experimental, stage-gated, and non-medical language.
+- Compatibility is capability-based and does not use "or better."
+- The claim-to-evidence matrix maps each product statement to a paper, official source, local implementation, and claim limit.
+- No claim of guaranteed sleep continuity, EEG staging, treatment, deeper sleep, memory benefit, biological effect, or guaranteed lucid dreaming is made.
+
+## External gates still required
+
+- Add the official Samsung Health Sensor SDK AAR after Samsung sign-in.
+- Obtain Samsung Partner Program approval and register `com.remote.DreamSync` plus the upload signing certificate.
+- Run the live Samsung self-test on Galaxy Watch Ultra 2024 and 2025.
+- Physical S23+ and Watch Ultra sensor, audio, route, battery, permission, disconnect, off-wrist, and process-death validation.
+- Three sensor-only nights, baseline/no-cue comparison, active-cue night, and recovery tests.
+- Concurrent polysomnography before any sleep-stage accuracy claim.
+- Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
+- Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
+- Google Play closed-release gate and all production-policy tasks remain external to local code.

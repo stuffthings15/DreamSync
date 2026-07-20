@@ -78,6 +78,7 @@ public final class CuePlaybackService extends Service
                 .putExtra("status", "Arming timed out. No watch session started; audio is off.")
                 .putExtra("state", "ARM_TIMEOUT")
                 .putExtra("sessionId", sessionId));
+        restoreNotificationProtection();
         stopSelf();
     };
 
@@ -98,6 +99,7 @@ public final class CuePlaybackService extends Service
         if (ACTION_STOP.equals(intent.getAction())) {
             armedSessionId = "";
             mainHandler.removeCallbacks(armWatchdog);
+            restoreNotificationProtection();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -229,6 +231,22 @@ public final class CuePlaybackService extends Service
 
     private String prefs(String key) {
         return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
+    }
+
+    private void restoreNotificationProtection() {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("notification_protection_active", false)) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null && manager.isNotificationPolicyAccessGranted()) {
+            int previous = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
+                    "previous_interruption_filter",
+                    NotificationManager.INTERRUPTION_FILTER_ALL);
+            manager.setInterruptionFilter(previous);
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove("previous_interruption_filter")
+                .putBoolean("notification_protection_active", false)
+                .apply();
     }
 
     private float parseFloat(String value, float fallback) {

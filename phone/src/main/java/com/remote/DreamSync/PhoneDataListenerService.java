@@ -1,5 +1,6 @@
 package com.remote.DreamSync;
 
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.os.SystemClock;
 
@@ -58,8 +59,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 && !com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)) return;
         if (!envelope.sessionId.equals(pref("active_session_id"))) return;
         if (com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)) {
+            String capabilities = envelope.payload.getOrDefault("capabilities", "{}");
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString("watch_live_session_id", envelope.sessionId)
+                    .putString("watch_capabilities", capabilities)
                     .apply();
         }
         String status = envelope.payload.getOrDefault("status", "Watch acknowledged session");
@@ -68,6 +71,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
             SessionEntity session = PhoneDatabase.get(this).dao().session(envelope.sessionId);
             if (session != null) {
                 session.state = state;
+                String previousCapabilities = session.watchCapabilityJson == null
+                        ? "{}" : session.watchCapabilityJson;
+                session.watchCapabilityJson = envelope.payload.getOrDefault(
+                        "capabilities", previousCapabilities);
                 PhoneDatabase.get(this).dao().upsertSession(session);
             }
             EventEntity event = new EventEntity();
@@ -77,12 +84,16 @@ public final class PhoneDataListenerService extends WearableListenerService {
             event.utcMs = System.currentTimeMillis();
             event.details = "state=" + envelope.payload.getOrDefault("state", "")
                     + ";signalQuality=" + envelope.payload.getOrDefault("signalQuality", "")
-                    + ";batteryPercent=" + envelope.payload.getOrDefault("batteryPercent", "");
+                    + ";batteryPercent=" + envelope.payload.getOrDefault("batteryPercent", "")
+                    + ";sleepPhase=" + envelope.payload.getOrDefault("sleepPhase", "")
+                    + ";awakeningCount=" + envelope.payload.getOrDefault("awakeningCount", "")
+                    + ";baselineNights=" + envelope.payload.getOrDefault("baselineNights", "");
             PhoneDatabase.get(this).dao().insertEvent(event);
         });
         sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
                 .putExtra("status", status)
                 .putExtra("state", state)
+                .putExtra("capabilities", envelope.payload.getOrDefault("capabilities", "{}"))
                 .putExtra("sessionId", envelope.sessionId));
     }
 
@@ -93,6 +104,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 .putString("last_summary_session", envelope.sessionId)
                 .apply();
         stopService(new Intent(this, CuePlaybackService.class));
+        restoreNotificationProtection();
         databaseExecutor.execute(() -> {
             PhoneDao dao = PhoneDatabase.get(this).dao();
             SessionEntity session = dao.session(envelope.sessionId);
@@ -152,6 +164,22 @@ public final class PhoneDataListenerService extends WearableListenerService {
 
     private String pref(String key) {
         return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
+    }
+
+    private void restoreNotificationProtection() {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("notification_protection_active", false)) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null && manager.isNotificationPolicyAccessGranted()) {
+            int previous = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
+                    "previous_interruption_filter",
+                    NotificationManager.INTERRUPTION_FILTER_ALL);
+            manager.setInterruptionFilter(previous);
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove("previous_interruption_filter")
+                .putBoolean("notification_protection_active", false)
+                .apply();
     }
 
     @Override public void onDestroy() {

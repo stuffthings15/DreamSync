@@ -29,6 +29,8 @@ public final class MainActivity extends Activity {
             "android.permission.health.READ_HEART_RATE";
     private static final String READ_HEALTH_DATA_IN_BACKGROUND =
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND";
+    private static final String READ_SKIN_TEMPERATURE =
+            "android.permission.health.READ_SKIN_TEMPERATURE";
     private static final String USER_PREFS = "dreamsync_watch_user";
 
     private TextView statusText;
@@ -139,8 +141,8 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("Motion and heart-rate access")
-                .setMessage("DreamSync uses watch motion and heart-rate readings during a night session to estimate cue-ready windows and pause cues when waking is detected. "
+                .setTitle("Sleep-signal access")
+                .setMessage("DreamSync uses watch motion and heart-rate readings during a night session to estimate cue-ready windows and pause cues when waking is detected. On compatible Samsung watches, it also uses IBI, skin-temperature trend, and off-wrist status. Raw PPG is off by default. "
                         + "These readings and session records stay on your paired devices unless you choose Export on the phone. They are not used for diagnosis, ads, or automatic cloud upload.")
                 .setPositiveButton("Continue", (dialog, which) -> {
                     getSharedPreferences(USER_PREFS, MODE_PRIVATE).edit()
@@ -216,6 +218,9 @@ public final class MainActivity extends Activity {
             List<String> missing = new ArrayList<>();
             addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
             addIfMissing(missing, heartPermission);
+            if (Build.VERSION.SDK_INT >= 36) {
+                addIfMissing(missing, READ_SKIN_TEMPERATURE);
+            }
             if (Build.VERSION.SDK_INT >= 33) {
                 addIfMissing(missing, Manifest.permission.POST_NOTIFICATIONS);
             }

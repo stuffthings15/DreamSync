@@ -17,8 +17,11 @@ import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     static final String ACTION_CONFIG_CHANGED = "com.remote.DreamSync.CONFIG_CHANGED";
@@ -41,6 +44,7 @@ public final class MainActivity extends Activity {
     private boolean receiverRegistered;
     private boolean activityResumed;
     private Intent pendingAutoArmIntent;
+    private final ExecutorService databaseExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -64,6 +68,7 @@ public final class MainActivity extends Activity {
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
         Button privacyButton = findViewById(R.id.privacyButton);
+        Button deleteDataButton = findViewById(R.id.deleteDataButton);
 
         startButton.setOnClickListener(v -> beginAutomaticDetection());
         stopButton.setOnClickListener(v -> {
@@ -75,6 +80,7 @@ public final class MainActivity extends Activity {
             statusText.setText("Session stopped.");
         });
         privacyButton.setOnClickListener(v -> showPrivacyAndSafety());
+        deleteDataButton.setOnClickListener(v -> confirmDeleteWatchData());
         refreshMode();
         queueAutoArm(getIntent());
     }
@@ -205,6 +211,46 @@ public final class MainActivity extends Activity {
             receiverRegistered = false;
         }
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        databaseExecutor.shutdown();
+        super.onDestroy();
+    }
+
+    private void confirmDeleteWatchData() {
+        if (SleepSessionService.isRunning()) {
+            statusText.setText("Stop the current session before deleting watch data.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Delete watch data?")
+                .setMessage("This removes watch sessions, sensor events, personal baselines, and local session logs. It cannot be undone.")
+                .setPositiveButton("Delete", (dialog, which) -> databaseExecutor.execute(() -> {
+                    WearDao dao = WearDatabase.get(this).dao();
+                    dao.deleteAllEvents();
+                    dao.deleteAllSessions();
+                    dao.deleteAllBaselines();
+                    SessionConfig.clear(this);
+                    deleteSessionLogs(getExternalFilesDir("sessions"));
+                    deleteSessionLogs(new File(getFilesDir(), "sessions"));
+                    runOnUiThread(() -> {
+                        refreshMode();
+                        statusText.setText("All watch session data deleted.");
+                    });
+                }))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private static void deleteSessionLogs(File directory) {
+        if (directory == null) return;
+        File[] files = directory.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isFile() && file.getName().startsWith("dreamsync-")) file.delete();
+        }
     }
 
     private void refreshMode() {

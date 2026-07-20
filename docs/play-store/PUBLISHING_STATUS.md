@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Capability-based compatibility copy, with Galaxy Watch Ultra first in validation and Apple Watch clearly marked as planned.
-- Version 1.1.1-test with unique phone and Wear OS version codes published to internal testing.
+- Version 1.1.2-test with unique phone and Wear OS version codes published to internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -25,15 +25,18 @@
 - Wear OS version code 8 (`1.1.0-test`) published on 2026-07-19.
 - Phone version code 11 (`1.1.1-test`) published on 2026-07-19.
 - Wear OS version code 12 (`1.1.1-test`) published on 2026-07-19.
+- Phone version code 13 (`1.1.2-test`) published on 2026-07-19.
+- Wear OS version code 14 (`1.1.2-test`) published on 2026-07-19.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 11 (`1.1.1-test`) is available to internal testers.
-- Wear OS version code 12 (`1.1.1-test`) is available to internal testers.
-- Expanded tests, lint, signed-bundle, and signature checks passed before publishing.
+- Phone version code 13 (`1.1.2-test`) is available to internal testers.
+- Wear OS version code 14 (`1.1.2-test`) is available to internal testers.
+- Thirty-three shared tests, lint, signed-bundle, signature, and release-integrity checks passed before publishing.
+- This build adds exact terminal-state persistence, strict durable-item identity checks, clean next-night recovery, and complete watch-side local-data deletion.
 - Advanced Samsung status remains Basic monitoring only until the official SDK AAR, Samsung partnership approval, package/signature registration, and live Ultra self-test are complete.
 
 ## Google Play gate

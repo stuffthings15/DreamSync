@@ -52,6 +52,7 @@ public final class SessionCoordinator {
         if (!isTerminal(terminalState)) {
             throw new IllegalArgumentException("State is not terminal: " + terminalState);
         }
+        if (isTerminal(state)) return;
         state = terminalState;
         terminationReason = safe(reason);
         detail = terminationReason;

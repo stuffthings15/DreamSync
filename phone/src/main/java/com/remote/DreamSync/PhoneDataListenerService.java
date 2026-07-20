@@ -12,7 +12,9 @@ import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
+import com.remote.DreamSync.shared.MessageGuard;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
+import com.remote.DreamSync.shared.SessionOutcome;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -26,6 +28,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
     private static final String PREFS = "dreamsync_phone";
 
     private final ExecutorService databaseExecutor = Executors.newSingleThreadExecutor();
+    private final MessageGuard messageGuard = new MessageGuard();
 
     @Override public void onDataChanged(DataEventBuffer events) {
         try {
@@ -38,10 +41,15 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 ProtocolEnvelope envelope;
                 try { envelope = ProtocolEnvelope.decode(encoded); }
                 catch (IllegalArgumentException ignored) { continue; }
-                if (!pref("local_phone_node").equals(envelope.targetDeviceId)) continue;
-                if (path.startsWith(com.remote.DreamSync.shared.Protocol.PATH_STATE_PREFIX)) {
+                String sourceNodeId = event.getDataItem().getUri().getHost();
+                if (sourceNodeId == null || sourceNodeId.isEmpty()) continue;
+                if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_STATE_PREFIX
+                        + envelope.sessionId)
+                        && validEnvelope(envelope, sourceNodeId, false)) {
                     handleState(envelope);
-                } else if (path.startsWith(com.remote.DreamSync.shared.Protocol.PATH_SUMMARY_PREFIX)) {
+                } else if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_SUMMARY_PREFIX
+                        + envelope.sessionId)
+                        && validEnvelope(envelope, sourceNodeId, true)) {
                     handleSummary(envelope, data.getAsset("sessionLog"));
                 }
             }
@@ -65,8 +73,11 @@ public final class PhoneDataListenerService extends WearableListenerService {
                     .putString("watch_capabilities", capabilities)
                     .apply();
         }
-        String status = envelope.payload.getOrDefault("status", "Watch acknowledged session");
-        String state = envelope.payload.getOrDefault("state", "ARMED");
+        String status = envelope.payload.getOrDefault(
+                "status", "Watch acknowledged session");
+        if (status.length() > 256) status = status.substring(0, 256);
+        String state = SessionOutcome.normalizeLiveState(
+                envelope.payload.getOrDefault("state", "ARMED"));
         databaseExecutor.execute(() -> {
             SessionEntity session = PhoneDatabase.get(this).dao().session(envelope.sessionId);
             if (session != null) {
@@ -102,6 +113,14 @@ public final class PhoneDataListenerService extends WearableListenerService {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString("last_summary", summary)
                 .putString("last_summary_session", envelope.sessionId)
+                .remove("active_session_id")
+                .remove("pending_session_id")
+                .remove("pending_arm_generation")
+                .remove("cancelled_session_id")
+                .remove("auto_opened_watch_session")
+                .remove("watch_live_session_id")
+                .remove("bound_watch_node")
+                .remove("local_phone_node")
                 .apply();
         stopService(new Intent(this, CuePlaybackService.class));
         restoreNotificationProtection();
@@ -113,11 +132,15 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 session.sessionId = envelope.sessionId;
             }
             session.summaryJson = summary;
-            session.state = "COMPLETE";
+            session.state = com.remote.DreamSync.shared.SessionState.INTERNAL_ERROR.name();
             session.endUtcMs = System.currentTimeMillis();
             try {
                 org.json.JSONObject json = new org.json.JSONObject(summary);
                 session.watchLogPath = json.optString("log", "");
+                session.state = SessionOutcome.normalizePersistentState(
+                        json.optString("sessionState",
+                                json.optString("terminalState", "")));
+                session.endUtcMs = json.optLong("endUtcMs", session.endUtcMs);
             } catch (org.json.JSONException ignored) {}
             dao.upsertSession(session);
             EventEntity received = new EventEntity();
@@ -132,6 +155,31 @@ public final class PhoneDataListenerService extends WearableListenerService {
         sendBroadcast(new Intent(ACTION_SUMMARY_CHANGED).setPackage(getPackageName())
                 .putExtra("summary", summary)
                 .putExtra("sessionId", envelope.sessionId));
+    }
+
+    private boolean validEnvelope(
+            ProtocolEnvelope envelope,
+            String sourceNodeId,
+            boolean summary
+    ) {
+        String active = pref("active_session_id");
+        String expectedSession = active.isEmpty()
+                ? pref("cancelled_session_id") : active;
+        String boundWatch = pref("bound_watch_node");
+        String localPhone = pref("local_phone_node");
+        if (expectedSession.isEmpty() || boundWatch.isEmpty() || localPhone.isEmpty()
+                || !boundWatch.equals(sourceNodeId)) return false;
+        String expectedType = summary
+                ? com.remote.DreamSync.shared.Protocol.TYPE_SUMMARY : "";
+        if (!expectedType.isEmpty() && !expectedType.equals(envelope.messageType)) return false;
+        if (!summary
+                && !com.remote.DreamSync.shared.Protocol.TYPE_CONFIG_ACK.equals(envelope.messageType)
+                && !com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)) {
+            return false;
+        }
+        return messageGuard.check(
+                envelope, expectedSession, localPhone, boundWatch,
+                System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
     }
 
     private void receiveLog(String sessionId, Asset asset) {

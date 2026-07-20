@@ -40,6 +40,7 @@ public final class PhoneWorkflowInstrumentationTest {
                 assertNotNull(activity.findViewById(R.id.armButton));
                 assertNotNull(activity.findViewById(R.id.stopButton));
                 assertNotNull(activity.findViewById(R.id.exportButton));
+                assertNotNull(activity.findViewById(R.id.deleteDataButton));
             });
         }
     }

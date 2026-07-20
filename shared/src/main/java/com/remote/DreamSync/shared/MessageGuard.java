@@ -6,6 +6,7 @@ import java.util.Map;
 public final class MessageGuard {
     public enum Result {
         ACCEPT,
+        MALFORMED,
         BAD_VERSION,
         EXPIRED,
         WRONG_SESSION,
@@ -25,6 +26,22 @@ public final class MessageGuard {
             String localDevice,
             long nowUtcMs
     ) {
+        return check(envelope, expectedSession, localDevice, "", nowUtcMs);
+    }
+
+    public synchronized Result check(
+            ProtocolEnvelope envelope,
+            String expectedSession,
+            String localDevice,
+            String expectedSender,
+            long nowUtcMs
+    ) {
+        if (envelope == null
+                || blank(envelope.messageId)
+                || blank(envelope.messageType)
+                || blank(envelope.sessionId)
+                || blank(envelope.senderDeviceId)
+                || blank(envelope.targetDeviceId)) return Result.MALFORMED;
         if (envelope.protocolVersion != Protocol.VERSION) return Result.BAD_VERSION;
         if (envelope.isExpired(nowUtcMs)) return Result.EXPIRED;
         if (!expectedSession.isEmpty() && !expectedSession.equals(envelope.sessionId)) {
@@ -33,8 +50,15 @@ public final class MessageGuard {
         if (!localDevice.isEmpty() && !localDevice.equals(envelope.targetDeviceId)) {
             return Result.WRONG_DEVICE;
         }
+        if (!expectedSender.isEmpty() && !expectedSender.equals(envelope.senderDeviceId)) {
+            return Result.WRONG_DEVICE;
+        }
         if (seen.containsKey(envelope.messageId)) return Result.DUPLICATE;
         seen.put(envelope.messageId, Boolean.TRUE);
         return Result.ACCEPT;
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank() || value.length() > 128;
     }
 }

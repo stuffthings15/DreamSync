@@ -153,7 +153,7 @@ public final class CuePlaybackService extends Service
             return;
         }
         MessageGuard.Result guard = messageGuard.check(
-                envelope, sessionId, localNode, System.currentTimeMillis());
+                envelope, sessionId, localNode, watchNode, System.currentTimeMillis());
         if (guard != MessageGuard.Result.ACCEPT) {
             if (guard == MessageGuard.Result.DUPLICATE) {
                 playbackExecutor.execute(() -> sendLatestState(watchNode, envelope));

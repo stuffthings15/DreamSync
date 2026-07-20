@@ -7,11 +7,11 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Published phone internal-test code: 11 (`1.1.1-test`).
-- Published Wear OS internal-test code: 12 (`1.1.1-test`).
+- Published phone internal-test code: 13 (`1.1.2-test`).
+- Published Wear OS internal-test code: 14 (`1.1.2-test`).
 - Both releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
-- Clean shared tests: 27 checks, 0 failures.
+- Clean shared tests: 33 checks, 0 failures, 0 errors, and 0 skipped.
 - Phone and Wear OS Android instrumentation test APKs compile; device execution remains pending because no test device was attached.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS Android lint completes with no blocking errors.
@@ -48,12 +48,15 @@ Date: 19 July 2026
 ## Protocol and audio safety
 
 - One valid cue request can produce at most one playback; invalid requests produce none.
-- Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, and reordered commands fail closed.
+- Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, wrong-sender, and reordered commands fail closed.
+- Durable phone-watch state and summary items validate the source node, sender, receiver, session, type, protocol version, path, expiry, and duplicate ID before changing local state.
+- The first terminal cause is preserved, exact watch terminal outcomes are stored, and a valid summary clears the session binding so the next night can start cleanly.
 - Cue allowance is consumed only after `AUDIO_STARTED`.
 - Speaker route, mute, volume, focus, interruptions, initialization, calibration, and waveform version are checked.
 - No sleep haptics are used.
 - Phone loss, stale sensors, off-wrist state, low battery, storage failure, route problems, and process interruption prevent or disable cueing.
 - Logs, summaries, configuration, cue lifecycle, surveys, capabilities, and failures are local and exportable.
+- Phone and watch deletion controls remove each device's local database and session files; deletion is blocked during an active session.
 
 ## Research and marketing boundary
 

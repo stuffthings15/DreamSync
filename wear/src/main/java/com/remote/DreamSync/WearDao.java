@@ -20,4 +20,7 @@ public interface WearDao {
     WearSessionEntity session(String sessionId);
     @Query("SELECT * FROM night_baselines WHERE valid = 1 ORDER BY completedUtcMs DESC LIMIT 7")
     List<NightBaselineEntity> latestBaselines();
+    @Query("DELETE FROM events") void deleteAllEvents();
+    @Query("DELETE FROM sessions") void deleteAllSessions();
+    @Query("DELETE FROM night_baselines") void deleteAllBaselines();
 }

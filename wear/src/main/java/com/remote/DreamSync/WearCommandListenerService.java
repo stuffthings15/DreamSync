@@ -35,8 +35,11 @@ public final class WearCommandListenerService extends WearableListenerService {
                 ProtocolEnvelope envelope;
                 try { envelope = ProtocolEnvelope.decode(bytes); }
                 catch (IllegalArgumentException ignored) { continue; }
+                String sourceNodeId = event.getDataItem().getUri().getHost();
+                if (sourceNodeId == null || sourceNodeId.isEmpty()) continue;
                 Wearable.getNodeClient(this).getLocalNode()
-                        .addOnSuccessListener(node -> applyConfiguration(envelope, node.getId()));
+                        .addOnSuccessListener(node -> applyConfiguration(
+                                envelope, node.getId(), sourceNodeId));
             }
         } finally {
             events.release();
@@ -50,7 +53,8 @@ public final class WearCommandListenerService extends WearableListenerService {
         SessionConfig config = SessionConfig.load(this);
         if (!config.phoneNodeId.equals(event.getSourceNodeId())) return;
         MessageGuard.Result result = guard.check(
-                envelope, config.sessionId, config.watchNodeId, System.currentTimeMillis());
+                envelope, config.sessionId, config.watchNodeId,
+                config.phoneNodeId, System.currentTimeMillis());
         if (result != MessageGuard.Result.ACCEPT) return;
         if (Protocol.PATH_STOP.equals(event.getPath())
                 && com.remote.DreamSync.shared.Protocol.TYPE_STOP.equals(envelope.messageType)) {
@@ -68,8 +72,13 @@ public final class WearCommandListenerService extends WearableListenerService {
         }
     }
 
-    private void applyConfiguration(ProtocolEnvelope envelope, String localNodeId) {
-        MessageGuard.Result result = guard.check(envelope, "", localNodeId, System.currentTimeMillis());
+    private void applyConfiguration(
+            ProtocolEnvelope envelope,
+            String localNodeId,
+            String sourceNodeId
+    ) {
+        MessageGuard.Result result = guard.check(
+                envelope, "", localNodeId, sourceNodeId, System.currentTimeMillis());
         if (result != MessageGuard.Result.ACCEPT) return;
         String json = envelope.payload.get("config");
         if (json == null || json.isEmpty()) return;

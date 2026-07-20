@@ -34,6 +34,7 @@ import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.PersonalBaseline;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SessionCoordinator;
+import com.remote.DreamSync.shared.SessionOutcome;
 import com.remote.DreamSync.shared.SessionState;
 import com.remote.DreamSync.shared.SignalQualityMonitor;
 import com.remote.DreamSync.shared.SleepContinuityTracker;
@@ -496,9 +497,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
             String terminalCode,
             String reason
     ) {
+        if (SessionCoordinator.isTerminal(sessionCoordinator.state())) return;
         disableCueing(reason);
         terminalState = terminalCode;
         sessionCoordinator.terminate(state, reason);
+        persistSession(state.name(), terminalCode);
     }
 
     private void evaluateAndAct() {
@@ -554,7 +557,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         double sleepElapsedMin = SleepSessionClock.sleepElapsedMinutes(onset, now);
         if (SleepSessionClock.armTimedOut(
                 sessionStartMs, onset, now, config.armTimeoutMin)) {
-            terminateSession(SessionState.TIMED_OUT, "TIMED_OUT",
+            terminateSession(SessionOutcome.forConfiguredLimit(false), "TIMED_OUT",
                     "sleep was not detected before the arm timeout");
             persistEvent("SLEEP_NOT_DETECTED", "", "arm timeout reached; no cues sent");
             logEvent("SESSION_TIMEOUT", "Sleep was not detected before the arm timeout");
@@ -562,9 +565,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
             return;
         }
         if (SleepSessionClock.sleepTimedOut(onset, now, config.sessionEndMin)) {
-            terminateSession(SessionState.TIMED_OUT, "TIMED_OUT",
-                    "configured time since estimated sleep onset reached");
-            logEvent("SESSION_TIMEOUT", "Configured time since estimated sleep onset reached");
+            if (!SessionCoordinator.isTerminal(sessionCoordinator.state())) {
+                terminateSession(SessionOutcome.forConfiguredLimit(true), "COMPLETE",
+                        "configured sleep session completed");
+            }
+            logEvent("SESSION_COMPLETE", "Configured time since estimated sleep onset reached");
             stopSelf();
             return;
         }
@@ -1283,6 +1288,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("sensorQualityDetail", sensorQuality);
             summary.put("startBatteryPercent", sessionStartBatteryPercent);
             summary.put("endBatteryPercent", batteryPercent());
+            summary.put("endUtcMs", timeProvider.utcMs());
+            summary.put("sessionState", SessionOutcome.normalizePersistentState(
+                    sessionCoordinator.state().name()));
             summary.put("terminalState", terminalState);
             summary.put("protocolVersion", com.remote.DreamSync.shared.Protocol.VERSION);
             summary.put("waveformVersion", com.remote.DreamSync.shared.CueWaveforms.VERSION);
@@ -1373,7 +1381,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     "service interrupted; fresh handshake required");
         }
         logEvent("SESSION_END", terminalState);
-        persistSession("COMPLETE", terminalState);
+        persistSession(SessionOutcome.normalizePersistentState(
+                sessionCoordinator.state().name()), terminalState);
         persistNightBaseline();
         if (logWriter != null) {
             try { logWriter.close(); } catch (IOException ignored) {}

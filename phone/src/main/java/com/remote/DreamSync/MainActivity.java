@@ -701,9 +701,14 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmDeleteAll() {
+        if (!pref("active_session_id").isEmpty()
+                || !pref("pending_session_id").isEmpty()) {
+            statusText.setText("Stop the current session before deleting phone data.");
+            return;
+        }
         new AlertDialog.Builder(this)
-                .setTitle("Delete all local data?")
-                .setMessage("This removes session history, cue events, surveys, and received watch logs. It cannot be undone.")
+                .setTitle("Delete phone data?")
+                .setMessage("This removes phone session history, cue events, surveys, and received watch logs. Delete watch history separately with Delete watch data on the watch. It cannot be undone.")
                 .setPositiveButton("Delete", (dialog, which) -> databaseExecutor.execute(() -> {
                     dao.deleteAllSurveys();
                     dao.deleteAllEvents();
@@ -711,7 +716,8 @@ public final class MainActivity extends Activity {
                     deleteReceivedLogs();
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .remove("last_summary").remove("last_summary_session").apply();
-                    runOnUiThread(() -> statusText.setText("All local data deleted."));
+                    runOnUiThread(() -> statusText.setText(
+                            "All phone session data deleted. Delete watch data on the watch if needed."));
                 }))
                 .setNegativeButton("Cancel", null)
                 .show();

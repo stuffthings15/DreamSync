@@ -49,6 +49,7 @@ public final class WearWorkflowInstrumentationTest {
                 assertTrue(containsScrollView(content));
                 assertNotNull(activity.findViewById(R.id.startButton));
                 assertNotNull(activity.findViewById(R.id.stopButton));
+                assertNotNull(activity.findViewById(R.id.deleteDataButton));
             });
         }
     }

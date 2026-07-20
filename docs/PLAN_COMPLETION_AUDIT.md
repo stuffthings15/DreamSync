@@ -10,8 +10,8 @@ Date: 2026-07-19
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Twenty-seven deterministic shared tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
-- Google Play internal testing serves phone 11 and Wear 12 (`1.1.1-test`).
+- Thirty-three deterministic shared tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Google Play internal testing serves phone 13 and Wear 14 (`1.1.2-test`).
 
 ## Compiled but not device-executed
 

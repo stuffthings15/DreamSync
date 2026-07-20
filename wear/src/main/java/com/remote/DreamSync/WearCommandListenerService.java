@@ -110,11 +110,16 @@ public final class WearCommandListenerService extends WearableListenerService {
         if (result != MessageGuard.Result.ACCEPT) return;
         if (Protocol.PATH_STOP.equals(event.getPath())
                 && com.remote.DreamSync.shared.Protocol.TYPE_STOP.equals(envelope.messageType)) {
+            WatchDiagnostics.session(this, config, "SESSION_STOP_COMMAND_RECEIVED",
+                    "source=bound_phone");
             SessionConfig.clear(this);
             startService(new Intent(this, SleepSessionService.class)
                     .setAction(SleepSessionService.ACTION_STOP)
                     .putExtra("terminationReason", "USER_STOPPED_CURRENT_SESSION"));
         } else if (Protocol.PATH_ACK.equals(event.getPath())) {
+            WatchDiagnostics.session(this, config, "CUE_ACK_RECEIVED",
+                    "type=" + envelope.messageType
+                            + ";reason=" + envelope.payload.getOrDefault("reason", ""));
             sendBroadcast(new Intent(SleepSessionService.ACTION_CUE_ACK)
                     .setPackage(getPackageName())
                     .putExtra("sessionId", envelope.sessionId)
@@ -144,6 +149,8 @@ public final class WearCommandListenerService extends WearableListenerService {
                         .setAction(SleepSessionService.ACTION_STOP)
                         .putExtra("terminationReason", "USER_TURNED_OFF"));
             }
+            WatchDiagnostics.auto(this, current, "AUTO_OFF_COMMAND_RECEIVED",
+                    "source=bound_phone");
             AutoSleepMonitor.disable(this, true);
             return;
         }
@@ -157,6 +164,10 @@ public final class WearCommandListenerService extends WearableListenerService {
             config.lastSessionUtcMs = current.lastSessionUtcMs;
         }
         config.save(this);
+        WatchDiagnostics.auto(this, config, "AUTO_CONFIG_RECEIVED",
+                "mode=" + config.mode
+                        + ";gain=" + config.cueGain
+                        + ";typicalSleepMinute=" + config.typicalSleepMinute);
         AutoSleepMonitor.enable(this, config);
         sendBroadcast(new Intent(MainActivity.ACTION_CONFIG_CHANGED)
                 .setPackage(getPackageName())
@@ -189,6 +200,10 @@ public final class WearCommandListenerService extends WearableListenerService {
                 && current.createdUtcMs >= config.createdUtcMs) return;
         config.handshakeMessageId = envelope.messageId;
         config.save(this);
+        WatchDiagnostics.session(this, config, "SESSION_CONFIG_RECEIVED",
+                "mode=" + config.mode
+                        + ";gain=" + config.cueGain
+                        + ";automatic=true;freshHandshake=true");
         databaseExecutor.execute(() -> {
             WearSessionEntity session = new WearSessionEntity();
             session.sessionId = config.sessionId;
@@ -217,10 +232,14 @@ public final class WearCommandListenerService extends WearableListenerService {
                         config.handshakeMessageId);
         try {
             ContextCompat.startForegroundService(this, start);
+            WatchDiagnostics.session(this, config, "FULL_SENSOR_SESSION_START_REQUESTED",
+                    "foregroundHealthService=true");
             sendBroadcast(new Intent(MainActivity.ACTION_CONFIG_CHANGED)
                     .setPackage(getPackageName())
                     .putExtra("status", "Sleep detected. Confirming signals before any cue."));
         } catch (RuntimeException error) {
+            WatchDiagnostics.session(this, config, "FULL_SENSOR_SESSION_START_FAILED",
+                    "error=" + safeMessage(error));
             publishState(config, "AUTO_START_FAILED",
                     "Android blocked automatic sensor confirmation. Open DreamSync on the watch.");
         }
@@ -238,7 +257,21 @@ public final class WearCommandListenerService extends WearableListenerService {
         map.getDataMap().putByteArray("envelope", ack.encode());
         PutDataRequest request = map.asPutDataRequest();
         request.setUrgent();
-        Wearable.getDataClient(this).putDataItem(request);
+        Wearable.getDataClient(this).putDataItem(request)
+                .addOnSuccessListener(item -> WatchDiagnostics.session(
+                        this, config, "SESSION_STATE_DELIVERED",
+                        "state=" + state + ";status=" + status))
+                .addOnFailureListener(error -> WatchDiagnostics.session(
+                        this, config, "SESSION_STATE_DELIVERY_FAILED",
+                        "state=" + state + ";error=" + safeMessage(error)));
+    }
+
+    private static String safeMessage(Throwable error) {
+        if (error == null) return "unknown";
+        Throwable cause = error.getCause() == null ? error : error.getCause();
+        String message = cause.getMessage();
+        return message == null || message.isBlank()
+                ? cause.getClass().getSimpleName() : message;
     }
 
     @Override public void onDestroy() {

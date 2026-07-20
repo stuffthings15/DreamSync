@@ -261,12 +261,14 @@ public final class MainActivity extends Activity {
         AudioOutput audio = new AudioOutput(this);
         AudioOutput.Result preflight = audio.preflight();
         if (!preflight.success) {
+            DebugLog.append(this, "TURN_ON_BLOCKED", "reason=" + preflight.reason);
             statusText.setText("Not ready: " + preflight.reason + ".");
             return;
         }
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
         if (calibration.isEmpty()) {
+            DebugLog.append(this, "TURN_ON_BLOCKED", "reason=sound calibration required");
             beginGuidedCalibration();
             return;
         }
@@ -362,23 +364,31 @@ public final class MainActivity extends Activity {
                 .apply();
         try {
             PhoneAutoControl.startStandby(this);
+            DebugLog.append(this, "PHONE_STANDBY_STARTED",
+                    "waiting continuously for watch sleep detection");
         } catch (RuntimeException error) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putBoolean("auto_enabled", false).apply();
             statusText.setText("Could not keep DreamSync ready: " + safeMessage(error));
+            DebugLog.append(this, "PHONE_STANDBY_FAILED", safeMessage(error));
             updatePowerState();
             return;
         }
         final String enrollmentId = enrollment;
+        DebugLog.append(this, "AUTO_CONFIG_PUBLISH_REQUESTED",
+                "mode=" + mode + ";gain=" + gain + ";automaticEveryNight=true");
         PhoneAutoControl.publishAutoConfig(this, true, enrollmentId,
                         phone.getId(), watch.getId(), mode, gain)
                 .addOnSuccessListener(item -> {
+                    DebugLog.append(this, "AUTO_CONFIG_PUBLISHED",
+                            "durableDataItem=true;watchConfirmation=pending");
                     statusText.setText("DreamSync is On. Approve watch access once; then it runs every night.");
                     openWatchApp(true, enrollmentId);
                     updatePowerState();
                     updateReadiness();
                 })
                 .addOnFailureListener(error -> {
+                    DebugLog.append(this, "AUTO_CONFIG_PUBLISH_FAILED", safeMessage(error));
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putBoolean("auto_enabled", false).apply();
                     stopService(new Intent(this, CuePlaybackService.class));
@@ -491,6 +501,7 @@ public final class MainActivity extends Activity {
 
     private void failPendingEnable(String generation, String message) {
         if (!isCurrentEnableGeneration(generation)) return;
+        DebugLog.append(this, "TURN_ON_FAILED", message);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .remove("pending_enable_generation")
                 .apply();

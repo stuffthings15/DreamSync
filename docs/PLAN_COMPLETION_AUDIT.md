@@ -1,6 +1,6 @@
 # DreamSync plan completion audit
 
-Date: 2026-07-19
+Date: 2026-07-20
 
 ## Complete locally
 
@@ -10,10 +10,11 @@ Date: 2026-07-19
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Forty deterministic shared tests and three phone audio-conversion tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Forty deterministic shared tests and six phone unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
 - Phone instrumentation passes 4/4 on an Android 16 emulator; Wear instrumentation passes 3/3 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations and privacy-safe debug export verification.
-- Google Play internal testing serves phone 19 and Wear 20 (`1.2.2-test`).
-- The one-time sound check waits for real playback, uses compatible PCM16 output, shows the exact error, and provides a separate bounded Export Debug Log without sleep data or node identifiers.
+- Google Play internal testing serves phone 21 and Wear 22 (`1.2.3-test`).
+- The one-time sound check waits for real playback, uses local PCM WAV playback with streaming fallback, shows the exact backend error, and provides a bounded Export Debug Log without raw node identifiers.
+- Phone and watch diagnostics now trace configuration, passive monitoring and inputs, automatic-session handshake, sensor registration and readings, quality and eligibility decisions, cue delivery and phone audio acknowledgement, no-haptics policy, failures, and terminal summaries.
 - Audited source/asset/dependency provenance register, third-party notices, owner sign-off packet, and exact release fingerprints.
 - Reproducible S23+/Watch Ultra validation protocol and evidence-collection runner.
 - Persistent user On/Off, Wear Health Services asleep-state plus conservative passive-HR fallback, automatic fresh-session handshake, phone connected-device standby service, reboot recovery, and three-record learned charge reminder.

@@ -131,6 +131,8 @@ public final class CuePlaybackService extends Service
                     .putFloat("armed_gain", armedGain)
                     .apply();
             startAsForeground(false);
+            DebugLog.append(this, "PHONE_STANDBY_READY",
+                    "boundWatch=true;gain=" + armedGain);
         } else if (ACTION_AUTO_SESSION.equals(action)) {
             armedSessionId = intent.getStringExtra(EXTRA_SESSION_ID);
             if (armedSessionId == null) armedSessionId = "";
@@ -144,6 +146,8 @@ public final class CuePlaybackService extends Service
             mainHandler.removeCallbacks(armWatchdog);
             mainHandler.postDelayed(armWatchdog, ARM_CONFIRM_TIMEOUT_MS);
             startAsForeground(false);
+            DebugLog.append(this, "PHONE_SESSION_AUDIO_READY",
+                    "freshHandshake=pending;gain=" + armedGain);
         } else if (ACTION_STANDBY.equals(action)) {
             armedSessionId = "";
             mainHandler.removeCallbacks(armWatchdog);
@@ -171,18 +175,29 @@ public final class CuePlaybackService extends Service
     }
 
     @Override public void onMessageReceived(MessageEvent event) {
-        if (!Protocol.PATH_DEEP_CUE.equals(event.getPath())) return;
+        if (!Protocol.PATH_DEEP_CUE.equals(event.getPath())) {
+            DebugLog.append(this, "CUE_MESSAGE_IGNORED", "reason=wrong path");
+            return;
+        }
+        DebugLog.append(this, "CUE_MESSAGE_RECEIVED",
+                "path=cue;sourceMatchesBound="
+                        + prefs("bound_watch_node").equals(event.getSourceNodeId()));
         ProtocolEnvelope envelope;
         try {
             envelope = ProtocolEnvelope.decode(event.getData());
         } catch (IllegalArgumentException error) {
+            DebugLog.append(this, "CUE_REJECTED", "reason=malformed envelope");
             return;
         }
-        if (!com.remote.DreamSync.shared.Protocol.TYPE_CUE_REQUEST.equals(envelope.messageType)) return;
+        if (!com.remote.DreamSync.shared.Protocol.TYPE_CUE_REQUEST.equals(envelope.messageType)) {
+            DebugLog.append(this, "CUE_REJECTED", "reason=wrong message type");
+            return;
+        }
         String sessionId = prefs("active_session_id");
         String localNode = prefs("local_phone_node");
         String watchNode = prefs("bound_watch_node");
         if (!watchNode.equals(event.getSourceNodeId())) {
+            DebugLog.append(this, "CUE_REJECTED", "reason=wrong watch node");
             sendAck(event.getSourceNodeId(), envelope,
                     com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED, "wrong watch node");
             return;
@@ -190,6 +205,7 @@ public final class CuePlaybackService extends Service
         MessageGuard.Result guard = messageGuard.check(
                 envelope, sessionId, localNode, watchNode, System.currentTimeMillis());
         if (guard != MessageGuard.Result.ACCEPT) {
+            DebugLog.append(this, "CUE_REJECTED", "reason=" + guard.name());
             if (guard == MessageGuard.Result.DUPLICATE) {
                 playbackExecutor.execute(() -> sendLatestState(watchNode, envelope));
             } else {
@@ -217,12 +233,18 @@ public final class CuePlaybackService extends Service
             return;
         }
         String cueType = validation.cueType;
+        DebugLog.append(this, "CUE_ACCEPTED",
+                "type=" + cueType + ";gain=" + validation.gain
+                        + ";output=phone_speaker;watchVibration=none");
         record(envelope, com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED, "accepted");
         sendAck(watchNode, envelope,
                 com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED, "accepted");
         float gain = validation.gain;
         startAsForeground(true);
         AudioOutput.Result result = audioOutput.play(cueType, gain, () -> {
+            DebugLog.append(this, "CUE_AUDIO_STARTED",
+                    "type=" + cueType + ";gain=" + gain
+                            + ";" + audioOutput.diagnostics());
             record(envelope, com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_STARTED,
                     audioOutput.calibrationRecord(gain));
             sendAck(watchNode, envelope,
@@ -260,7 +282,13 @@ public final class CuePlaybackService extends Service
                 prefs("local_phone_node"), targetNode, System.currentTimeMillis(),
                 com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS,
                 Map.of("reason", reason));
-        Wearable.getMessageClient(this).sendMessage(targetNode, Protocol.PATH_ACK, ack.encode());
+        Wearable.getMessageClient(this).sendMessage(targetNode, Protocol.PATH_ACK, ack.encode())
+                .addOnSuccessListener(messageId -> DebugLog.append(
+                        this, "CUE_ACK_SENT", "type=" + type))
+                .addOnFailureListener(error -> DebugLog.append(
+                        this, "CUE_ACK_FAILED", "type=" + type + ";reason="
+                                + (error.getMessage() == null
+                                ? error.getClass().getSimpleName() : error.getMessage())));
     }
 
     private void record(ProtocolEnvelope envelope, String type, String details) {

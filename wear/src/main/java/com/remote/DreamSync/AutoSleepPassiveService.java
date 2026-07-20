@@ -28,18 +28,38 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
     @Override public void onUserActivityInfoReceived(UserActivityInfo info) {
         boolean asleep = UserActivityState.USER_ACTIVITY_ASLEEP.equals(
                 info.getUserActivityState());
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        WatchDiagnostics.auto(this, config, "PASSIVE_ACTIVITY_RECEIVED",
+                "state=" + info.getUserActivityState() + ";asleep=" + asleep
+                        + ";sessionRunning=" + SleepSessionService.isRunning());
         if (asleep) startAutomaticSession("WEAR_HEALTH_SERVICES_ASLEEP");
     }
 
     @Override public void onNewDataPointsReceived(DataPointContainer points) {
         AutoSleepConfig config = AutoSleepConfig.load(this);
-        if (!config.validBinding() || !config.passiveHeartRateSupported
-                || SleepSessionService.isRunning()) return;
+        if (!config.validBinding()) {
+            WatchDiagnostics.local(this, "PASSIVE_DATA_IGNORED", "bindingInvalid=true");
+            return;
+        }
+        if (!config.passiveHeartRateSupported) {
+            WatchDiagnostics.auto(this, config, "PASSIVE_DATA_IGNORED",
+                    "passiveHeartRateSupported=false");
+            return;
+        }
+        if (SleepSessionService.isRunning()) {
+            WatchDiagnostics.auto(this, config, "PASSIVE_DATA_IGNORED",
+                    "activeSession=true;full-rate sensors already running");
+            return;
+        }
 
         List<SampleDataPoint<Double>> heartRates = points.getData(
                 DataType.HEART_RATE_BPM);
         long nowElapsed = SystemClock.elapsedRealtime();
         long nowUtc = System.currentTimeMillis();
+        int newSamples = 0;
+        double lastBpm = Double.NaN;
+        boolean lastInWindow = false;
+        boolean candidateReady = false;
         for (SampleDataPoint<Double> point : heartRates) {
             long sampleElapsed = point.getTimeDurationFromBoot().toMillis();
             if (sampleElapsed <= config.lastPassiveHeartRateElapsedMs) continue;
@@ -50,9 +70,10 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
             local.setTimeInMillis(sampleUtc);
             int minuteOfDay = local.get(Calendar.HOUR_OF_DAY) * 60
                     + local.get(Calendar.MINUTE);
+            boolean inWindow = passiveSleepGate.inSleepWindow(
+                    minuteOfDay, config.typicalSleepMinute);
             PassiveSleepGate.Result result = passiveSleepGate.observe(
-                    passiveSleepGate.inSleepWindow(
-                            minuteOfDay, config.typicalSleepMinute),
+                    inWindow,
                     point.getValue(),
                     sampleElapsed,
                     config.firstLowHeartRateElapsedMs,
@@ -60,21 +81,51 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
             config.firstLowHeartRateElapsedMs = result.firstLowHeartRateElapsedMs;
             config.lowHeartRateSamples = result.lowHeartRateSamples;
             config.save(this);
+            newSamples++;
+            lastBpm = point.getValue();
+            lastInWindow = inWindow;
+            candidateReady = result.candidateReady;
             if (result.candidateReady) {
+                WatchDiagnostics.auto(this, config, "PASSIVE_SLEEP_CANDIDATE_READY",
+                        "source=heart_rate_fallback;bpm=" + point.getValue()
+                                + ";lowHeartRateSamples=" + result.lowHeartRateSamples
+                                + ";inSleepWindow=" + inWindow);
                 startAutomaticSession(
                         "WEAR_HEALTH_SERVICES_PASSIVE_HR_FALLBACK");
                 return;
             }
         }
+        WatchDiagnostics.auto(this, config, "PASSIVE_HEART_RATE_BATCH",
+                "newSamples=" + newSamples
+                        + ";lastBpm=" + lastBpm
+                        + ";inSleepWindow=" + lastInWindow
+                        + ";lowHeartRateSamples=" + config.lowHeartRateSamples
+                        + ";candidateReady=" + candidateReady
+                        + ";required=3 samples spanning 10 minutes at <=75 bpm");
     }
 
     private void startAutomaticSession(String source) {
         AutoSleepConfig config = AutoSleepConfig.load(this);
         long now = System.currentTimeMillis();
-        if (!config.validBinding()
-                || !gate.mayStart(config.enabled, true, SleepSessionService.isRunning(),
-                config.lastSessionUtcMs, now)
-                || !config.reserveSession(this, now)) return;
+        if (!config.validBinding()) {
+            WatchDiagnostics.local(this, "AUTO_SESSION_BLOCKED", "bindingInvalid=true");
+            return;
+        }
+        boolean running = SleepSessionService.isRunning();
+        if (!gate.mayStart(config.enabled, true, running,
+                config.lastSessionUtcMs, now)) {
+            WatchDiagnostics.auto(this, config, "AUTO_SESSION_BLOCKED",
+                    "enabled=" + config.enabled
+                            + ";sessionRunning=" + running
+                            + ";lastSessionUtcMs=" + config.lastSessionUtcMs
+                            + ";minimumGapHours=4;source=" + source);
+            return;
+        }
+        if (!config.reserveSession(this, now)) {
+            WatchDiagnostics.auto(this, config, "AUTO_SESSION_BLOCKED",
+                    "reason=atomic reservation failed;source=" + source);
+            return;
+        }
 
         String sessionId = UUID.randomUUID().toString();
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
@@ -90,7 +141,15 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
         map.getDataMap().putByteArray("envelope", envelope.encode());
         PutDataRequest request = map.asPutDataRequest();
         request.setUrgent();
-        Wearable.getDataClient(this).putDataItem(request);
+        WatchDiagnostics.auto(this, config, "AUTO_SESSION_REQUESTED",
+                "source=" + source + ";phoneHandshake=pending");
+        Wearable.getDataClient(this).putDataItem(request)
+                .addOnSuccessListener(item -> WatchDiagnostics.auto(
+                        this, config, "AUTO_SESSION_REQUEST_DELIVERED",
+                        "source=" + source + ";durableDataItem=true"))
+                .addOnFailureListener(error -> WatchDiagnostics.auto(
+                        this, config, "AUTO_SESSION_REQUEST_FAILED",
+                        "source=" + source + ";error=" + safeMessage(error)));
         config.firstLowHeartRateElapsedMs = 0L;
         config.lowHeartRateSamples = 0;
         config.status = "Possible sleep detected. Confirming motion and heart rate before any cue.";
@@ -100,5 +159,13 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
 
     @Override public void onPermissionLost() {
         AutoSleepMonitor.permissionLost(this);
+    }
+
+    private static String safeMessage(Throwable error) {
+        if (error == null) return "unknown";
+        Throwable cause = error.getCause() == null ? error : error.getCause();
+        String message = cause.getMessage();
+        return message == null || message.isBlank()
+                ? cause.getClass().getSimpleName() : message;
     }
 }

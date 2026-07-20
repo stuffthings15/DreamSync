@@ -21,6 +21,7 @@ public final class Protocol {
     public static final String TYPE_AUTO_SESSION_START = "AUTO_SESSION_START";
     public static final String TYPE_AUTO_OFF = "AUTO_OFF";
     public static final String TYPE_DELETE_DATA = "DELETE_DATA";
+    public static final String TYPE_DIAGNOSTIC = "DIAGNOSTIC";
 
     public static final String PATH_CONFIG_PREFIX = "/dreamsync/config/";
     public static final String PATH_STATE_PREFIX = "/dreamsync/state/";
@@ -32,11 +33,13 @@ public final class Protocol {
     public static final String PATH_AUTO_STATE_PREFIX = "/dreamsync/auto/state/";
     public static final String PATH_AUTO_SESSION_PREFIX = "/dreamsync/auto/session/";
     public static final String PATH_DELETE_DATA_PREFIX = "/dreamsync/admin/delete/";
+    public static final String PATH_DIAGNOSTIC_PREFIX = "/dreamsync/diagnostic/";
 
     public static final long CUE_TTL_MS = 15_000L;
     public static final long CONTROL_TTL_MS = 120_000L;
     public static final long AUTO_SESSION_TTL_MS = 300_000L;
     public static final long AUTO_CONFIG_TTL_MS = 10L * 365L * 24L * 60L * 60L * 1000L;
+    public static final long DIAGNOSTIC_TTL_MS = 7L * 24L * 60L * 60L * 1000L;
 
     private Protocol() {}
 }

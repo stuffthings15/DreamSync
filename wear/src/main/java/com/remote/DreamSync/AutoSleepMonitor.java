@@ -27,6 +27,8 @@ final class AutoSleepMonitor {
         config.enabled = true;
         config.status = "Checking automatic sleep support...";
         config.save(context);
+        WatchDiagnostics.auto(context, config, "AUTO_MONITOR_ENABLE_REQUESTED",
+                "Checking Health Services passive asleep-state and heart-rate support");
         broadcast(context, config.status);
 
         PassiveMonitoringClient client = HealthServices.getClient(context)
@@ -40,6 +42,9 @@ final class AutoSleepMonitor {
                 boolean passiveHeartRateSupported = capabilities.get()
                         .getSupportedDataTypesPassiveMonitoring()
                         .contains(DataType.HEART_RATE_BPM);
+                WatchDiagnostics.auto(context, config, "PASSIVE_CAPABILITIES_CHECKED",
+                        "asleepStateSupported=" + asleepSupported
+                                + ";passiveHeartRateSupported=" + passiveHeartRateSupported);
                 if (!asleepSupported && !passiveHeartRateSupported) {
                     fail(context, config,
                             "On, but this watch provides neither automatic asleep-state nor passive heart-rate signals.");
@@ -65,6 +70,12 @@ final class AutoSleepMonitor {
                                 ? "On - automatic asleep-state monitoring is active every night."
                                 : "On - broad Wear OS heart-rate fallback is active every night.";
                         config.save(context);
+                        WatchDiagnostics.auto(context, config, "PASSIVE_MONITORING_READY",
+                                "registered=true;asleepStateSupported=" + asleepSupported
+                                        + ";passiveHeartRateSupported="
+                                        + passiveHeartRateSupported
+                                        + ";hapticsDuringSleep=OFF"
+                                        + ";audioOutput=PHONE_SPEAKER");
                         publishState(context, config, "ON", config.status);
                         broadcast(context, config.status);
                     } catch (Exception error) {
@@ -82,6 +93,8 @@ final class AutoSleepMonitor {
     static void disable(Context input, boolean notifyPhone) {
         Context context = input.getApplicationContext();
         AutoSleepConfig config = AutoSleepConfig.load(context);
+        WatchDiagnostics.auto(context, config, "AUTO_MONITOR_DISABLE_REQUESTED",
+                "notifyPhone=" + notifyPhone);
         PassiveMonitoringClient client = HealthServices.getClient(context)
                 .getPassiveMonitoringClient();
         ListenableFuture<Void> clear = client.clearPassiveListenerServiceAsync();
@@ -101,6 +114,7 @@ final class AutoSleepMonitor {
         config.passiveRegistered = false;
         config.status = "On, but watch health permission was removed. Open DreamSync to repair it.";
         config.save(context);
+        WatchDiagnostics.auto(context, config, "HEALTH_PERMISSION_LOST", config.status);
         publishState(context, config, "PERMISSION_LOST", config.status);
         broadcast(context, config.status);
     }
@@ -132,6 +146,7 @@ final class AutoSleepMonitor {
         config.passiveRegistered = false;
         config.status = status;
         config.save(context);
+        WatchDiagnostics.auto(context, config, "PASSIVE_MONITORING_FAILED", status);
         publishState(context, config, "UNAVAILABLE", status);
         broadcast(context, status);
     }

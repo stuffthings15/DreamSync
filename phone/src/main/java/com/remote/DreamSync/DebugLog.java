@@ -61,19 +61,102 @@ final class DebugLog {
                 .append("lastAudioError=").append(sanitize(
                         prefs.getString("last_audio_error", ""), 1_500)).append('\n')
                 .append("lastAudioErrorUtcMs=").append(prefs.getLong("last_audio_error_utc", 0L)).append('\n')
+                .append("lastWatchDiagnosticEvent=").append(sanitize(
+                        prefs.getString("last_watch_diagnostic_event", ""), 160)).append('\n')
+                .append("lastWatchDiagnosticUtcMs=").append(
+                        prefs.getLong("last_watch_diagnostic_utc", 0L)).append('\n')
+                .append("lastWatchHeartbeatUtcMs=").append(
+                        prefs.getLong("last_watch_heartbeat_utc", 0L)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
-                .append("\n--- app events ---\n");
+                .append("hapticsDuringSleep=OFF_BY_DESIGN\n")
+                .append("sleepAudioOutput=PHONE_SPEAKER_ONLY\n");
+        String eventsText;
         synchronized (LOCK) {
             File file = new File(context.getFilesDir(), FILE_NAME);
-            if (!file.isFile()) return text.append("No app events recorded.\n").toString();
-            try {
-                text.append(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            if (!file.isFile()) {
+                eventsText = "";
+            } else try {
+                eventsText = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             } catch (Exception error) {
-                text.append("Could not read app events: ")
-                        .append(error.getClass().getSimpleName()).append('\n');
+                eventsText = "Could not read app events: "
+                        + error.getClass().getSimpleName() + "\n";
             }
         }
+        text.append("\n--- pipeline verification ---\n")
+                .append(pipelineVerification(eventsText))
+                .append("\n--- app and watch events ---\n")
+                .append(eventsText.isEmpty() ? "No events recorded.\n" : eventsText);
         return text.toString();
+    }
+
+    static String pipelineVerification(String events) {
+        StringBuilder out = new StringBuilder();
+        out.append("No cue is expected until every sleep and safety gate passes. "
+                + "A blocked cue is a valid safety result.\n");
+        step(out, 1, "Phone sound check",
+                events, new String[]{" | SOUND_CHECK_PASSED |"},
+                new String[]{" | SOUND_CHECK_FAILED |", " | SOUND_CHECK_BLOCKED |"});
+        step(out, 2, "Wear OS watch discovered",
+                events, new String[]{" | WATCH_FOUND |"},
+                new String[]{" | WATCH_NOT_FOUND |"});
+        step(out, 3, "Automatic configuration delivered",
+                events, new String[]{" | AUTO_CONFIG_PUBLISHED |", " | WATCH_AUTO_CONFIG_RECEIVED |"},
+                new String[]{" | AUTO_CONFIG_PUBLISH_FAILED |"});
+        step(out, 4, "Watch passive monitoring registered",
+                events, new String[]{" | WATCH_PASSIVE_MONITORING_READY |"},
+                new String[]{" | WATCH_PASSIVE_MONITORING_FAILED |",
+                        " | WATCH_HEALTH_PERMISSION_LOST |"});
+        step(out, 5, "Passive sleep input received",
+                events, new String[]{" | WATCH_PASSIVE_ACTIVITY_RECEIVED |",
+                        " | WATCH_PASSIVE_HEART_RATE_BATCH |"},
+                new String[]{});
+        step(out, 6, "Likely-sleep candidate and handshake",
+                events, new String[]{" | AUTO_SESSION_START_RECEIVED |",
+                        " | WATCH_AUTO_SESSION_REQUEST_DELIVERED |"},
+                new String[]{" | AUTO_SESSION_START_REJECTED |",
+                        " | WATCH_AUTO_SESSION_REQUEST_FAILED |"});
+        step(out, 7, "Full-rate watch sensors registered",
+                events, new String[]{" | WATCH_SENSOR_REGISTRATION |"},
+                new String[]{" | WATCH_FULL_SENSOR_SESSION_START_FAILED |",
+                        " | WATCH_HEART_RATE_PERMISSION_ERROR |"});
+        step(out, 8, "Sensor readings and quality received",
+                events, new String[]{" | WATCH_HEARTBEAT |"},
+                new String[]{" | WATCH_SENSOR_FAILED |"});
+        step(out, 9, "Sleep state and cue decision evaluated",
+                events, new String[]{"decision=", " | WATCH_HEARTBEAT |"},
+                new String[]{});
+        step(out, 10, "Cue request transported when eligible",
+                events, new String[]{" | CUE_MESSAGE_RECEIVED |", " | WATCH_CUE_REQUESTED |"},
+                new String[]{" | CUE_TRANSPORT_FAILED |", " | CUE_REJECTED |"});
+        step(out, 11, "Phone speaker audio lifecycle",
+                events, new String[]{" | CUE_AUDIO_STARTED |", " | CUE_PLAYBACK_COMPLETED |"},
+                new String[]{" | CUE_PLAYBACK_FAILED |", " | AUDIO_FAILED |"});
+        out.append("12. Watch vibration/haptics: PASS - intentionally OFF during sleep to protect continuity.\n");
+        step(out, 13, "Terminal summary returned",
+                events, new String[]{" | SESSION_SUMMARY_RECEIVED |", " | SUMMARY_RECEIVED |"},
+                new String[]{" | SESSION_SUMMARY_FAILED |"});
+        return out.toString();
+    }
+
+    private static void step(
+            StringBuilder out,
+            int number,
+            String label,
+            String events,
+            String[] passTokens,
+            String[] failTokens
+    ) {
+        int pass = lastIndexOfAny(events, passTokens);
+        int fail = lastIndexOfAny(events, failTokens);
+        String state = pass < 0 && fail < 0 ? "WAITING"
+                : pass > fail ? "PASS" : "FAIL";
+        out.append(number).append(". ").append(label).append(": ").append(state).append('\n');
+    }
+
+    private static int lastIndexOfAny(String text, String[] tokens) {
+        int latest = -1;
+        for (String token : tokens) latest = Math.max(latest, text.lastIndexOf(token));
+        return latest;
     }
 
     static void clear(Context context) {

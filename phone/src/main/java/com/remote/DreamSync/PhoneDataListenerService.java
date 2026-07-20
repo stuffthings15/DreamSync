@@ -39,6 +39,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
             for (DataEvent event : events) {
                 if (event.getType() != DataEvent.TYPE_CHANGED) continue;
                 String path = event.getDataItem().getUri().getPath();
+                if (path == null) continue;
                 DataMap data = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
                 byte[] encoded = data.getByteArray("envelope");
                 if (encoded == null) continue;
@@ -48,7 +49,15 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 String sourceNodeId = event.getDataItem().getUri().getHost();
                 if (sourceNodeId == null || sourceNodeId.isEmpty()) continue;
 
-                if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_AUTO_STATE_PREFIX
+                if (path.startsWith(
+                        com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX)) {
+                    if (validDiagnosticEnvelope(envelope, sourceNodeId, path)) {
+                        handleDiagnostic(envelope);
+                    } else {
+                        DebugLog.append(this, "WATCH_DIAGNOSTIC_REJECTED",
+                                "reason=wrong device, trace, version, duplicate, or expiry");
+                    }
+                } else if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_AUTO_STATE_PREFIX
                         + envelope.sessionId) && validAutoEnvelope(envelope, sourceNodeId,
                         com.remote.DreamSync.shared.Protocol.TYPE_AUTO_CONFIG_ACK)) {
                     handleAutoState(envelope);
@@ -81,6 +90,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
         String state = envelope.payload.getOrDefault("state", "ON");
         String status = cleanStatus(envelope.payload.getOrDefault(
                 "status", "Watch automatic monitoring updated."));
+        DebugLog.append(this, "WATCH_AUTO_STATE",
+                "state=" + state + ";status=" + status);
         if ("OFF".equals(state)) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putBoolean("auto_enabled", false)
@@ -100,12 +111,27 @@ public final class PhoneDataListenerService extends WearableListenerService {
     }
 
     private void handleAutoSessionStart(ProtocolEnvelope envelope) {
+        DebugLog.append(this, "AUTO_SESSION_START_RECEIVED",
+                "source=" + envelope.payload.getOrDefault("source", "unknown")
+                        + ";detectedAtUtcMs="
+                        + envelope.payload.getOrDefault("detectedAtUtcMs", ""));
         if (!getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getBoolean("auto_enabled", false)) return;
+                .getBoolean("auto_enabled", false)) {
+            DebugLog.append(this, "AUTO_SESSION_START_REJECTED", "reason=phone is Off");
+            return;
+        }
         String enrollment = envelope.payload.getOrDefault("enrollmentId", "");
-        if (!enrollment.equals(pref("auto_enrollment_id"))) return;
+        if (!enrollment.equals(pref("auto_enrollment_id"))) {
+            DebugLog.append(this, "AUTO_SESSION_START_REJECTED",
+                    "reason=enrollment mismatch");
+            return;
+        }
         String active = pref("active_session_id");
-        if (!active.isEmpty() && !active.equals(envelope.sessionId)) return;
+        if (!active.isEmpty() && !active.equals(envelope.sessionId)) {
+            DebugLog.append(this, "AUTO_SESSION_START_REJECTED",
+                    "reason=another session is active");
+            return;
+        }
 
         String phoneNode = pref("local_phone_node");
         String watchNode = pref("bound_watch_node");
@@ -141,6 +167,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                                 .getFloat("auto_gain", 0.04f));
         try {
             ContextCompat.startForegroundService(this, audio);
+            DebugLog.append(this, "AUTO_AUDIO_STANDBY_STARTED",
+                    "session pending watch sensor handshake");
         } catch (RuntimeException error) {
             failAutoSession(envelope.sessionId,
                     "Phone standby could not start. No cues will play.");
@@ -148,17 +176,21 @@ public final class PhoneDataListenerService extends WearableListenerService {
         }
         PhoneAutoControl.publishSessionConfig(
                         this, envelope.sessionId, phoneNode, watchNode, config)
-                .addOnSuccessListener(item -> sendBroadcast(
-                        new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
-                                .putExtra("status",
-                                        "Sleep detected. Confirming signals before any cue.")
-                                .putExtra("state", "AUTO_STARTING")
-                                .putExtra("sessionId", envelope.sessionId)))
+                .addOnSuccessListener(item -> {
+                    DebugLog.append(this, "AUTO_SESSION_CONFIG_PUBLISHED",
+                            "durableDataItem=true;automatic=true");
+                    sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
+                            .putExtra("status",
+                                    "Sleep detected. Confirming signals before any cue.")
+                            .putExtra("state", "AUTO_STARTING")
+                            .putExtra("sessionId", envelope.sessionId));
+                })
                 .addOnFailureListener(error -> failAutoSession(
                         envelope.sessionId, "Could not start the watch session. No cues will play."));
     }
 
     private void failAutoSession(String sessionId, String status) {
+        DebugLog.append(this, "AUTO_SESSION_START_FAILED", status);
         if (sessionId.equals(pref("active_session_id"))) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .remove("active_session_id").apply();
@@ -180,12 +212,18 @@ public final class PhoneDataListenerService extends WearableListenerService {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString("watch_live_session_id", envelope.sessionId)
                     .putString("watch_capabilities", capabilities)
+                    .putLong("last_watch_heartbeat_utc", System.currentTimeMillis())
                     .apply();
         }
         String status = cleanStatus(envelope.payload.getOrDefault(
                 "status", "Watch acknowledged session"));
         String state = SessionOutcome.normalizeLiveState(
                 envelope.payload.getOrDefault("state", "AUTO_STARTING"));
+        String telemetry = telemetryDetails(envelope);
+        DebugLog.append(this,
+                com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT.equals(envelope.messageType)
+                        ? "WATCH_HEARTBEAT" : "WATCH_SESSION_STATE",
+                telemetry);
         databaseExecutor.execute(() -> {
             PhoneDao dao = PhoneDatabase.get(this).dao();
             SessionEntity session = dao.session(envelope.sessionId);
@@ -202,12 +240,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
             event.type = envelope.messageType;
             event.monotonicMs = SystemClock.elapsedRealtime();
             event.utcMs = System.currentTimeMillis();
-            event.details = "state=" + envelope.payload.getOrDefault("state", "")
-                    + ";signalQuality=" + envelope.payload.getOrDefault("signalQuality", "")
-                    + ";batteryPercent=" + envelope.payload.getOrDefault("batteryPercent", "")
-                    + ";sleepPhase=" + envelope.payload.getOrDefault("sleepPhase", "")
-                    + ";awakeningCount=" + envelope.payload.getOrDefault("awakeningCount", "")
-                    + ";baselineNights=" + envelope.payload.getOrDefault("baselineNights", "");
+            event.details = telemetry;
             dao.insertEvent(event);
         });
         sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
@@ -219,6 +252,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
 
     private void handleSummary(ProtocolEnvelope envelope, Asset logAsset) {
         String summary = envelope.payload.getOrDefault("summary", "{}");
+        DebugLog.append(this, "SESSION_SUMMARY_RECEIVED",
+                "bytes=" + summary.length() + ";watchLogAttached=" + (logAsset != null));
         boolean autoEnabled = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("auto_enabled", false);
         android.content.SharedPreferences.Editor edit = getSharedPreferences(
@@ -310,6 +345,65 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
     }
 
+    private boolean validDiagnosticEnvelope(
+            ProtocolEnvelope envelope,
+            String sourceNodeId,
+            String path
+    ) {
+        if (!com.remote.DreamSync.shared.Protocol.TYPE_DIAGNOSTIC.equals(
+                envelope.messageType)) return false;
+        if (!path.equals(com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX
+                + envelope.sessionId)) return false;
+        String active = pref("active_session_id");
+        String enrollment = pref("auto_enrollment_id");
+        if (!envelope.sessionId.equals(active) && !envelope.sessionId.equals(enrollment)) {
+            return false;
+        }
+        String watch = pref("bound_watch_node");
+        String phone = pref("local_phone_node");
+        if (watch.isEmpty() || phone.isEmpty() || !watch.equals(sourceNodeId)) return false;
+        return messageGuard.check(envelope, envelope.sessionId, phone, watch,
+                System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
+    }
+
+    private void handleDiagnostic(ProtocolEnvelope envelope) {
+        String event = envelope.payload.getOrDefault("event", "UNKNOWN")
+                .replaceAll("[^A-Za-z0-9_]", "_");
+        if (event.length() > 80) event = event.substring(0, 80);
+        String details = envelope.payload.getOrDefault("details", "");
+        String combined = details
+                + ";watchUtcMs=" + envelope.payload.getOrDefault("watchUtcMs", "")
+                + ";watchElapsedMs=" + envelope.payload.getOrDefault("watchElapsedMs", "")
+                + ";watchDevice=" + envelope.payload.getOrDefault("watchDevice", "")
+                + ";watchSdk=" + envelope.payload.getOrDefault("watchSdk", "")
+                + ";sequence=" + envelope.payload.getOrDefault("sequence", "");
+        DebugLog.append(this, "WATCH_" + event, combined);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("last_watch_diagnostic_event", event)
+                .putLong("last_watch_diagnostic_utc", System.currentTimeMillis())
+                .apply();
+    }
+
+    private String telemetryDetails(ProtocolEnvelope envelope) {
+        String[] keys = {
+                "state", "batteryPercent", "signalQuality", "sleepPhase",
+                "eligibilityState", "decision", "heartBpm", "baselineHeartBpm",
+                "motionRms30", "heartSd2", "heartSlopePerMin", "medianIbiMs",
+                "ibiRmssdMs", "skinTemperatureC", "skinTemperatureTrend",
+                "motionSamples30s", "heartSamples2m", "ibiSamples5m",
+                "temperatureSamples30m", "arousal", "offWrist", "cuesDisabled",
+                "deepCues", "lucidCues", "pendingCues", "awakeningCount",
+                "baselineNights", "sensorSource", "hapticsAction", "audioAction"
+        };
+        StringBuilder details = new StringBuilder();
+        for (String key : keys) {
+            if (details.length() > 0) details.append(';');
+            details.append(key).append('=')
+                    .append(envelope.payload.getOrDefault(key, ""));
+        }
+        return details.toString();
+    }
+
     private void receiveLog(String sessionId, Asset asset) {
         Wearable.getDataClient(this).getFdForAsset(asset)
                 .addOnSuccessListener(response -> databaseExecutor.execute(() -> {
@@ -331,7 +425,11 @@ public final class PhoneDataListenerService extends WearableListenerService {
                         event.utcMs = System.currentTimeMillis();
                         event.details = target.getAbsolutePath();
                         PhoneDatabase.get(this).dao().insertEvent(event);
+                        DebugLog.append(this, "WATCH_SESSION_LOG_RECEIVED",
+                                "bytes=" + target.length() + ";format=csv");
                     } catch (Exception ignored) {
+                        DebugLog.append(this, "WATCH_SESSION_LOG_FAILED",
+                                ignored.getClass().getSimpleName());
                     } finally {
                         response.release();
                     }

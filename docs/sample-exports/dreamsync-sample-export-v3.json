@@ -1,55 +1,108 @@
 {
-  "schemaVersion": "dreamsync-export-v3",
-  "deidentified": true,
-  "sessionId": "sample-session-0001",
-  "protocolVersion": 1,
+  "schemaVersion": 3,
+  "generatedUtcMs": 1784538000000,
+  "productLanguage": "wellness sleep-cue tool; non-medical",
+  "deviceIdentifiersRemoved": true,
+  "containsUserEnteredText": true,
   "versions": {
-    "featureEngine": "feature-v1",
+    "protocol": 1,
+    "featureEngine": "features-v2",
     "qualityMonitor": "quality-v2",
     "eligibilityEstimator": "eligibility-v2",
     "replayHarness": "replay-v2",
-    "waveform": "pink-pair-v1"
+    "waveform": "deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1"
   },
-  "configuration": {
-    "deepCueEnabled": true,
-    "lucidCueEnabled": false,
-    "maximumGain": 0.04,
-    "quietPeriodMinutes": 20,
-    "deepWindowMinutes": [20, 120]
+  "automaticModeEnabled": true,
+  "chargeReminderLeadMinutes": 180,
+  "chargeReminderRecordCount": 7,
+  "audioDiagnostics": {
+    "lastCalibration": "waveform=deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1;volumeStep=3;maxVolume=15;appGain=0.04;route=phone_speaker;backend=wav_mediaplayer",
+    "lastCalibrationUtcMs": 1784502000000,
+    "lastError": "",
+    "lastErrorUtcMs": 0
   },
-  "signalQuality": {
-    "motionRegistered": true,
-    "heartRegistered": true,
-    "offWrist": false,
-    "motionCoverage": 0.98,
-    "heartCoverage": 0.95,
-    "observedMotionHz": 25.0,
-    "observedHeartHz": 1.0
-  },
-  "eligibilityEpochs": [
-    {"elapsedMs": 0, "state": "PREPARING_FOR_SLEEP", "reason": "stability gate"},
-    {"elapsedMs": 60000, "state": "NREM_ELIGIBLE", "reason": "quality and window gates passed"},
-    {"elapsedMs": 120000, "state": "POSSIBLE_AROUSAL", "reason": "motion and cardiac change"}
-  ],
-  "cueLifecycle": [
-    {"cueId": "sample-cue-1", "state": "REQUESTED", "elapsedMs": 60000},
-    {"cueId": "sample-cue-1", "state": "AUDIO_STARTED", "elapsedMs": 60120},
-    {"cueId": "sample-cue-1", "state": "COMPLETED", "elapsedMs": 62400}
-  ],
-  "arousals": [
-    {"elapsedMs": 120000, "cueLinked": true, "action": "cues disabled for night"}
-  ],
-  "survey": {
-    "restedness": 4,
-    "disturbance": 2,
-    "awakenings": 1,
-    "cueAwareness": "unsure",
-    "dreamRecall": "partial",
-    "adverseEffects": "none"
-  },
-  "battery": {"startPercent": 88, "endPercent": 71},
-  "connectionFailures": [
-    {"elapsedMs": 180000, "kind": "PHONE_HEARTBEAT_STALE", "cueingDisabled": true}
-  ],
-  "terminalResult": "PHONE_LOST"
+  "sessions": [
+    {
+      "sessionId": "sample-session-0001",
+      "mode": "DEEP",
+      "state": "PHONE_LOST",
+      "startUtcMs": 1784505600000,
+      "endUtcMs": 1784534400000,
+      "protocolVersion": 1,
+      "waveformVersion": "deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1",
+      "calibration": "waveform=deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1;volumeStep=3;maxVolume=15;appGain=0.04;route=phone_speaker;backend=wav_mediaplayer",
+      "watchCapabilities": {
+        "status": "FULLY_SUPPORTED",
+        "motion": true,
+        "heartRate": true,
+        "ibi": true,
+        "skinTemperature": true,
+        "rawPpg": true,
+        "offWrist": true,
+        "advancedSensorState": "VERIFIED"
+      },
+      "configuration": {
+        "automaticEveryNight": true,
+        "deepCueEnabled": true,
+        "lucidCueEnabled": false,
+        "maximumGain": 0.04,
+        "quietPeriodMinutes": 20,
+        "deepWindowMinutes": [25, 145]
+      },
+      "summary": {
+        "minutes": 480,
+        "deepCues": 1,
+        "lucidCues": 0,
+        "awakeningCount": 1,
+        "wakeAfterSleepOnsetMinutes": 4.5,
+        "longestUninterruptedBoutMinutes": 163.0,
+        "cueLinkedArousalRate": 1.0,
+        "signalQuality": "GOOD",
+        "terminalState": "PHONE_LOST"
+      },
+      "events": [
+        {
+          "cueId": "",
+          "type": "SENSOR_QUALITY",
+          "monotonicMs": 60000,
+          "utcMs": 1784505660000,
+          "details": "motionCoverage=0.98;heartCoverage=0.95;motionHz=25.0;heartHz=1.0;offWrist=false"
+        },
+        {
+          "cueId": "sample-cue-1",
+          "type": "AUDIO_STARTED",
+          "monotonicMs": 7200120,
+          "utcMs": 1784512800120,
+          "details": "output=phone_speaker;gain=0.04"
+        },
+        {
+          "cueId": "sample-cue-1",
+          "type": "CUE_LINKED_AROUSAL",
+          "monotonicMs": 7260000,
+          "utcMs": 1784512860000,
+          "details": "quietPeriodMinutes=20;cuesDisabledForNight=true"
+        },
+        {
+          "cueId": "",
+          "type": "PHONE_HEARTBEAT_STALE",
+          "monotonicMs": 10800000,
+          "utcMs": 1784516400000,
+          "details": "cueingDisabled=true"
+        }
+      ],
+      "eligibilityEpochCsv": "elapsedMs,motionRms,heartBpm,ibiRmssdMs,signalCoverage,offWrist,heartFresh,motionFresh\n0,0.08,57,36.0,0.98,false,true,true\n60000,0.07,56,38.0,0.97,false,true,true\n120000,0.32,72,12.0,0.96,false,true,true\n",
+      "morningSurvey": {
+        "sleepQuality": 7,
+        "restedness": 6,
+        "rememberedAwakenings": 1,
+        "disturbanceRating": 2,
+        "cueAwareness": "UNSURE",
+        "dreamRecall": 1,
+        "lucidDream": "NO",
+        "adverseEffects": "none",
+        "dreamNotes": "Sample-only note; local exports can contain user-entered text.",
+        "submittedUtcMs": 1784536200000
+      }
+    }
+  ]
 }

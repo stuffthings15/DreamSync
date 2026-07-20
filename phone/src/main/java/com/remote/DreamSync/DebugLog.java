@@ -127,10 +127,12 @@ final class DebugLog {
         step(out, 7, "Full-rate watch sensors registered",
                 events, new String[]{" | WATCH_SENSOR_REGISTRATION |"},
                 new String[]{" | WATCH_FULL_SENSOR_SESSION_START_FAILED |",
-                        " | WATCH_HEART_RATE_PERMISSION_ERROR |"});
+                        " | WATCH_HEART_RATE_PERMISSION_ERROR |",
+                        " | WATCH_PERMISSION_REVOKED |"});
         step(out, 8, "Sensor readings and quality received",
                 events, new String[]{" | WATCH_HEARTBEAT |"},
-                new String[]{" | WATCH_SENSOR_FAILED |"});
+                new String[]{" | WATCH_SENSOR_FAILED |",
+                        " | WATCH_PERMISSION_REVOKED |"});
         step(out, 9, "Sleep state and cue decision evaluated",
                 events, new String[]{"decision=", " | WATCH_HEARTBEAT |"},
                 new String[]{});
@@ -148,6 +150,12 @@ final class DebugLog {
                 events, new String[]{" | WATCH_SYSTEM_CHECK_RESULT | status=PASS"},
                 new String[]{" | WATCH_SYSTEM_CHECK_RESULT | status=FAIL",
                         " | SYSTEM_CHECK_FAILED |", " | SYSTEM_CHECK_BLOCKED |"});
+        step(out, 15, "Advanced sensor handling",
+                events, new String[]{"advancedSensorState=VERIFIED",
+                        "advancedSensorState=UNAVAILABLE"},
+                new String[]{"advancedSensorState=FAILED",
+                        " | WATCH_ADVANCED_PERMISSION_MISSING |",
+                        " | WATCH_SAMSUNG_SENSOR_ERROR |"});
         return out.toString();
     }
 

@@ -416,7 +416,17 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";ibiSamples=" + envelope.payload.getOrDefault("ibiSamples", "")
                 + ";temperatureSamples="
                 + envelope.payload.getOrDefault("temperatureSamples", "")
-                + ";ppgSamples=" + envelope.payload.getOrDefault("ppgSamples", "");
+                + ";ppgSamples=" + envelope.payload.getOrDefault("ppgSamples", "")
+                + ";additionalHealthPermission="
+                + envelope.payload.getOrDefault("additionalHealthPermission", "")
+                + ";advancedSensorsExpected="
+                + envelope.payload.getOrDefault("advancedSensorsExpected", "")
+                + ";advancedSensorsVerified="
+                + envelope.payload.getOrDefault("advancedSensorsVerified", "")
+                + ";advancedSensorState="
+                + envelope.payload.getOrDefault("advancedSensorState", "")
+                + ";advancedSensorReason=" + cleanStatus(
+                envelope.payload.getOrDefault("advancedSensorReason", ""));
         DebugLog.append(this, "WATCH_SYSTEM_CHECK_RESULT", details);
         android.content.SharedPreferences.Editor edit = getSharedPreferences(
                 PREFS, MODE_PRIVATE).edit()

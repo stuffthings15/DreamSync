@@ -18,6 +18,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
@@ -29,6 +30,8 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.remote.DreamSync.shared.AdvancedSensorVerification;
+import com.remote.DreamSync.shared.PeerSelector;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SystemCheckEvaluator;
 
@@ -52,6 +55,8 @@ public final class MainActivity extends Activity {
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND";
     private static final String READ_SKIN_TEMPERATURE =
             "android.permission.health.READ_SKIN_TEMPERATURE";
+    private static final String READ_ADDITIONAL_HEALTH_DATA =
+            "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA";
     private static final String USER_PREFS = "dreamsync_watch_user";
     private static final int CONFIG_SYNC_RETRY_LIMIT = 20;
     private static final long SYSTEM_CHECK_DURATION_MS = 45_000L;
@@ -81,6 +86,9 @@ public final class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         statusText = findViewById(R.id.statusText);
         Button openPhoneButton = findViewById(R.id.openPhoneButton);
+        ScrollView watchScroll = findViewById(R.id.watchScroll);
+        watchScroll.requestFocus();
+        watchScroll.post(() -> watchScroll.scrollTo(0, 0));
         openPhoneButton.setOnClickListener(v -> openPhoneApp());
         refreshState();
         boolean controlledLink = maybeHandleSystemCheckLink(getIntent())
@@ -172,7 +180,7 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("Automatic sleep-signal access")
-                .setMessage("While DreamSync is On, the watch uses low-power activity signals to notice sleep every night. After likely sleep, it starts motion and heart-rate checks. Cues stay off when data is stale, heart data is missing, or waking is detected. Data stays on your paired devices unless you export it from the phone.")
+                .setMessage("While DreamSync is On, the watch uses low-power activity signals to notice sleep every night. After likely sleep, it starts motion and heart-rate checks. Supported Galaxy Watches can also use IBI, skin temperature, and raw optical pulse readings. Cues stay off when data is stale, permission is removed, heart data is missing, or waking is detected. Data stays on your paired devices unless you export it from the phone.")
                 .setPositiveButton("Continue", (dialog, which) -> {
                     getSharedPreferences(USER_PREFS, MODE_PRIVATE).edit()
                             .putBoolean("health_disclosure_accepted", true).apply();
@@ -193,13 +201,17 @@ public final class MainActivity extends Activity {
             addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
             addIfMissing(missing, heartPermission);
             if (Build.VERSION.SDK_INT >= 36) addIfMissing(missing, READ_SKIN_TEMPERATURE);
+            if (SamsungHealthSensorBridge.isSamsungWatch()
+                    && SamsungHealthSensorBridge.isPackaged()) {
+                addIfMissing(missing, READ_ADDITIONAL_HEALTH_DATA);
+            }
             if (Build.VERSION.SDK_INT >= 33) addIfMissing(
                     missing, Manifest.permission.POST_NOTIFICATIONS);
             if (!missing.isEmpty()) {
                 foregroundRequestAttempted = true;
                 requestPermissions(missing.toArray(new String[0]),
                         REQUEST_FOREGROUND_PERMISSIONS);
-                statusText.setText("Allow activity and heart-rate access.");
+                statusText.setText("Allow the listed sleep-signal permissions.");
                 return;
             }
         }
@@ -233,11 +245,12 @@ public final class MainActivity extends Activity {
 
     private void openPhoneApp() {
         statusText.setText("Opening DreamSync controls on the phone...");
+        String boundPhone = AutoSleepConfig.load(this).phoneNodeId;
         Wearable.getCapabilityClient(this).getCapability(
                         com.remote.DreamSync.shared.Protocol.PHONE_CAPABILITY,
                         CapabilityClient.FILTER_REACHABLE)
                 .addOnSuccessListener(capability -> {
-                    Node phone = chooseNode(capability.getNodes());
+                    Node phone = chooseNode(capability.getNodes(), boundPhone);
                     if (phone != null) launchPhoneControls(phone.getId());
                     else openPhoneStoreOnConnectedDevice();
                 })
@@ -257,6 +270,11 @@ public final class MainActivity extends Activity {
         payload.put("motionRegistered", "false");
         payload.put("heartRegistered", "false");
         payload.put("offWrist", "false");
+        payload.put("additionalHealthPermission", "false");
+        payload.put("advancedSensorsExpected", "false");
+        payload.put("advancedSensorsVerified", "false");
+        payload.put("advancedSensorState", "FAILED");
+        payload.put("advancedSensorReason", reason);
         payload.put("durationMs", "0");
         payload.put("capabilityJson", "{}");
         publishSystemCheckResult(config, checkId, payload);
@@ -312,7 +330,17 @@ public final class MainActivity extends Activity {
                 + ";ibiSamples=" + payload.getOrDefault("ibiSamples", "0")
                 + ";temperatureSamples="
                 + payload.getOrDefault("temperatureSamples", "0")
-                + ";ppgSamples=" + payload.getOrDefault("ppgSamples", "0");
+                + ";ppgSamples=" + payload.getOrDefault("ppgSamples", "0")
+                + ";additionalHealthPermission="
+                + payload.getOrDefault("additionalHealthPermission", "false")
+                + ";advancedSensorsExpected="
+                + payload.getOrDefault("advancedSensorsExpected", "false")
+                + ";advancedSensorsVerified="
+                + payload.getOrDefault("advancedSensorsVerified", "false")
+                + ";advancedSensorState="
+                + payload.getOrDefault("advancedSensorState", "UNAVAILABLE")
+                + ";advancedSensorReason="
+                + payload.getOrDefault("advancedSensorReason", "");
     }
 
     private final class LiveSystemCheck implements SensorEventListener {
@@ -336,6 +364,7 @@ public final class MainActivity extends Activity {
         private volatile boolean samsungConnected;
         private boolean activityPermission;
         private boolean heartPermissionGranted;
+        private boolean additionalHealthPermission;
         private boolean motionRegistered;
         private boolean heartRegistered;
         private boolean finished;
@@ -352,10 +381,13 @@ public final class MainActivity extends Activity {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             activityPermission = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION);
             heartPermissionGranted = hasPermission(heartPermission());
+            additionalHealthPermission = hasPermission(READ_ADDITIONAL_HEALTH_DATA);
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_STARTED",
                     "checkId=" + checkId + ";durationSeconds=45"
                             + ";activityPermission=" + activityPermission
-                            + ";heartPermission=" + heartPermissionGranted);
+                            + ";heartPermission=" + heartPermissionGranted
+                            + ";additionalHealthPermission="
+                            + additionalHealthPermission);
             if (!activityPermission || !heartPermissionGranted || sensorManager == null) {
                 if (sensorManager == null) forcedFailure = "Watch sensor service is unavailable.";
                 finish();
@@ -417,7 +449,7 @@ public final class MainActivity extends Activity {
                             samsungDetail = code + ": " + detail;
                         }
                     });
-            samsungBridge.start(true);
+            samsungBridge.start(additionalHealthPermission);
         }
 
         @Override public void onSensorChanged(SensorEvent event) {
@@ -477,15 +509,28 @@ public final class MainActivity extends Activity {
                     totalHeartSamples,
                     offWrist);
             boolean passed = evaluation.passed && forcedFailure.isEmpty();
+            AdvancedSensorVerification.Result advanced =
+                    new AdvancedSensorVerification().evaluate(
+                            samsungConnected,
+                            samsungTrackerTypes,
+                            true,
+                            additionalHealthPermission,
+                            ibiSamples,
+                            temperatureSamples,
+                            ppgSamples);
             String reason = forcedFailure.isEmpty() ? evaluation.reason : forcedFailure;
+            if (passed && advanced.expected && !advanced.passed) {
+                reason = "Core readings passed. Advanced suite not verified: "
+                        + advanced.reason;
+            }
             SensorCapabilitySnapshot capability = new SensorCapabilitySnapshot(
                     motionSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES,
                     standardHeartSamples >= SystemCheckEvaluator.MIN_HEART_SAMPLES,
                     SamsungHealthSensorBridge.isPackaged(),
                     samsungConnected,
                     samsungTrackerTypes,
-                    passed,
-                    samsungDetail);
+                    passed && advanced.passed,
+                    samsungDetail + "; " + advanced.reason);
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("status", passed ? "PASS" : "FAIL");
             payload.put("reason", reason);
@@ -497,6 +542,8 @@ public final class MainActivity extends Activity {
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
             payload.put("activityPermission", Boolean.toString(activityPermission));
             payload.put("heartPermission", Boolean.toString(heartPermissionGranted));
+            payload.put("additionalHealthPermission",
+                    Boolean.toString(additionalHealthPermission));
             payload.put("offWrist", Boolean.toString(offWrist));
             payload.put("durationMs", Long.toString(
                     Math.max(0L, SystemClock.elapsedRealtime() - startedElapsedMs)));
@@ -506,6 +553,11 @@ public final class MainActivity extends Activity {
             payload.put("ibiSamples", Integer.toString(ibiSamples));
             payload.put("temperatureSamples", Integer.toString(temperatureSamples));
             payload.put("ppgSamples", Integer.toString(ppgSamples));
+            payload.put("advancedSensorsExpected", Boolean.toString(advanced.expected));
+            payload.put("advancedSensorsVerified", Boolean.toString(advanced.passed));
+            payload.put("advancedSensorState", !advanced.expected
+                    ? "UNAVAILABLE" : advanced.passed ? "VERIFIED" : "FAILED");
+            payload.put("advancedSensorReason", advanced.reason);
             payload.put("capabilityJson", capability.toJson());
             publishSystemCheckResult(config, checkId, payload);
             liveSystemCheck = null;
@@ -529,7 +581,7 @@ public final class MainActivity extends Activity {
     private void openPhoneStoreOnConnectedDevice() {
         Wearable.getNodeClient(this).getConnectedNodes()
                 .addOnSuccessListener(nodes -> {
-                    Node phone = chooseNode(nodes);
+                    Node phone = chooseNode(nodes, AutoSleepConfig.load(this).phoneNodeId);
                     if (phone == null) {
                         statusText.setText("No paired Android phone is connected.");
                         return;
@@ -569,14 +621,17 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private Node chooseNode(Iterable<Node> nodes) {
+    private Node chooseNode(Iterable<Node> nodes, String boundNodeId) {
         if (nodes == null) return null;
-        Node first = null;
+        List<Node> source = new ArrayList<>();
+        List<PeerSelector.Candidate> candidates = new ArrayList<>();
         for (Node node : nodes) {
-            if (first == null) first = node;
-            if (node.isNearby()) return node;
+            source.add(node);
+            candidates.add(new PeerSelector.Candidate(node.getId(), node.isNearby()));
         }
-        return first;
+        String selected = PeerSelector.select(candidates, boundNodeId);
+        for (Node node : source) if (selected.equals(node.getId())) return node;
+        return null;
     }
 
     @Override protected void onStart() {

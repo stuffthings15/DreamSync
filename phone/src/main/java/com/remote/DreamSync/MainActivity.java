@@ -34,6 +34,7 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.remote.DreamSync.shared.PeerSelector;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 
 import org.json.JSONArray;
@@ -42,6 +43,7 @@ import org.json.JSONObject;
 
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -111,6 +113,7 @@ public final class MainActivity extends Activity {
         showOnboardingOnce();
         wireActions();
         if (autoEnabled()) PhoneAutoControl.startStandby(this);
+        else retryPendingRemoteDisable();
         updateReadiness();
     }
 
@@ -599,7 +602,20 @@ public final class MainActivity extends Activity {
         if (!sessionId.isEmpty()) sendStopToWatch(sessionId, phoneNode, watchNode);
         if (!enrollment.isEmpty() && !phoneNode.isEmpty() && !watchNode.isEmpty()) {
             PhoneAutoControl.publishAutoConfig(this, false, enrollment,
-                    phoneNode, watchNode, selectedMode(), cueGain());
+                            phoneNode, watchNode, selectedMode(), cueGain())
+                    .addOnSuccessListener(item -> {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putBoolean("remote_disable_pending", false).apply();
+                        DebugLog.append(this, "AUTO_OFF_PUBLISHED",
+                                "durableDataItem=true");
+                    })
+                    .addOnFailureListener(error -> {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putBoolean("remote_disable_pending", true).apply();
+                        DebugLog.append(this, "AUTO_OFF_PUBLISH_FAILED",
+                                safeMessage(error));
+                        statusText.setText("DreamSync is Off on this phone. Watch sync is pending; keep both devices connected.");
+                    });
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putBoolean("auto_enabled", false)
@@ -621,6 +637,29 @@ public final class MainActivity extends Activity {
         statusText.setText("DreamSync is Off. Automatic sleep detection and cues are disabled.");
         updatePowerState();
         updateReadiness();
+    }
+
+    private void retryPendingRemoteDisable() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean("remote_disable_pending", false)) return;
+        String enrollment = pref("auto_enrollment_id");
+        String phone = pref("local_phone_node");
+        String watch = pref("bound_watch_node");
+        if (enrollment.isEmpty() || phone.isEmpty() || watch.isEmpty()) {
+            prefs.edit().putBoolean("remote_disable_pending", false).apply();
+            DebugLog.append(this, "AUTO_OFF_RETRY_SKIPPED", "binding incomplete");
+            return;
+        }
+        DebugLog.append(this, "AUTO_OFF_RETRY_REQUESTED", "durableDataItem=true");
+        PhoneAutoControl.publishAutoConfig(this, false, enrollment,
+                        phone, watch, selectedMode(), cueGain())
+                .addOnSuccessListener(item -> {
+                    prefs.edit().putBoolean("remote_disable_pending", false).apply();
+                    DebugLog.append(this, "AUTO_OFF_RETRY_PUBLISHED",
+                            "durableDataItem=true");
+                })
+                .addOnFailureListener(error -> DebugLog.append(this,
+                        "AUTO_OFF_RETRY_FAILED", safeMessage(error)));
     }
 
     private boolean isCurrentEnableGeneration(String generation) {
@@ -650,8 +689,11 @@ public final class MainActivity extends Activity {
                 .putString("auto_mode", mode)
                 .putFloat("auto_gain", gain)
                 .apply();
-        PhoneAutoControl.publishAutoConfig(
-                this, true, enrollment, phone, watch, mode, gain);
+        PhoneAutoControl.publishAutoConfig(this, true, enrollment, phone, watch, mode, gain)
+                .addOnSuccessListener(item -> DebugLog.append(this,
+                        "AUTO_SETTINGS_PUBLISHED", "mode=" + mode + ";gain=" + gain))
+                .addOnFailureListener(error -> DebugLog.append(this,
+                        "AUTO_SETTINGS_PUBLISH_FAILED", safeMessage(error)));
     }
 
     private void sendStopToWatch(String sessionId, String phoneNode, String watchNode) {
@@ -662,7 +704,11 @@ public final class MainActivity extends Activity {
                 System.currentTimeMillis(),
                 com.remote.DreamSync.shared.Protocol.CONTROL_TTL_MS, Map.of());
         Wearable.getMessageClient(this).sendMessage(
-                watchNode, Protocol.PATH_STOP, envelope.encode());
+                        watchNode, Protocol.PATH_STOP, envelope.encode())
+                .addOnSuccessListener(requestId -> DebugLog.append(this,
+                        "WATCH_STOP_DELIVERED", "sessionId=" + sessionId))
+                .addOnFailureListener(error -> DebugLog.append(this,
+                        "WATCH_STOP_FAILED", safeMessage(error)));
     }
 
     private void armAudioService(
@@ -844,11 +890,20 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private JSONObject buildExportJson() throws JSONException {
+    JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("schemaVersion", 3);
         root.put("generatedUtcMs", System.currentTimeMillis());
         root.put("productLanguage", "wellness sleep-cue tool; non-medical");
+        root.put("deviceIdentifiersRemoved", true);
+        root.put("containsUserEnteredText", true);
+        root.put("versions", new JSONObject()
+                .put("protocol", com.remote.DreamSync.shared.Protocol.VERSION)
+                .put("featureEngine", com.remote.DreamSync.shared.SleepFeatureEngine.VERSION)
+                .put("qualityMonitor", com.remote.DreamSync.shared.SignalQualityMonitor.VERSION)
+                .put("eligibilityEstimator", com.remote.DreamSync.shared.EligibilityEstimator.VERSION)
+                .put("replayHarness", com.remote.DreamSync.shared.ReplayHarness.ENGINE_VERSION)
+                .put("waveform", com.remote.DreamSync.shared.CueWaveforms.VERSION));
         root.put("automaticModeEnabled", autoEnabled());
         root.put("chargeReminderLeadMinutes", ChargeReminderScheduler.LEAD_MINUTES);
         root.put("chargeReminderRecordCount", getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -870,17 +925,16 @@ public final class MainActivity extends Activity {
             item.put("protocolVersion", session.protocolVersion);
             item.put("waveformVersion", session.waveformVersion);
             item.put("calibration", session.calibrationRecord);
-            item.put("watchCapabilities", new JSONObject(
-                    session.watchCapabilityJson == null
-                            || session.watchCapabilityJson.isEmpty()
-                            ? "{}" : session.watchCapabilityJson));
-            if (!session.configurationJson.isEmpty()) {
-                JSONObject safeConfig = new JSONObject(session.configurationJson);
+            item.put("watchCapabilities", safeStoredObject(session.watchCapabilityJson));
+            if (session.configurationJson != null && !session.configurationJson.isEmpty()) {
+                JSONObject safeConfig = safeStoredObject(session.configurationJson);
                 safeConfig.remove("phoneNodeId");
                 safeConfig.remove("watchNodeId");
                 item.put("configuration", safeConfig);
             }
-            if (!session.summaryJson.isEmpty()) item.put("summary", new JSONObject(session.summaryJson));
+            if (session.summaryJson != null && !session.summaryJson.isEmpty()) {
+                item.put("summary", safeStoredObject(session.summaryJson));
+            }
             JSONArray events = new JSONArray();
             for (EventEntity event : dao.events(session.sessionId)) {
                 events.put(new JSONObject()
@@ -909,6 +963,17 @@ public final class MainActivity extends Activity {
         }
         root.put("sessions", sessionArray);
         return root;
+    }
+
+    private JSONObject safeStoredObject(String value) throws JSONException {
+        if (value == null || value.isBlank()) return new JSONObject();
+        try {
+            return new JSONObject(value);
+        } catch (JSONException error) {
+            return new JSONObject()
+                    .put("parseError", true)
+                    .put("reason", "Stored data was malformed; other export data was preserved.");
+        }
     }
 
     private JSONObject surveyJson(MorningSurveyEntity survey) throws JSONException {
@@ -1322,12 +1387,15 @@ public final class MainActivity extends Activity {
 
     private Node chooseNode(Iterable<Node> nodes) {
         if (nodes == null) return null;
-        Node first = null;
+        List<Node> source = new ArrayList<>();
+        List<PeerSelector.Candidate> candidates = new ArrayList<>();
         for (Node node : nodes) {
-            if (first == null) first = node;
-            if (node.isNearby()) return node;
+            source.add(node);
+            candidates.add(new PeerSelector.Candidate(node.getId(), node.isNearby()));
         }
-        return first;
+        String selected = PeerSelector.select(candidates, pref("bound_watch_node"));
+        for (Node node : source) if (selected.equals(node.getId())) return node;
+        return null;
     }
 
     private String selectedMode() {

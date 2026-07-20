@@ -1,5 +1,6 @@
 package com.remote.DreamSync;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,6 +11,7 @@ import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -29,6 +31,7 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
+import com.remote.DreamSync.shared.AdvancedSensorVerification;
 import com.remote.DreamSync.shared.CuePolicy;
 import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.PersonalBaseline;
@@ -36,6 +39,7 @@ import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SessionCoordinator;
 import com.remote.DreamSync.shared.SessionOutcome;
 import com.remote.DreamSync.shared.SessionState;
+import com.remote.DreamSync.shared.SensorPermissionGate;
 import com.remote.DreamSync.shared.SignalQualityMonitor;
 import com.remote.DreamSync.shared.SleepContinuityTracker;
 import com.remote.DreamSync.shared.SleepFeatureEngine;
@@ -81,6 +85,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final long EVALUATION_INTERVAL_MS = 5_000L;
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
     private static final long CUE_AROUSAL_WINDOW_MS = 20_000L;
+    private static final String READ_HEART_RATE =
+            "android.permission.health.READ_HEART_RATE";
+    private static final String READ_ADDITIONAL_HEALTH_DATA =
+            "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA";
 
     private static volatile boolean running;
     private static volatile String currentStatus = "DreamSync is On and waiting for sleep.";
@@ -131,6 +139,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private int sessionStartBatteryPercent = -1;
     private boolean storageHealthy = true;
     private boolean sessionInitialized;
+    private boolean permissionSafetyLatched;
 
     private int deepBlocks;
     private int deepCues;
@@ -417,17 +426,35 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 });
         // A high-end watch must not be reduced to the core profile. The bridge still
         // attaches only tracker types reported by the device at runtime.
-        samsungBridge.start(config.enableRawPpg);
+        boolean rawPpgPermission = ContextCompat.checkSelfPermission(
+                this, READ_ADDITIONAL_HEALTH_DATA) == PackageManager.PERMISSION_GRANTED;
+        if (config.enableRawPpg && SamsungHealthSensorBridge.isPackaged()
+                && SamsungHealthSensorBridge.isSamsungWatch() && !rawPpgPermission) {
+            persistEvent("ADVANCED_PERMISSION_MISSING", "",
+                    "raw-PPG permission missing; raw PPG disabled");
+            WatchDiagnostics.session(this, config, "ADVANCED_PERMISSION_MISSING",
+                    "raw-PPG permission missing; raw PPG disabled");
+        }
+        samsungBridge.start(config.enableRawPpg && rawPpgPermission);
     }
 
     private SensorCapabilitySnapshot capabilitySnapshot() {
+        boolean rawPpgPermission = ContextCompat.checkSelfPermission(
+                this, READ_ADDITIONAL_HEALTH_DATA) == PackageManager.PERMISSION_GRANTED;
+        AdvancedSensorVerification.Result advanced =
+                new AdvancedSensorVerification().evaluate(
+                        samsungSdkConnected,
+                        samsungTrackerTypes,
+                        config != null && config.enableRawPpg,
+                        rawPpgPermission,
+                        lastIbiSampleMs > 0L ? 1 : 0,
+                        lastTemperatureSampleMs > 0L ? 1 : 0,
+                        validPpgSamples);
         boolean liveSelfTest = accelerometerRegistered
                 && lastMotionSampleMs > 0L
                 && heartRateRegistered
                 && lastHeartSampleMs > 0L
-                && (!samsungSdkConnected
-                || !samsungTrackerTypes.contains("HEART_RATE_CONTINUOUS")
-                || lastIbiSampleMs > 0L);
+                && advanced.passed;
         return new SensorCapabilitySnapshot(
                 accelerometerRegistered,
                 heartRateRegistered,
@@ -435,7 +462,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 samsungSdkConnected,
                 samsungTrackerTypes,
                 liveSelfTest,
-                samsungDetail);
+                samsungDetail + "; " + advanced.reason);
     }
 
     private void registerSensors() {
@@ -538,6 +565,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void evaluateAndAct() {
         long now = timeProvider.elapsedRealtimeMs();
         double armedElapsedMin = (now - sessionStartMs) / 60_000.0;
+        if (!enforceRequiredSensorPermissions()) {
+            stopSelf();
+            return;
+        }
         int battery = batteryPercent();
         if (battery >= 0 && battery <= 10) {
             terminateSession(SessionState.LOW_BATTERY, "LOW_BATTERY",
@@ -677,6 +708,32 @@ public final class SleepSessionService extends Service implements SensorEventLis
         writeLogRow(now, armedElapsedMin, features, nremScore, remScore,
                 stage.name(), event);
         broadcastStatus(statusLine(armedElapsedMin, sleepElapsedMin, features, stage));
+    }
+
+    private boolean enforceRequiredSensorPermissions() {
+        boolean activityPermission = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACTIVITY_RECOGNITION)
+                == PackageManager.PERMISSION_GRANTED;
+        String heartPermission = Build.VERSION.SDK_INT >= 36
+                ? READ_HEART_RATE : Manifest.permission.BODY_SENSORS;
+        boolean heartPermissionGranted = ContextCompat.checkSelfPermission(
+                this, heartPermission) == PackageManager.PERMISSION_GRANTED;
+        SensorPermissionGate.Result result = new SensorPermissionGate().evaluate(
+                activityPermission, heartPermissionGranted);
+        if (result.action == SensorPermissionGate.Action.CONTINUE) return true;
+        if (!permissionSafetyLatched) {
+            permissionSafetyLatched = true;
+            persistEvent("PERMISSION_REVOKED", "", result.reason);
+            WatchDiagnostics.session(this, config, "PERMISSION_REVOKED", result.reason);
+            logEvent("PERMISSION_REVOKED", result.reason);
+        }
+        if (result.action == SensorPermissionGate.Action.TERMINATE_SESSION) {
+            terminateSession(SessionState.SENSOR_FAILED, "SENSOR_FAILED", result.reason);
+            return false;
+        }
+        disableCueing(result.reason);
+        latestSignalQuality = result.reason;
+        return true;
     }
 
     private String decisionReason(

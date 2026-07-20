@@ -2,6 +2,7 @@ package com.remote.DreamSync;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
@@ -18,6 +19,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 public final class PhoneWorkflowInstrumentationTest {
@@ -45,6 +47,24 @@ public final class PhoneWorkflowInstrumentationTest {
                 assertNotNull(activity.findViewById(R.id.exportButton));
                 assertNotNull(activity.findViewById(R.id.exportDebugButton));
                 assertNotNull(activity.findViewById(R.id.deleteDataButton));
+                assertNotNull(activity.findViewById(R.id.openWatchButton));
+                assertNotNull(activity.findViewById(R.id.previewDeepButton));
+                assertNotNull(activity.findViewById(R.id.practiceLucidButton));
+                assertNotNull(activity.findViewById(R.id.morningButton));
+                assertNotNull(activity.findViewById(R.id.historyButton));
+                assertNotNull(activity.findViewById(R.id.scienceButton));
+                assertNotNull(activity.findViewById(R.id.sleepProtectionButton));
+                assertNotNull(activity.findViewById(R.id.compatibilityButton));
+                assertNotNull(activity.findViewById(R.id.privacyButton));
+                assertNotNull(activity.findViewById(R.id.modeDeep));
+                assertNotNull(activity.findViewById(R.id.modeLucid));
+                assertNotNull(activity.findViewById(R.id.modeCombined));
+                assertNotNull(activity.findViewById(R.id.gainSeek));
+                String visibleText = allText(content);
+                assertTrue(visibleText.contains("Dreams Redefined"));
+                assertFalse(visibleText.toLowerCase().contains("somnicue"));
+                assertFalse(visibleText.toLowerCase().contains("nathan"));
+                assertFalse(visibleText.toLowerCase().contains("sham"));
             });
         }
     }
@@ -64,6 +84,34 @@ public final class PhoneWorkflowInstrumentationTest {
         assertFalse(debug.contains("sensitive-node-value"));
     }
 
+    @Test public void dataExportPreservesSessionWhenStoredJsonIsMalformed() throws Exception {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        PhoneDao dao = PhoneDatabase.get(context).dao();
+        dao.deleteAllSurveys();
+        dao.deleteAllEvents();
+        dao.deleteAllSessions();
+        SessionEntity session = new SessionEntity();
+        session.sessionId = "malformed-export-session";
+        session.configurationJson = "{bad";
+        session.summaryJson = "not-json";
+        session.watchCapabilityJson = "[wrong-shape]";
+        dao.upsertSession(session);
+
+        AtomicReference<MainActivity> activity = new AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity::set);
+            org.json.JSONObject export = activity.get().buildExportJson();
+            assertEquals(3, export.getInt("schemaVersion"));
+            org.json.JSONObject exportedSession = export.getJSONArray("sessions").getJSONObject(0);
+            assertTrue(exportedSession.getJSONObject("configuration").getBoolean("parseError"));
+            assertTrue(exportedSession.getJSONObject("summary").getBoolean("parseError"));
+            assertTrue(exportedSession.getJSONObject("watchCapabilities").getBoolean("parseError"));
+        } finally {
+            dao.deleteAllSessions();
+        }
+    }
+
     private static boolean containsScrollView(View view) {
         if (view instanceof ScrollView) return true;
         if (!(view instanceof android.view.ViewGroup)) return false;
@@ -72,5 +120,19 @@ public final class PhoneWorkflowInstrumentationTest {
             if (containsScrollView(group.getChildAt(i))) return true;
         }
         return false;
+    }
+
+    private static String allText(View view) {
+        StringBuilder result = new StringBuilder();
+        if (view instanceof android.widget.TextView) {
+            result.append(((android.widget.TextView) view).getText()).append('\n');
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                result.append(allText(group.getChildAt(i)));
+            }
+        }
+        return result.toString();
     }
 }

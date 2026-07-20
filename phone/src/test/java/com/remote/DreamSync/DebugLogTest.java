@@ -32,4 +32,13 @@ public final class DebugLogTest {
 
         assertTrue(report.contains("14. User-run live watch sensor check: PASS"));
     }
+
+    @Test public void pipelineSeparatesCorePassFromAdvancedSensorFailure() {
+        String report = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_RESULT | status=PASS;advancedSensorState=FAILED\n");
+
+        assertTrue(report.contains("14. User-run live watch sensor check: PASS"));
+        assertTrue(report.contains(
+                "15. Advanced sensor handling: FAIL"));
+    }
 }

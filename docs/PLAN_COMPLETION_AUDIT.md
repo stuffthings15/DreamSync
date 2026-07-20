@@ -10,12 +10,13 @@ Date: 2026-07-20
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Forty-four deterministic shared tests and seven phone unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
-- Phone instrumentation passes 4/4 on an Android 16 emulator; Wear instrumentation passes 4/4 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations, privacy-safe debug export verification, and an unbound live-check request that fails closed.
-- Google Play internal testing serves phone 23 and Wear 24 (`1.2.4-test`).
+- Fifty-three deterministic shared tests and nine phone unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Phone instrumentation passes 5/5 on an Android 16 emulator; Wear instrumentation passes 6/6 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations, privacy-safe debug export verification, visible power state, awake-only confirmation feedback, and an unbound live-check request that fails closed.
+- Google Play internal testing serves phone 27 and Wear 28 (`1.2.6-test`).
 - The one-time sound check waits for real playback, uses local PCM WAV playback with streaming fallback, requires human confirmation that the cue was audible, shows the exact backend error, and provides a bounded Export Debug Log without raw node identifiers.
 - A phone-controlled 45-second live check records actual watch motion and heart-rate samples, permissions, sensor registration, off-wrist state, and available advanced-sensor counts. It rejects stale, duplicate, wrong-watch, wrong-enrollment, and wrong-check results, and logs a failure after a two-minute timeout.
 - Phone and watch diagnostics now trace configuration, passive monitoring and inputs, automatic-session handshake, sensor registration and readings, quality and eligibility decisions, cue delivery and phone audio acknowledgement, the user-run live system check, no-haptics policy, failures, and terminal summaries.
+- The phone visibly reports `OFF`, `STARTING`, `ON`, and watch-confirmed states; speaker selection no longer mistakes an available Bluetooth watch route for active headphones.
 - Audited source/asset/dependency provenance register, third-party notices, owner sign-off packet, and exact release fingerprints.
 - Reproducible S23+/Watch Ultra validation protocol and evidence-collection runner.
 - Persistent user On/Off, Wear Health Services asleep-state plus conservative passive-HR fallback, automatic fresh-session handshake, phone connected-device standby service, reboot recovery, and three-record learned charge reminder.

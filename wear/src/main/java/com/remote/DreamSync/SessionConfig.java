@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import com.remote.DreamSync.shared.SleepSessionClock;
+import com.remote.DreamSync.shared.ProtectionMode;
 
 import org.json.JSONObject;
 
@@ -14,7 +15,7 @@ final class SessionConfig {
     String phoneNodeId = "";
     String watchNodeId = "";
     String handshakeMessageId = "";
-    String mode = "DEEP";
+    String mode = ProtectionMode.PROTECT_ONLY.name();
     long createdUtcMs;
     long expiresUtcMs;
     float cueGain = 0.04f;
@@ -25,11 +26,12 @@ final class SessionConfig {
     int sessionEndMin = 510;
     int deepStableMin = 10;
     int remStableMin = 5;
-    int deepCueIntervalSec = 30;
-    int deepCuesPerBlock = 6;
-    int maxDeepBlocks = 2;
+    int deepCueIntervalSec = 300;
+    int deepCuesPerBlock = 4;
+    int maxDeepBlocks = 1;
     int lucidCueIntervalSec = 180;
     int maxLucidCues = 2;
+    int safeCueNights;
     boolean enableRawPpg;
 
     static SessionConfig fromJson(String json) {
@@ -55,6 +57,7 @@ final class SessionConfig {
             config.maxDeepBlocks = object.optInt("maxDeepBlocks", config.maxDeepBlocks);
             config.lucidCueIntervalSec = object.optInt("lucidCueIntervalSec", config.lucidCueIntervalSec);
             config.maxLucidCues = object.optInt("maxLucidCues", config.maxLucidCues);
+            config.safeCueNights = object.optInt("safeCueNights", 0);
             config.enableRawPpg = object.optBoolean("enableRawPpg", false);
         } catch (Exception ignored) {
             // Invalid fields retain conservative defaults.
@@ -79,11 +82,12 @@ final class SessionConfig {
         sessionEndMin = clampInt(sessionEndMin, 240, 720);
         deepStableMin = clampInt(deepStableMin, 3, 20);
         remStableMin = clampInt(remStableMin, 1, 10);
-        deepCueIntervalSec = clampInt(deepCueIntervalSec, 10, 60);
-        deepCuesPerBlock = clampInt(deepCuesPerBlock, 1, 20);
-        maxDeepBlocks = clampInt(maxDeepBlocks, 0, 6);
+        deepCueIntervalSec = clampInt(deepCueIntervalSec, 300, 600);
+        deepCuesPerBlock = clampInt(deepCuesPerBlock, 1, 4);
+        maxDeepBlocks = clampInt(maxDeepBlocks, 0, 1);
         lucidCueIntervalSec = clampInt(lucidCueIntervalSec, 45, 600);
         maxLucidCues = clampInt(maxLucidCues, 0, 10);
+        safeCueNights = clampInt(safeCueNights, 0, 30);
         if (deepEndMin <= deepStartMin) {
             deepEndMin = deepStartMin + 60;
         }
@@ -115,6 +119,7 @@ final class SessionConfig {
         c.maxDeepBlocks = p.getInt("maxDeepBlocks", c.maxDeepBlocks);
         c.lucidCueIntervalSec = p.getInt("lucidCueIntervalSec", c.lucidCueIntervalSec);
         c.maxLucidCues = p.getInt("maxLucidCues", c.maxLucidCues);
+        c.safeCueNights = p.getInt("safeCueNights", 0);
         c.enableRawPpg = p.getBoolean("enableRawPpg", false);
         c.clamp();
         return c;
@@ -144,6 +149,7 @@ final class SessionConfig {
                 .putInt("maxDeepBlocks", maxDeepBlocks)
                 .putInt("lucidCueIntervalSec", lucidCueIntervalSec)
                 .putInt("maxLucidCues", maxLucidCues)
+                .putInt("safeCueNights", safeCueNights)
                 .putBoolean("enableRawPpg", enableRawPpg)
                 .apply();
     }
@@ -175,20 +181,15 @@ final class SessionConfig {
     }
 
     boolean usesDeepCues() {
-        return "DEEP".equals(mode) || "COMBINED".equals(mode);
+        return ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(mode);
     }
 
     boolean usesLucidCues() {
-        return "LUCID".equals(mode) || "COMBINED".equals(mode);
+        return false;
     }
 
     private static String sanitizeMode(String input) {
-        if ("DEEP".equals(input)
-                || "LUCID".equals(input)
-                || "COMBINED".equals(input)) {
-            return input;
-        }
-        return "DEEP";
+        return ProtectionMode.fromStored(input).name();
     }
 
     private static String safeIdentifier(String value) {

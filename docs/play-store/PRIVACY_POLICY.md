@@ -32,7 +32,7 @@ Export creates a local file only after the user chooses a destination. Confirmed
 
 ## Intended use
 
-DreamSync is an adult wellness tool, not a medical device. It does not measure EEG; diagnose, treat, cure, or prevent any medical condition; or guarantee deeper sleep, memory, immune, or lucid-dream outcomes. Stop using DreamSync if cues disturb sleep or cause adverse effects. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
+DreamSync is an adult wellness tool, not a medical device. It does not measure EEG; diagnose, treat, cure, or prevent any medical condition; or guarantee deeper sleep, memory, immune, or uninterrupted-sleep outcomes. Stop using DreamSync if sound disturbs sleep or causes adverse effects. Consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
 
 ## Contact
 

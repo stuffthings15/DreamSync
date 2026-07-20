@@ -6,7 +6,7 @@ DreamSync is an experimental sleep-first cue companion for adults using a compat
 
 Slogan: **Dreams Redefined.**
 
-Mission: **Designed to protect sleep continuity.** DreamSync automatically estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
+Mission: **Designed to protect sleep continuity.** DreamSync automatically estimates likely sleep from wearable signals and stays quiet whenever confidence, signal quality, or recovery is uncertain.
 
 ## Primary messages
 
@@ -49,7 +49,7 @@ Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not
 - Keeps the user asleep or guarantees uninterrupted sleep.
 - Clinically detects sleep stages or phase-locks to EEG.
 - Treats insomnia, sleep apnea, depression, or another condition.
-- Improves memory, immunity, hormones, or lucid-dream frequency.
+- Improves memory, immunity, or hormones.
 - Is physically validated on a watch that has not completed documented testing.
 
 ## Store-page structure

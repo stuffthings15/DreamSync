@@ -6,7 +6,7 @@ Dreams Redefined.
 
 ## Mission
 
-DreamSync's mission is to protect sleep continuity by automatically estimating likely sleep from wearable signals, staying quiet when confidence is low, and using gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
+DreamSync's mission is to protect sleep continuity by automatically estimating likely sleep from wearable signals and staying quiet whenever confidence, signal quality, or recovery is uncertain.
 
 ## Short public message
 
@@ -30,5 +30,4 @@ DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ w
 - Guaranteed uninterrupted sleep or prevention of waking.
 - Proven deeper sleep, sleep-stage detection, or EEG phase locking.
 - Improved memory, immunity, hormones, or treatment of a condition.
-- Guaranteed lucid dreams.
 - Physical validation on a watch model until that model has passed documented hardware tests.

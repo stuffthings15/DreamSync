@@ -18,7 +18,7 @@ Dreams Redefined. Automatic sleep estimation with sleep-first safety.
 
 Dreams Redefined.
 
-DreamSync's mission is to protect sleep continuity. It automatically estimates likely sleep from wearable signals, stays quiet when confidence is low, and uses gentle, research-shaped cues only when strict safety checks indicate a low risk of disturbance.
+DreamSync's mission is to protect sleep continuity. It automatically estimates likely sleep from wearable signals and stays quiet whenever confidence, signal quality, or recovery is uncertain.
 
 HOW IT WORKS
 
@@ -26,7 +26,7 @@ Turn DreamSync On once. After one-time watch permission prompts, low-power Wear 
 
 Install DreamSync on the Android phone first. The phone finds a paired Wear OS watch and, when needed, opens DreamSync's official watch Play Store page for one-tap install approval. All DreamSync controls stay on the phone; the watch only shows required first-time health permission prompts.
 
-If heart data is unreliable, DreamSync logs only and sends no cues. If sleep is not estimated within three hours, the session ends without cues. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops further cues for the night and lowers session gain.
+Protect only is the default and plays no sleep sound. Experimental watch sound stays locked until seven valid baseline nights are recorded. If heart data is unreliable, DreamSync logs only and stays quiet. If sleep is not estimated within three hours, the session ends without sound. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops sound for the night and lowers the next gain by 30%.
 
 DreamSync builds a rolling seven-night baseline while using conservative defaults on earlier nights. It reports estimated awakenings, wake after sleep onset, longest uninterrupted sleep bout, cue-linked arousal rate, and a user-entered morning disturbance rating. These wrist-based values are not clinical sleep-stage measurements.
 
@@ -34,9 +34,9 @@ Pre-sleep guidance covers schedule regularity, daylight, exercise, warm-bath tim
 
 SCIENCE, CLEARLY STATED
 
-A deep cue is two 50 millisecond pink-noise bursts, 1.075 seconds apart, with gentle 5 millisecond fades. Default deep mode requests no more than 12 paired cues from 25 to 145 minutes after estimated sleep onset.
+When the user unlocks and selects experimental sound, one cue is two 50 millisecond pink-noise bursts, 1.075 seconds apart, with gentle 5 millisecond fades. The first eligible night allows one pair. The allowance can rise to two, then four only after consecutive low-disturbance nights. DreamSync observes for five minutes after each pair and stays quiet for at least 20 minutes after any arousal sign.
 
-The acoustic pattern comes from peer-reviewed auditory sleep research. The laboratory studies used EEG to phase-lock sound to slow oscillations. DreamSync does not measure EEG and cannot reproduce that method. It blocks headphone routes, uses a user-calibrated phone speaker level rather than laboratory SPL, and makes no claim of deeper sleep, memory benefit, immune or hormonal effects, or guaranteed lucid dreams.
+The acoustic pattern comes from peer-reviewed auditory sleep research. The laboratory studies used EEG to phase-lock sound to slow oscillations. DreamSync does not measure EEG and cannot reproduce that method. It blocks headphone routes and uses the built-in watch speaker rather than laboratory SPL. Optional phone fallback stays Off unless enabled by the user. DreamSync makes no claim of deeper sleep, memory benefit, immune or hormonal effects, or guaranteed sleep continuity.
 
 PEER-REVIEWED BASIS
 
@@ -61,4 +61,4 @@ Advanced Samsung signals require the approved Samsung Health Sensor SDK package 
 
 ## Release notes
 
-DreamSync 1.2 test adds persistent On/Off, broad Wear OS automatic sleep candidates, full-sensor feature selection for capable watches, reboot recovery, learned watch-charge reminders, and fail-closed permission/capability checks.
+DreamSync 1.3 test adds protect-only default behavior, a seven-night experimental-sound gate, progressive 1-to-2-to-4 cue limits, five-minute observation, 20-minute arousal recovery, capability-by-capability watch reporting, and durable reboot recovery.

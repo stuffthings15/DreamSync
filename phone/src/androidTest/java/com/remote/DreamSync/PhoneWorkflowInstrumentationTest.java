@@ -130,6 +130,13 @@ public final class PhoneWorkflowInstrumentationTest {
                 .putLong("last_system_check_displayed_utc", 0L)
                 .putString("last_system_check_status", "FAIL")
                 .putString("last_system_check_reason", "Heart-rate permission is missing.")
+                .putInt("last_system_check_motion_samples", 20)
+                .putInt("last_system_check_heart_samples", 0)
+                .putBoolean("last_system_check_motion_registered", true)
+                .putBoolean("last_system_check_heart_registered", false)
+                .putBoolean("last_system_check_watch_audio_started", true)
+                .putBoolean("last_system_check_watch_audio_completed", true)
+                .putString("last_system_check_watch_audio_reason", "completed")
                 .apply();
 
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
@@ -137,6 +144,10 @@ public final class PhoneWorkflowInstrumentationTest {
                 android.widget.TextView status = activity.findViewById(R.id.statusText);
                 assertTrue(status.getText().toString().contains("Watch system check FAIL"));
                 assertTrue(status.getText().toString().contains("Heart-rate permission"));
+                assertTrue(activity.isSystemCheckReportShowingForTest());
+                assertEquals(completedUtcMs, context.getSharedPreferences(
+                        "dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                        .getLong("last_system_check_displayed_utc", 0L));
             });
         }
     }

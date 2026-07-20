@@ -13,7 +13,7 @@ import java.nio.file.Files;
 
 final class DebugLog {
     private static final String FILE_NAME = "dreamsync-debug.log";
-    private static final long MAX_FILE_BYTES = 512L * 1024L;
+    private static final long MAX_FILE_BYTES = 1024L * 1024L;
     private static final Object LOCK = new Object();
 
     private DebugLog() {}
@@ -21,7 +21,7 @@ final class DebugLog {
     static void append(Context context, String event, String details) {
         if (context == null) return;
         String safeEvent = sanitize(event, 80);
-        String safeDetails = sanitize(details, 1_500);
+        String safeDetails = sanitize(details, 4_000);
         String line = System.currentTimeMillis()
                 + " | elapsed=" + SystemClock.elapsedRealtime()
                 + " | " + safeEvent
@@ -32,7 +32,7 @@ final class DebugLog {
             try (FileOutputStream output = new FileOutputStream(file, append)) {
                 if (!append) {
                     output.write((System.currentTimeMillis()
-                            + " | LOG_ROTATED | Previous log exceeded 512 KiB\n")
+                            + " | LOG_ROTATED | Previous log exceeded 1 MiB\n")
                             .getBytes(StandardCharsets.UTF_8));
                 }
                 output.write(line.getBytes(StandardCharsets.UTF_8));
@@ -45,7 +45,7 @@ final class DebugLog {
     static String export(Context context, AudioOutput audioOutput) {
         SharedPreferences prefs = context.getSharedPreferences("dreamsync_phone", Context.MODE_PRIVATE);
         PackageInfo packageInfo = packageInfo(context);
-        StringBuilder text = new StringBuilder(4_096);
+        StringBuilder text = new StringBuilder(8_192);
         text.append("DreamSync phone debug log\n")
                 .append("generatedUtcMs=").append(System.currentTimeMillis()).append('\n')
                 .append("appVersion=").append(packageInfo == null ? "unknown" : packageInfo.versionName).append('\n')
@@ -75,10 +75,33 @@ final class DebugLog {
                         prefs.getString("last_system_check_reason", ""), 500)).append('\n')
                 .append("lastSystemCheckUtcMs=").append(
                         prefs.getLong("last_system_check_utc", 0L)).append('\n')
+                .append("lastSystemCheckMotionSamples=").append(
+                        prefs.getInt("last_system_check_motion_samples", 0)).append('\n')
+                .append("lastSystemCheckHeartSamples=").append(
+                        prefs.getInt("last_system_check_heart_samples", 0)).append('\n')
+                .append("lastSystemCheckMotionRegistered=").append(
+                        prefs.getBoolean("last_system_check_motion_registered", false)).append('\n')
+                .append("lastSystemCheckHeartRegistered=").append(
+                        prefs.getBoolean("last_system_check_heart_registered", false)).append('\n')
+                .append("lastSystemCheckWatchAudioStarted=").append(
+                        prefs.getBoolean("last_system_check_watch_audio_started", false)).append('\n')
+                .append("lastSystemCheckWatchAudioCompleted=").append(
+                        prefs.getBoolean("last_system_check_watch_audio_completed", false)).append('\n')
+                .append("lastSystemCheckWatchAudioReason=").append(sanitize(
+                        prefs.getString("last_system_check_watch_audio_reason", ""), 1_000)).append('\n')
+                .append("lastSystemCheckMeasureAvailability=").append(sanitize(
+                        prefs.getString("last_system_check_measure_availability", ""), 500)).append('\n')
+                .append("lastWatchAudioAudible=").append(
+                        prefs.contains("last_watch_audio_audible")
+                                ? Boolean.toString(prefs.getBoolean(
+                                        "last_watch_audio_audible", false))
+                                : "not_confirmed").append('\n')
+                .append("lastSystemCheckDetails=").append(sanitize(
+                        prefs.getString("last_system_check_details", ""), 8_000)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
                 .append("awakeSetupHaptic=ONE_SHORT_CONFIRMATION_AFTER_WATCH_MONITORING_STARTS\n")
                 .append("hapticsDuringSleep=OFF_BY_DESIGN\n")
-                .append("sleepAudioOutput=PHONE_SPEAKER_ONLY\n");
+                .append("sleepAudioOutput=WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK\n");
         String eventsText;
         synchronized (LOCK) {
             File file = new File(context.getFilesDir(), FILE_NAME);
@@ -102,7 +125,7 @@ final class DebugLog {
         StringBuilder out = new StringBuilder();
         out.append("No cue is expected until every sleep and safety gate passes. "
                 + "A blocked cue is a valid safety result.\n");
-        step(out, 1, "Phone sound check",
+        step(out, 1, "Phone fallback sound check (secondary)",
                 events, new String[]{" | SOUND_CHECK_AUDIBLE_CONFIRMED |"},
                 new String[]{" | SOUND_CHECK_NOT_AUDIBLE |",
                         " | SOUND_CHECK_FAILED |", " | SOUND_CHECK_BLOCKED |"});
@@ -138,11 +161,16 @@ final class DebugLog {
                 events, new String[]{"decision=", " | WATCH_HEARTBEAT |"},
                 new String[]{});
         step(out, 10, "Cue request transported when eligible",
-                events, new String[]{" | CUE_MESSAGE_RECEIVED |", " | WATCH_CUE_REQUESTED |"},
+                events, new String[]{" | CUE_MESSAGE_RECEIVED |",
+                        " | WATCH_CUE_OUTPUT_SELECTED |",
+                        " | WATCH_CUE_PHONE_FALLBACK_REQUESTED |"},
                 new String[]{" | CUE_TRANSPORT_FAILED |", " | CUE_REJECTED |"});
-        step(out, 11, "Phone speaker audio lifecycle",
-                events, new String[]{" | CUE_AUDIO_STARTED |", " | CUE_PLAYBACK_COMPLETED |"},
-                new String[]{" | CUE_PLAYBACK_FAILED |", " | AUDIO_FAILED |"});
+        step(out, 11, "Cue audio lifecycle (watch primary, phone fallback)",
+                events, new String[]{" | WATCH_CUE_AUDIO_STARTED_LOCAL |",
+                        " | WATCH_CUE_AUDIO_COMPLETED_LOCAL |",
+                        " | CUE_AUDIO_STARTED |", " | CUE_PLAYBACK_COMPLETED |"},
+                new String[]{" | WATCH_CUE_WATCH_AUDIO_FAILED_AFTER_START |",
+                        " | CUE_PLAYBACK_FAILED |", " | AUDIO_FAILED |"});
         step(out, 12, "Awake watch setup haptic",
                 events, new String[]{" | WATCH_SETUP_HAPTIC_CONFIRMED |",
                         " | WATCH_SYSTEM_CHECK_HAPTIC_REQUESTED |"},
@@ -163,6 +191,22 @@ final class DebugLog {
                 new String[]{"advancedSensorState=FAILED",
                         " | WATCH_ADVANCED_PERMISSION_MISSING |",
                         " | WATCH_SAMSUNG_SENSOR_ERROR |"});
+        step(out, 16, "Watch motion sensor registration",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_MOTION_REGISTERED |"},
+                new String[]{" | WATCH_SYSTEM_CHECK_MOTION_REGISTRATION_FAILED |"});
+        step(out, 17, "Health Services live heart-rate path",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED |",
+                        " | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA |"},
+                new String[]{" | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTRATION_FAILED |",
+                        " | WATCH_SYSTEM_CHECK_MEASURE_CAPABILITIES_FAILED |"});
+        step(out, 18, "Watch speaker test",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_WATCH_AUDIO_COMPLETED |"},
+                new String[]{" | WATCH_SYSTEM_CHECK_WATCH_AUDIO_PREFLIGHT_FAIL |",
+                        " | WATCH_SYSTEM_CHECK_WATCH_AUDIO_FAILED |",
+                        " | SYSTEM_CHECK_WATCH_AUDIO_NOT_AUDIBLE |"});
+        step(out, 19, "Phone result report displayed",
+                events, new String[]{" | SYSTEM_CHECK_REPORT_DISPLAYED |"},
+                new String[]{});
         return out.toString();
     }
 

@@ -22,6 +22,7 @@ import com.remote.DreamSync.shared.ProtocolEnvelope;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 final class AutoSleepMonitor {
     private static final Executor DIRECT = Runnable::run;
@@ -80,7 +81,7 @@ final class AutoSleepMonitor {
                                         + ";passiveHeartRateSupported="
                                         + passiveHeartRateSupported
                                         + ";hapticsDuringSleep=OFF"
-                                        + ";audioOutput=PHONE_SPEAKER");
+                                        + ";audioOutput=WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
                         confirmEnabledHaptic(context, config);
                         publishState(context, config, "ON", config.status);
                         broadcast(context, config.status);
@@ -114,6 +115,60 @@ final class AutoSleepMonitor {
             AutoSleepConfig.clear(context);
             broadcast(context, "DreamSync is Off.");
         }, DIRECT);
+    }
+
+    static boolean restoreAfterBoot(Context input, AutoSleepConfig config) {
+        Context context = input.getApplicationContext();
+        config.status = "On - restoring automatic sleep monitoring after restart...";
+        config.save(context);
+        WatchDiagnostics.auto(context, config, "PASSIVE_RESTORE_WORK_STARTED",
+                "worker=true;receiverRegistration=false");
+        try {
+            PassiveMonitoringClient client = HealthServices.getClient(context)
+                    .getPassiveMonitoringClient();
+            androidx.health.services.client.data.PassiveMonitoringCapabilities capabilities =
+                    client.getCapabilitiesAsync().get(45, TimeUnit.SECONDS);
+            boolean asleepSupported = capabilities.getSupportedUserActivityStates()
+                    .contains(UserActivityState.USER_ACTIVITY_ASLEEP);
+            boolean passiveHeartRateSupported = capabilities
+                    .getSupportedDataTypesPassiveMonitoring()
+                    .contains(DataType.HEART_RATE_BPM);
+            if (!asleepSupported && !passiveHeartRateSupported) {
+                fail(context, config,
+                        "On, but this watch provides neither automatic asleep-state nor passive heart-rate signals.");
+                return true;
+            }
+            PassiveListenerConfig.Builder builder = new PassiveListenerConfig.Builder()
+                    .setShouldUserActivityInfoBeRequested(asleepSupported);
+            if (passiveHeartRateSupported) {
+                builder.setDataTypes(Collections.singleton(DataType.HEART_RATE_BPM));
+            }
+            client.setPassiveListenerServiceAsync(
+                    AutoSleepPassiveService.class, builder.build())
+                    .get(45, TimeUnit.SECONDS);
+            config.passiveRegistered = true;
+            config.asleepStateSupported = asleepSupported;
+            config.passiveHeartRateSupported = passiveHeartRateSupported;
+            config.status = asleepSupported
+                    ? "On - automatic asleep-state monitoring restored after restart."
+                    : "On - Wear OS heart-rate fallback restored after restart.";
+            config.save(context);
+            WatchDiagnostics.auto(context, config, "PASSIVE_RESTORE_WORK_COMPLETE",
+                    "registered=true;asleepStateSupported=" + asleepSupported
+                            + ";passiveHeartRateSupported=" + passiveHeartRateSupported);
+            publishState(context, config, "ON", config.status);
+            broadcast(context, config.status);
+            return true;
+        } catch (Exception error) {
+            config.passiveRegistered = false;
+            config.status = "On - automatic monitoring restore will retry: "
+                    + safeMessage(error);
+            config.save(context);
+            WatchDiagnostics.auto(context, config, "PASSIVE_RESTORE_WORK_RETRY",
+                    safeMessage(error));
+            broadcast(context, config.status);
+            return false;
+        }
     }
 
     static void permissionLost(Context input) {

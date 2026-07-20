@@ -70,8 +70,9 @@ final class WatchDiagnostics {
                 System.currentTimeMillis(),
                 com.remote.DreamSync.shared.Protocol.DIAGNOSTIC_TTL_MS,
                 payload);
-        PutDataMapRequest map = PutDataMapRequest.create(
-                com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX + traceId);
+        String path = com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX + traceId;
+        if (safeEvent.startsWith("SYSTEM_CHECK_")) path += "/" + sequence;
+        PutDataMapRequest map = PutDataMapRequest.create(path);
         map.getDataMap().putByteArray("envelope", envelope.encode());
         map.getDataMap().putLong("sequence", sequence);
         PutDataRequest request = map.asPutDataRequest();

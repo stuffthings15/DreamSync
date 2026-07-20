@@ -35,6 +35,9 @@ import com.remote.DreamSync.shared.AdvancedSensorVerification;
 import com.remote.DreamSync.shared.CuePolicy;
 import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.PersonalBaseline;
+import com.remote.DreamSync.shared.ProgressiveCuePolicy;
+import com.remote.DreamSync.shared.ProtectionConfig;
+import com.remote.DreamSync.shared.ProtectionMode;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SessionCoordinator;
 import com.remote.DreamSync.shared.SessionOutcome;
@@ -70,6 +73,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SleepSessionService extends Service implements SensorEventListener {
     static final String ACTION_START = "com.remote.DreamSync.START_SESSION";
@@ -84,7 +88,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final int NOTIFICATION_ID = 3001;
     private static final long EVALUATION_INTERVAL_MS = 5_000L;
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
-    private static final long CUE_AROUSAL_WINDOW_MS = 20_000L;
+    private static final long CUE_AROUSAL_WINDOW_MS =
+            ProtectionConfig.POST_CUE_OBSERVATION_MS;
     private static final String READ_HEART_RATE =
             "android.permission.health.READ_HEART_RATE";
     private static final String READ_ADDITIONAL_HEALTH_DATA =
@@ -145,6 +150,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private int deepCues;
     private int lucidCues;
     private int cueLinkedArousals;
+    private int lastProgressiveAllowance = -1;
     private boolean deepBlockActive;
     private int deepCuesInCurrentBlock;
     private boolean cuesDisabled;
@@ -161,6 +167,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private final EligibilityEstimator eligibilityEstimator = new EligibilityEstimator();
     private final SleepFeatureEngine featureEngine = new SleepFeatureEngine();
     private final CuePolicy cuePolicy = new CuePolicy();
+    private final ProgressiveCuePolicy progressiveCuePolicy = new ProgressiveCuePolicy();
     private final SessionCoordinator sessionCoordinator = new SessionCoordinator();
     private final TimeProvider timeProvider = new AndroidTimeProvider();
     private final PersonalBaseline personalBaselineEngine = new PersonalBaseline();
@@ -171,8 +178,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private final SleepContinuityTracker continuityTracker = new SleepContinuityTracker();
     private final Map<String, PendingCue> pendingCues = new ConcurrentHashMap<>();
     private ExecutorService databaseExecutor;
+    private ExecutorService cueAudioExecutor;
     private WearDao dao;
     private SamsungHealthSensorBridge samsungBridge;
+    private WatchAudioOutput watchAudioOutput;
+    private String motionRegistrationDetails = "";
 
     private FileWriter logWriter;
     private String logFilePath = "";
@@ -220,7 +230,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
     public void onCreate() {
         super.onCreate();
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
 
         sensorThread = new HandlerThread("DreamSyncSensors");
@@ -228,6 +237,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         sensorHandler = new Handler(sensorThread.getLooper());
         evaluatorHandler = new Handler(getMainLooper());
         databaseExecutor = Executors.newSingleThreadExecutor();
+        cueAudioExecutor = Executors.newSingleThreadExecutor();
+        watchAudioOutput = new WatchAudioOutput(this);
         dao = WearDatabase.get(this).dao();
         databaseExecutor.execute(() -> dao.markInterrupted(timeProvider.utcMs()));
         IntentFilter ackFilter = new IntentFilter(ACTION_CUE_ACK);
@@ -305,8 +316,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         + ";accelerometerRegistered=" + accelerometerRegistered
                         + ";heartRatePresent=" + (heartRate != null)
                         + ";heartRateRegistered=" + heartRateRegistered
+                        + ";motionRegistrationDetails=" + motionRegistrationDetails
                         + ";hapticsDuringSleep=OFF"
-                        + ";audioOutput=PHONE_SPEAKER");
+                        + ";audioOutput=WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK"
+                        + ";watchAudio=" + watchAudioOutput.diagnostics());
         loadPersonalBaseline();
         startSamsungSensors();
         persistSession("WAITING_FOR_SLEEP", "");
@@ -466,15 +479,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void registerSensors() {
-        if (accelerometer != null) {
-            accelerometerRegistered = sensorManager.registerListener(
-                    this,
-                    accelerometer,
-                    200_000,
-                    2_000_000,
-                    sensorHandler
-            );
-        }
+        MotionSensorRegistration.Result motion = MotionSensorRegistration.register(
+                sensorManager, this, 200_000, 2_000_000, sensorHandler);
+        accelerometer = motion.sensor;
+        accelerometerRegistered = motion.registered;
+        motionRegistrationDetails = motion.details;
         if (heartRate != null) {
             try {
                 heartRateRegistered = sensorManager.registerListener(
@@ -498,7 +507,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     public void onSensorChanged(SensorEvent event) {
         long now = event.timestamp > 0L
                 ? event.timestamp / 1_000_000L : timeProvider.elapsedRealtimeMs();
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+        if (event.sensor == accelerometer) {
             lastMotionSampleMs = now;
             double x = event.values[0];
             double y = event.values[1];
@@ -843,10 +852,30 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void handleDeepCueing(long now, double elapsedMin, Stage stage) {
-        int maximumDeepCues = config.maxDeepBlocks * config.deepCuesPerBlock;
+        int maximumDeepCues = progressiveCuePolicy.allowedPairs(
+                ProtectionMode.fromStored(config.mode),
+                personalBaseline.nights,
+                config.safeCueNights);
+        if (maximumDeepCues != lastProgressiveAllowance) {
+            lastProgressiveAllowance = maximumDeepCues;
+            persistEvent("EXPERIMENTAL_AUDIO_ALLOWANCE", "",
+                    "mode=" + config.mode
+                            + ";baselineNights=" + personalBaseline.nights
+                            + ";safeCueNights=" + config.safeCueNights
+                            + ";allowedPairs=" + maximumDeepCues);
+            WatchDiagnostics.session(this, config, "EXPERIMENTAL_AUDIO_ALLOWANCE",
+                    "baselineNights=" + personalBaseline.nights
+                            + ";safeCueNights=" + config.safeCueNights
+                            + ";allowedPairs=" + maximumDeepCues);
+        }
         if (!config.usesDeepCues()
                 || !cuePolicy.canRequestDeep(maximumDeepCues,
-                !cuesDisabled && sessionCoordinator.canCue())) return;
+                !cuesDisabled && sessionCoordinator.canCue())) {
+            if (deepBlockActive && deepCues >= maximumDeepCues) {
+                endDeepBlock("nightly_allowance_complete");
+            }
+            return;
+        }
         if (!SleepPhaseMachine.Phase.STABLE_SLEEP.name().equals(latestSleepPhase)) return;
         if (elapsedMin < config.deepStartMin || elapsedMin > config.deepEndMin) {
             if (deepBlockActive) endDeepBlock("outside_window");
@@ -858,10 +887,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 endDeepBlock("state_changed");
                 return;
             }
-            if (deepCuesInCurrentBlock >= config.deepCuesPerBlock) {
+            if (deepCuesInCurrentBlock >= maximumDeepCues) {
                 endDeepBlock("block_complete");
-                long blockBackoffMs = 15L * 60L * 1000L;
-                backoffUntilMs = Math.max(backoffUntilMs, now + blockBackoffMs);
+                backoffUntilMs = Math.max(backoffUntilMs,
+                        now + ProtectionConfig.POST_CUE_OBSERVATION_MS);
                 return;
             }
             if (now >= nextDeepCueMs) {
@@ -870,6 +899,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     cuePolicy.onAudioStarted("DEEP");
                     deepCues = cuePolicy.getDeepCues();
                     deepCuesInCurrentBlock++;
+                    backoffUntilMs = Math.max(backoffUntilMs,
+                            now + ProtectionConfig.POST_CUE_OBSERVATION_MS);
                 });
             }
             return;
@@ -927,6 +958,73 @@ public final class SleepSessionService extends Service implements SensorEventLis
             Runnable onAudioStarted
     ) {
         String cueId = UUID.randomUUID().toString();
+        float requestedGain = (float) currentGain;
+        latestDecision = "ACTION: " + cueType + " cue starting on watch speaker";
+        persistEvent("CUE_REQUESTED", cueId, cueType + ";output=WATCH_SPEAKER_PRIMARY");
+        WatchDiagnostics.session(this, config, "CUE_OUTPUT_SELECTED",
+                "type=" + cueType + ";gain="
+                        + String.format(Locale.US, "%.4f", requestedGain)
+                        + ";vibration=NONE;primary=WATCH_SPEAKER;fallback=PHONE_SPEAKER"
+                        + ";" + watchAudioOutput.diagnostics());
+        cueAudioExecutor.execute(() -> {
+            AtomicBoolean startHandled = new AtomicBoolean(false);
+            WatchAudioOutput.Result result = watchAudioOutput.play(
+                    cueType, requestedGain, () -> {
+                        if (!startHandled.compareAndSet(false, true)) return;
+                        evaluatorHandler.post(() -> {
+                            lastCueMs = timeProvider.elapsedRealtimeMs();
+                            continuityTracker.onCueStarted();
+                            onAudioStarted.run();
+                            latestDecision = "ACTION: watch audio started for " + cueType;
+                            persistEvent("AUDIO_STARTED", cueId,
+                                    cueType + ";output=WATCH_SPEAKER");
+                            WatchDiagnostics.session(this, config,
+                                    "CUE_AUDIO_STARTED_LOCAL",
+                                    "type=" + cueType + ";vibration=NONE;output=WATCH_SPEAKER;"
+                                            + watchAudioOutput.diagnostics());
+                            logEvent("AUDIO_STARTED", cueType + " cueId=" + cueId
+                                    + " output=WATCH_SPEAKER");
+                        });
+                    });
+            if (result.success) {
+                evaluatorHandler.post(() -> {
+                    latestDecision = "COMPLETE: watch audio completed for " + cueType;
+                    persistEvent("AUDIO_COMPLETED", cueId,
+                            cueType + ";output=WATCH_SPEAKER");
+                    WatchDiagnostics.session(this, config,
+                            "CUE_AUDIO_COMPLETED_LOCAL",
+                            "type=" + cueType + ";reason=" + result.reason
+                                    + ";" + result.diagnostics);
+                });
+                return;
+            }
+            if (!result.started) {
+                WatchDiagnostics.session(this, config,
+                        "CUE_WATCH_AUDIO_PRESTART_FAILED",
+                        "type=" + cueType + ";reason=" + result.reason
+                                + ";fallback=PHONE_SPEAKER;" + result.diagnostics);
+                sendPhoneFallbackCue(cueId, cueType, label, now, onAudioStarted);
+                return;
+            }
+            evaluatorHandler.post(() -> {
+                latestDecision = "FAILED: watch audio: " + result.reason;
+                persistEvent("AUDIO_FAILED", cueId,
+                        result.reason + ";output=WATCH_SPEAKER;fallback=BLOCKED_AFTER_START");
+                WatchDiagnostics.session(this, config,
+                        "CUE_WATCH_AUDIO_FAILED_AFTER_START",
+                        "type=" + cueType + ";reason=" + result.reason
+                                + ";phoneFallback=false;" + result.diagnostics);
+            });
+        });
+    }
+
+    private void sendPhoneFallbackCue(
+            String cueId,
+            String cueType,
+            String label,
+            long now,
+            Runnable onAudioStarted
+    ) {
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
                 com.remote.DreamSync.shared.Protocol.TYPE_CUE_REQUEST,
                 config.sessionId,
@@ -943,12 +1041,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         "policyVersion", "eligibility-v1"
                 ));
         pendingCues.put(cueId, new PendingCue(cueId, cueType, now, onAudioStarted));
-        latestDecision = "ACTION: " + cueType + " cue requested from phone speaker";
-        persistEvent("CUE_REQUESTED", cueId, cueType);
-        WatchDiagnostics.session(this, config, "CUE_REQUESTED",
+        evaluatorHandler.post(() -> {
+            latestDecision = "ACTION: watch audio unavailable; " + cueType
+                    + " cue requested from phone fallback";
+            persistEvent("CUE_PHONE_FALLBACK_REQUESTED", cueId, cueType);
+        });
+        WatchDiagnostics.session(this, config, "CUE_PHONE_FALLBACK_REQUESTED",
                 "type=" + cueType + ";gain="
                         + String.format(Locale.US, "%.4f", currentGain)
-                        + ";vibration=NONE;audioOutput=PHONE_SPEAKER");
+                        + ";vibration=NONE;audioOutput=PHONE_SPEAKER_FALLBACK");
         Wearable.getMessageClient(this)
                 .sendMessage(config.phoneNodeId, com.remote.DreamSync.shared.Protocol.PATH_CUE,
                         envelope.encode())
@@ -960,7 +1061,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     logEvent("CUE_SEND_ERROR", cueType + ": " + reason);
                     latestDecision = "FAILED: cue transport: " + reason;
                     WatchDiagnostics.session(this, config, "CUE_TRANSPORT_FAILED",
-                            "type=" + cueType + ";reason=" + reason);
+                            "type=" + cueType + ";reason=" + reason
+                                    + ";output=PHONE_SPEAKER_FALLBACK");
                     persistEvent("CUE_FAILED", cueId, reason);
                 });
     }
@@ -970,8 +1072,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
         PendingCue pending = pendingCues.get(cueId);
         if (pending == null) return;
         if (com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED.equals(ackType)) {
-            latestDecision = "ACTION: phone accepted " + pending.cueType + " cue";
-            persistEvent("CUE_ACCEPTED", cueId, pending.cueType);
+            latestDecision = "ACTION: phone accepted " + pending.cueType + " fallback";
+            persistEvent("CUE_ACCEPTED", cueId,
+                    pending.cueType + ";output=PHONE_SPEAKER_FALLBACK");
             return;
         }
         if (com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_STARTED.equals(ackType)) {
@@ -980,22 +1083,26 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 lastCueMs = timeProvider.elapsedRealtimeMs();
                 continuityTracker.onCueStarted();
                 pending.onAudioStarted.run();
-                latestDecision = "ACTION: phone audio started for " + pending.cueType;
-                persistEvent("AUDIO_STARTED", cueId, pending.cueType);
-                WatchDiagnostics.session(this, config, "PHONE_AUDIO_STARTED",
+                latestDecision = "ACTION: phone fallback audio started for " + pending.cueType;
+                persistEvent("AUDIO_STARTED", cueId,
+                        pending.cueType + ";output=PHONE_SPEAKER_FALLBACK");
+                WatchDiagnostics.session(this, config, "PHONE_FALLBACK_AUDIO_STARTED",
                         "type=" + pending.cueType + ";vibration=NONE");
-                logEvent("AUDIO_STARTED", pending.cueType + " cueId=" + cueId);
+                logEvent("AUDIO_STARTED", pending.cueType + " cueId=" + cueId
+                        + " output=PHONE_SPEAKER_FALLBACK");
             }
             return;
         }
         if (com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_COMPLETED.equals(ackType)) {
             pendingCues.remove(cueId);
-            latestDecision = "COMPLETE: phone audio completed for " + pending.cueType;
-            persistEvent("AUDIO_COMPLETED", cueId, pending.cueType);
+            latestDecision = "COMPLETE: phone fallback audio completed for " + pending.cueType;
+            persistEvent("AUDIO_COMPLETED", cueId,
+                    pending.cueType + ";output=PHONE_SPEAKER_FALLBACK");
         } else if (com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED.equals(ackType)) {
             pendingCues.remove(cueId);
-            latestDecision = "FAILED: phone audio: " + (reason == null ? "" : reason);
-            WatchDiagnostics.session(this, config, "PHONE_AUDIO_FAILED",
+            latestDecision = "FAILED: phone fallback audio: "
+                    + (reason == null ? "" : reason);
+            WatchDiagnostics.session(this, config, "PHONE_FALLBACK_AUDIO_FAILED",
                     "type=" + pending.cueType + ";reason=" + reason);
             persistEvent("AUDIO_FAILED", cueId, reason == null ? "" : reason);
         }
@@ -1193,7 +1300,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     features.ibiSampleCount5,
                     features.temperatureSampleCount30,
                     "NONE",
-                    "PHONE_SPEAKER"
+                    "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK"
             ));
             logWriter.flush();
         } catch (IOException error) {
@@ -1225,7 +1332,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     samsungSdkConnected ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS",
                     sanitizeCsv(latestDecision),
                     "NONE",
-                    "PHONE_SPEAKER"
+                    "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK"
             ));
             logWriter.flush();
         } catch (IOException error) {
@@ -1311,7 +1418,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         payload.put("lucidCues", Integer.toString(lucidCues));
         payload.put("pendingCues", Integer.toString(pendingCues.size()));
         payload.put("hapticsAction", "NONE_DURING_SLEEP");
-        payload.put("audioAction", "PHONE_SPEAKER_ONLY");
+        payload.put("audioAction", "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
         payload.put("sensorSource", samsungSdkConnected
                 ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS");
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
@@ -1464,7 +1571,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("signalQuality", latestSignalQuality);
             summary.put("lastDecision", latestDecision);
             summary.put("hapticsAction", "NONE_DURING_SLEEP");
-            summary.put("audioAction", "PHONE_SPEAKER_ONLY");
+            summary.put("audioAction", "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
             summary.put("sensorSource", samsungSdkConnected
                     ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS");
             summary.put("capabilities", new JSONObject(capabilitySnapshot().toJson()));
@@ -1580,6 +1687,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             if (sensorThread != null) sensorThread.quitSafely();
             try { unregisterReceiver(cueAckReceiver); } catch (IllegalArgumentException ignored) {}
             if (databaseExecutor != null) databaseExecutor.shutdown();
+            if (cueAudioExecutor != null) cueAudioExecutor.shutdownNow();
             super.onDestroy();
             return;
         }
@@ -1605,6 +1713,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (sensorThread != null) sensorThread.quitSafely();
         try { unregisterReceiver(cueAckReceiver); } catch (IllegalArgumentException ignored) {}
         if (databaseExecutor != null) databaseExecutor.shutdown();
+        if (cueAudioExecutor != null) cueAudioExecutor.shutdownNow();
         broadcastStatus("Session stopped • D" + deepCues + " / L" + lucidCues);
         super.onDestroy();
     }

@@ -84,7 +84,7 @@ public final class ResearchPlanCoreTest {
         DeviceCompatibility checker = new DeviceCompatibility();
         DeviceCompatibility.Capabilities capable = new DeviceCompatibility.Capabilities(
                 "Any Wear OS maker", "Future high-end watch", true, true, true,
-                true, true, true, true, true, true);
+                false, true, true, true, true, true);
         assertEquals(DeviceCompatibility.Status.FULLY_SUPPORTED,
                 checker.classify(capable));
 

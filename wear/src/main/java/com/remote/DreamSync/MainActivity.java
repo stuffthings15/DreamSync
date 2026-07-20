@@ -25,6 +25,14 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
+import androidx.health.services.client.HealthServices;
+import androidx.health.services.client.MeasureCallback;
+import androidx.health.services.client.MeasureClient;
+import androidx.health.services.client.data.Availability;
+import androidx.health.services.client.data.DataPointContainer;
+import androidx.health.services.client.data.DataType;
+import androidx.health.services.client.data.DataTypeAvailability;
+import androidx.health.services.client.data.SampleDataPoint;
 import androidx.wear.remote.interactions.RemoteActivityHelper;
 
 import com.google.android.gms.wearable.CapabilityClient;
@@ -355,6 +363,28 @@ public final class MainActivity extends Activity {
                 + ";motionSamples=" + payload.getOrDefault("motionSamples", "0")
                 + ";heartSamples=" + payload.getOrDefault("heartSamples", "0")
                 + ";lastHeartBpm=" + payload.getOrDefault("lastHeartBpm", "NaN")
+                + ";motionRegistered="
+                + payload.getOrDefault("motionRegistered", "false")
+                + ";heartRegistered="
+                + payload.getOrDefault("heartRegistered", "false")
+                + ";motionSensor=" + payload.getOrDefault("motionSensor", "")
+                + ";motionRegistrationDetails="
+                + payload.getOrDefault("motionRegistrationDetails", "")
+                + ";sensorInventory=" + payload.getOrDefault("sensorInventory", "")
+                + ";measureSupported="
+                + payload.getOrDefault("measureSupported", "false")
+                + ";measureRegistered="
+                + payload.getOrDefault("measureRegistered", "false")
+                + ";measureAvailability="
+                + payload.getOrDefault("measureAvailability", "")
+                + ";watchAudioStarted="
+                + payload.getOrDefault("watchAudioStarted", "false")
+                + ";watchAudioCompleted="
+                + payload.getOrDefault("watchAudioCompleted", "false")
+                + ";watchAudioReason="
+                + payload.getOrDefault("watchAudioReason", "")
+                + ";watchAudioDiagnostics="
+                + payload.getOrDefault("watchAudioDiagnostics", "")
                 + ";offWrist=" + payload.getOrDefault("offWrist", "false")
                 + ";hapticAvailable="
                 + payload.getOrDefault("hapticAvailable", "false")
@@ -384,12 +414,19 @@ public final class MainActivity extends Activity {
         private final SensorManager sensorManager;
         private final long startedElapsedMs = SystemClock.elapsedRealtime();
         private final Runnable finishRunnable = this::finish;
+        private final Runnable progressFiveSeconds = () -> logProgress("5s");
+        private final Runnable progressFifteenSeconds = () -> logProgress("15s");
+        private final Runnable progressThirtySeconds = () -> logProgress("30s");
         private Sensor accelerometer;
         private Sensor heartRate;
+        private MeasureClient measureClient;
+        private MeasureCallback measureCallback;
+        private WatchAudioOutput watchAudioOutput;
         private SamsungHealthSensorBridge samsungBridge;
         private Set<String> samsungTrackerTypes = new HashSet<>();
         private volatile int motionSamples;
         private volatile int standardHeartSamples;
+        private volatile int measureHeartSamples;
         private volatile int samsungHeartSamples;
         private volatile int ibiSamples;
         private volatile int temperatureSamples;
@@ -402,9 +439,16 @@ public final class MainActivity extends Activity {
         private boolean additionalHealthPermission;
         private boolean motionRegistered;
         private boolean heartRegistered;
+        private volatile boolean measureSupported;
+        private volatile boolean measureRegistered;
         private boolean hapticAvailable;
         private boolean hapticRequested;
+        private volatile boolean watchAudioStarted;
+        private volatile WatchAudioOutput.Result watchAudioResult;
         private boolean finished;
+        private String sensorInventory = "";
+        private String motionRegistrationDetails = "";
+        private String measureAvailability = "not_checked";
         private String samsungDetail = "";
         private String forcedFailure = "";
 
@@ -432,29 +476,162 @@ public final class MainActivity extends Activity {
                             + additionalHealthPermission);
             if (!activityPermission || !heartPermissionGranted || sensorManager == null) {
                 if (sensorManager == null) forcedFailure = "Watch sensor service is unavailable.";
+                if (!activityPermission) forcedFailure = "Activity permission is missing on the watch.";
+                if (!heartPermissionGranted) forcedFailure = "Heart-rate permission is missing on the watch.";
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_PREREQUISITE_FAILED", forcedFailure);
                 finish();
                 return;
             }
-            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            sensorInventory = MotionSensorRegistration.inventory(sensorManager);
+            WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_SENSOR_INVENTORY",
+                    sensorInventory);
+            MotionSensorRegistration.Result motion = MotionSensorRegistration.register(
+                    sensorManager, this, 20_000, 0, null);
+            accelerometer = motion.sensor;
+            motionRegistered = motion.registered;
+            motionRegistrationDetails = motion.details;
+            WatchDiagnostics.auto(MainActivity.this, config,
+                    motionRegistered ? "SYSTEM_CHECK_MOTION_REGISTERED"
+                            : "SYSTEM_CHECK_MOTION_REGISTRATION_FAILED",
+                    "selected=" + MotionSensorRegistration.describe(accelerometer)
+                            + ";attempts=" + motionRegistrationDetails);
             heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
-            if (accelerometer != null) {
-                motionRegistered = sensorManager.registerListener(
-                        this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            }
             if (heartRate != null) {
                 try {
                     heartRegistered = sensorManager.registerListener(
-                            this, heartRate, SensorManager.SENSOR_DELAY_NORMAL);
-                } catch (SecurityException error) {
+                            this, heartRate, SensorManager.SENSOR_DELAY_GAME);
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            heartRegistered ? "SYSTEM_CHECK_STANDARD_HEART_REGISTERED"
+                                    : "SYSTEM_CHECK_STANDARD_HEART_REGISTRATION_FAILED",
+                            MotionSensorRegistration.describe(heartRate));
+                } catch (RuntimeException error) {
                     heartRegistered = false;
-                    forcedFailure = "Heart-rate permission was rejected by the watch.";
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_STANDARD_HEART_REGISTRATION_EXCEPTION",
+                            MotionSensorRegistration.describe(heartRate) + ";error="
+                                    + safeMessage(error));
                 }
+            } else {
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;default=null");
             }
+            startHealthMeasureCheck();
             startSamsungCheck();
+            startWatchAudioCheck();
             statusText.setText((hapticRequested
                     ? "Test vibration sent. " : "Watch vibration unavailable. ")
-                    + "Sound stays on the phone. Checking motion 0, heart 0.");
+                    + "Playing watch sound. Checking motion 0, heart 0.");
+            statusText.postDelayed(progressFiveSeconds, 5_000L);
+            statusText.postDelayed(progressFifteenSeconds, 15_000L);
+            statusText.postDelayed(progressThirtySeconds, 30_000L);
             statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
+        }
+
+        private void startWatchAudioCheck() {
+            watchAudioOutput = new WatchAudioOutput(MainActivity.this);
+            WatchAudioOutput.Result preflight = watchAudioOutput.preflight();
+            WatchDiagnostics.auto(MainActivity.this, config,
+                    preflight.success ? "SYSTEM_CHECK_WATCH_AUDIO_PREFLIGHT_PASS"
+                            : "SYSTEM_CHECK_WATCH_AUDIO_PREFLIGHT_FAIL",
+                    "reason=" + preflight.reason + ";" + preflight.diagnostics);
+            remoteExecutor.execute(() -> {
+                WatchAudioOutput.Result result = watchAudioOutput.play(
+                        "DEEP", Math.max(0.08f, config.cueGain), () -> {
+                            watchAudioStarted = true;
+                            WatchDiagnostics.auto(MainActivity.this, config,
+                                    "SYSTEM_CHECK_WATCH_AUDIO_STARTED",
+                                    watchAudioOutput.diagnostics());
+                        });
+                watchAudioResult = result;
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        result.success ? "SYSTEM_CHECK_WATCH_AUDIO_COMPLETED"
+                                : "SYSTEM_CHECK_WATCH_AUDIO_FAILED",
+                        "started=" + result.started + ";reason=" + result.reason
+                                + ";" + result.diagnostics);
+                runOnUiThread(this::updateProgressText);
+            });
+        }
+
+        private void startHealthMeasureCheck() {
+            measureClient = HealthServices.getClient(MainActivity.this).getMeasureClient();
+            measureCallback = new MeasureCallback() {
+                @Override public void onRegistered() {
+                    measureRegistered = true;
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_HEART_REGISTERED",
+                            "dataType=HEART_RATE_BPM");
+                    if (finished) {
+                        measureClient.unregisterMeasureCallbackAsync(
+                                DataType.HEART_RATE_BPM, this);
+                        return;
+                    }
+                    updateProgressText();
+                }
+
+                @Override public void onRegistrationFailed(Throwable error) {
+                    measureRegistered = false;
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_HEART_REGISTRATION_FAILED",
+                            safeMessage(error));
+                    updateProgressText();
+                }
+
+                @Override public void onAvailabilityChanged(
+                        androidx.health.services.client.data.DeltaDataType<?, ?> dataType,
+                        Availability availability) {
+                    measureAvailability = availability == null
+                            ? "null" : availability.toString();
+                    if (DataTypeAvailability.UNAVAILABLE_DEVICE_OFF_BODY.equals(availability)) {
+                        offWrist = true;
+                    }
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_HEART_AVAILABILITY",
+                            "availability=" + measureAvailability);
+                    updateProgressText();
+                }
+
+                @Override public void onDataReceived(DataPointContainer data) {
+                    List<SampleDataPoint<Double>> points = data.getData(DataType.HEART_RATE_BPM);
+                    int accepted = 0;
+                    for (SampleDataPoint<Double> point : points) {
+                        Double bpm = point.getValue();
+                        if (bpm != null && Double.isFinite(bpm)
+                                && bpm >= 30.0 && bpm <= 220.0) {
+                            lastHeartBpm = bpm;
+                            measureHeartSamples++;
+                            accepted++;
+                        }
+                    }
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_HEART_DATA",
+                            "received=" + points.size() + ";accepted=" + accepted
+                                    + ";total=" + measureHeartSamples
+                                    + ";lastBpm=" + lastHeartBpm);
+                    updateProgressText();
+                }
+            };
+            ListenableFuture<androidx.health.services.client.data.MeasureCapabilities>
+                    capabilities = measureClient.getCapabilitiesAsync();
+            capabilities.addListener(() -> {
+                try {
+                    measureSupported = capabilities.get().getSupportedDataTypesMeasure()
+                            .contains(DataType.HEART_RATE_BPM);
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_CAPABILITIES",
+                            "heartRateSupported=" + measureSupported + ";supported="
+                                    + capabilities.get().getSupportedDataTypesMeasure());
+                    if (measureSupported && !finished) {
+                        measureClient.registerMeasureCallback(
+                                DataType.HEART_RATE_BPM,
+                                ContextCompat.getMainExecutor(MainActivity.this),
+                                measureCallback);
+                    }
+                } catch (Exception error) {
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MEASURE_CAPABILITIES_FAILED", safeMessage(error));
+                }
+            }, ContextCompat.getMainExecutor(MainActivity.this));
         }
 
         private void startSamsungCheck() {
@@ -466,6 +643,11 @@ public final class MainActivity extends Activity {
                                     ? new HashSet<>() : new HashSet<>(trackerTypes);
                             samsungConnected = connected;
                             samsungDetail = detail == null ? "" : detail;
+                            WatchDiagnostics.auto(MainActivity.this, config,
+                                    "SYSTEM_CHECK_SAMSUNG_CAPABILITIES",
+                                    "connected=" + connected + ";trackers="
+                                            + samsungTrackerTypes + ";detail=" + samsungDetail);
+                            updateProgressText();
                         }
 
                         @Override public void onHeartRate(
@@ -477,6 +659,12 @@ public final class MainActivity extends Activity {
                                 samsungHeartSamples++;
                             }
                             if (ibiMs != null) ibiSamples += ibiMs.size();
+                            WatchDiagnostics.auto(MainActivity.this, config,
+                                    "SYSTEM_CHECK_SAMSUNG_HEART_DATA",
+                                    "bpm=" + bpm + ";heartSamples=" + samsungHeartSamples
+                                            + ";ibiSamples=" + ibiSamples
+                                            + ";offWrist=" + offWrist);
+                            updateProgressText();
                         }
 
                         @Override public void onSkinTemperature(
@@ -490,6 +678,8 @@ public final class MainActivity extends Activity {
 
                         @Override public void onBridgeError(String code, String detail) {
                             samsungDetail = code + ": " + detail;
+                            WatchDiagnostics.auto(MainActivity.this, config,
+                                    "SYSTEM_CHECK_SAMSUNG_SENSOR_ERROR", samsungDetail);
                         }
                     });
             samsungBridge.start(additionalHealthPermission);
@@ -497,24 +687,32 @@ public final class MainActivity extends Activity {
 
         @Override public void onSensorChanged(SensorEvent event) {
             if (finished || event == null || event.sensor == null) return;
-            if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER
+            if (event.sensor == accelerometer
                     && event.values != null && event.values.length >= 3
                     && Float.isFinite(event.values[0])
                     && Float.isFinite(event.values[1])
                     && Float.isFinite(event.values[2])) {
                 motionSamples++;
+                if (motionSamples == 1 || motionSamples % 100 == 0) {
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MOTION_DATA",
+                            "count=" + motionSamples + ";sensorType="
+                                    + event.sensor.getType() + ";accuracy=" + event.accuracy
+                                    + ";x=" + event.values[0] + ";y=" + event.values[1]
+                                    + ";z=" + event.values[2]);
+                }
             } else if (event.sensor.getType() == Sensor.TYPE_HEART_RATE
                     && event.values != null && event.values.length > 0
                     && Float.isFinite(event.values[0])
                     && event.values[0] >= 30f && event.values[0] <= 220f) {
                 standardHeartSamples++;
                 lastHeartBpm = event.values[0];
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_STANDARD_HEART_DATA",
+                        "count=" + standardHeartSamples + ";bpm=" + lastHeartBpm
+                                + ";accuracy=" + event.accuracy);
             }
-            if (motionSamples % 10 == 0 || standardHeartSamples > 0) {
-                statusText.setText("System check running. Wear the watch snugly and hold still. "
-                        + "Motion " + motionSamples + ", heart "
-                        + (standardHeartSamples + samsungHeartSamples) + ".");
-            }
+            updateProgressText();
         }
 
         @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {
@@ -523,6 +721,36 @@ public final class MainActivity extends Activity {
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_HEART_ACCURACY_UNRELIABLE", "checkId=" + checkId);
             }
+        }
+
+        private void updateProgressText() {
+            if (finished) return;
+            int totalHeart = standardHeartSamples + measureHeartSamples + samsungHeartSamples;
+            String audio = watchAudioResult == null
+                    ? watchAudioStarted ? "playing" : "waiting"
+                    : watchAudioResult.success ? "passed" : "failed";
+            statusText.setText("Watch check running. Motion " + motionSamples
+                    + ", heart " + totalHeart + ", sound " + audio + ".");
+        }
+
+        private void logProgress(String checkpoint) {
+            if (finished) return;
+            WatchDiagnostics.auto(MainActivity.this, config,
+                    "SYSTEM_CHECK_PROGRESS",
+                    "checkpoint=" + checkpoint
+                            + ";motionRegistered=" + motionRegistered
+                            + ";motionSamples=" + motionSamples
+                            + ";standardHeartRegistered=" + heartRegistered
+                            + ";standardHeartSamples=" + standardHeartSamples
+                            + ";measureSupported=" + measureSupported
+                            + ";measureRegistered=" + measureRegistered
+                            + ";measureAvailability=" + measureAvailability
+                            + ";measureHeartSamples=" + measureHeartSamples
+                            + ";samsungConnected=" + samsungConnected
+                            + ";samsungHeartSamples=" + samsungHeartSamples
+                            + ";watchAudioStarted=" + watchAudioStarted
+                            + ";watchAudioFinished=" + (watchAudioResult != null));
+            updateProgressText();
         }
 
         void cancel(String reason) {
@@ -535,12 +763,32 @@ public final class MainActivity extends Activity {
             if (finished) return;
             finished = true;
             statusText.removeCallbacks(finishRunnable);
+            statusText.removeCallbacks(progressFiveSeconds);
+            statusText.removeCallbacks(progressFifteenSeconds);
+            statusText.removeCallbacks(progressThirtySeconds);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (sensorManager != null) sensorManager.unregisterListener(this);
+            if (measureClient != null && measureCallback != null && measureRegistered) {
+                ListenableFuture<Void> unregister = measureClient.unregisterMeasureCallbackAsync(
+                        DataType.HEART_RATE_BPM, measureCallback);
+                unregister.addListener(() -> {
+                    try {
+                        unregister.get();
+                        WatchDiagnostics.auto(MainActivity.this, config,
+                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTERED", "success=true");
+                    } catch (Exception error) {
+                        WatchDiagnostics.auto(MainActivity.this, config,
+                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTER_FAILED",
+                                safeMessage(error));
+                    }
+                }, ContextCompat.getMainExecutor(MainActivity.this));
+            }
             if (samsungBridge != null) samsungBridge.stop();
 
-            int totalHeartSamples = standardHeartSamples + samsungHeartSamples;
+            int totalHeartSamples = standardHeartSamples
+                    + measureHeartSamples + samsungHeartSamples;
             boolean usableHeartRegistration = heartRegistered
+                    || measureRegistered
                     || (samsungConnected
                     && samsungTrackerTypes.contains("HEART_RATE_CONTINUOUS"));
             SystemCheckEvaluator.Result evaluation = new SystemCheckEvaluator().evaluate(
@@ -562,13 +810,21 @@ public final class MainActivity extends Activity {
                             temperatureSamples,
                             ppgSamples);
             String reason = forcedFailure.isEmpty() ? evaluation.reason : forcedFailure;
+            if (watchAudioResult == null) {
+                passed = false;
+                reason = appendReason(reason, "The watch audio check did not finish.");
+            } else if (!watchAudioResult.success) {
+                passed = false;
+                reason = appendReason(reason,
+                        "Watch audio failed: " + watchAudioResult.reason);
+            }
             if (passed && advanced.expected && !advanced.passed) {
                 reason = "Core readings passed. Advanced suite not verified: "
                         + advanced.reason;
             }
             SensorCapabilitySnapshot capability = new SensorCapabilitySnapshot(
                     motionSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES,
-                    standardHeartSamples >= SystemCheckEvaluator.MIN_HEART_SAMPLES,
+                    totalHeartSamples >= SystemCheckEvaluator.MIN_HEART_SAMPLES,
                     SamsungHealthSensorBridge.isPackaged(),
                     samsungConnected,
                     samsungTrackerTypes,
@@ -583,6 +839,24 @@ public final class MainActivity extends Activity {
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
             payload.put("motionRegistered", Boolean.toString(motionRegistered));
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
+            payload.put("motionSensor", MotionSensorRegistration.describe(accelerometer));
+            payload.put("motionRegistrationDetails", motionRegistrationDetails);
+            payload.put("sensorInventory", sensorInventory);
+            payload.put("standardHeartRegistered", Boolean.toString(heartRegistered));
+            payload.put("standardHeartSamples", Integer.toString(standardHeartSamples));
+            payload.put("measureSupported", Boolean.toString(measureSupported));
+            payload.put("measureRegistered", Boolean.toString(measureRegistered));
+            payload.put("measureAvailability", measureAvailability);
+            payload.put("measureHeartSamples", Integer.toString(measureHeartSamples));
+            payload.put("samsungHeartSamples", Integer.toString(samsungHeartSamples));
+            payload.put("watchAudioStarted", Boolean.toString(watchAudioStarted));
+            payload.put("watchAudioCompleted", Boolean.toString(
+                    watchAudioResult != null && watchAudioResult.success));
+            payload.put("watchAudioReason", watchAudioResult == null
+                    ? "not_finished" : watchAudioResult.reason);
+            payload.put("watchAudioDiagnostics", watchAudioResult == null
+                    ? watchAudioOutput == null ? "not_started" : watchAudioOutput.diagnostics()
+                    : watchAudioResult.diagnostics);
             payload.put("hapticAvailable", Boolean.toString(hapticAvailable));
             payload.put("hapticRequested", Boolean.toString(hapticRequested));
             payload.put("activityPermission", Boolean.toString(activityPermission));
@@ -606,6 +880,13 @@ public final class MainActivity extends Activity {
             payload.put("capabilityJson", capability.toJson());
             publishSystemCheckResult(config, checkId, payload);
             liveSystemCheck = null;
+        }
+
+        private String appendReason(String existing, String additional) {
+            if (existing == null || existing.isBlank()
+                    || "Motion and heart-rate readings passed the live watch check."
+                    .equals(existing)) return additional;
+            return existing + " " + additional;
         }
     }
 

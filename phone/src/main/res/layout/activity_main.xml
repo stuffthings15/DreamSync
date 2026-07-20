@@ -135,7 +135,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/btn_outline"
                 android:stateListAnimator="@null"
-                android:text="Run phone + watch check"
+                android:text="Run watch system check"
                 android:textAllCaps="false"
                 android:textColor="@color/ds_ice" />
         </LinearLayout>
@@ -152,7 +152,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
-                android:text="CUE PLAN"
+                android:text="SLEEP PROTECTION"
                 android:textColor="@color/ds_violet"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -171,7 +171,7 @@
                     android:checked="true"
                     android:paddingStart="8dp"
                     android:paddingVertical="8dp"
-                    android:text="Deep sleep cues"
+                    android:text="Protect sleep only (recommended)"
                     android:textColor="@color/ds_text"
                     android:textSize="15sp" />
 
@@ -182,7 +182,7 @@
                     android:buttonTint="@color/ds_indigo"
                     android:paddingStart="8dp"
                     android:paddingVertical="8dp"
-                    android:text="Lucid dream cues"
+                    android:text="Experimental watch sound (requires 7 baseline nights)"
                     android:textColor="@color/ds_text"
                     android:textSize="15sp" />
 
@@ -193,7 +193,8 @@
                     android:buttonTint="@color/ds_indigo"
                     android:paddingStart="8dp"
                     android:paddingVertical="8dp"
-                    android:text="Both"
+                    android:text=""
+                    android:visibility="gone"
                     android:textColor="@color/ds_text"
                     android:textSize="15sp" />
             </RadioGroup>
@@ -240,7 +241,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/btn_outline"
                     android:stateListAnimator="@null"
-                    android:text="Preview pink noise"
+                    android:text="Test phone fallback"
                     android:textAllCaps="false"
                     android:textColor="@color/ds_ice" />
 
@@ -252,7 +253,8 @@
                     android:layout_weight="1"
                     android:background="@drawable/btn_outline"
                     android:stateListAnimator="@null"
-                    android:text="Practice chime"
+                    android:text=""
+                    android:visibility="gone"
                     android:textAllCaps="false"
                     android:textColor="@color/ds_ice" />
             </LinearLayout>

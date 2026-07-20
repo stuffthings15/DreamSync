@@ -1,16 +1,14 @@
 package com.remote.DreamSync;
 
 import android.content.Context;
-import android.content.Intent;
-
-import androidx.core.content.ContextCompat;
-
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.wearable.DataItem;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
+import com.remote.DreamSync.shared.ProtectionConfig;
+import com.remote.DreamSync.shared.ProtectionMode;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -84,9 +82,13 @@ final class PhoneAutoControl {
     ) {
         android.content.SharedPreferences prefs = context.getSharedPreferences(
                 PREFS, Context.MODE_PRIVATE);
-        String mode = prefs.getString("auto_mode", "DEEP");
-        float gain = Math.max(0.005f, Math.min(0.10f,
-                prefs.getFloat("auto_gain", 0.04f)));
+        String mode = ProtectionMode.fromStored(
+                prefs.getString("auto_mode", ProtectionMode.PROTECT_ONLY.name())).name();
+        float gain = (float) new ProtectionConfig(
+                ProtectionMode.fromStored(mode),
+                prefs.getFloat("auto_gain", 0.04f),
+                prefs.getInt("safe_cue_night_streak", 0))
+                .initialOvernightGain();
         try {
             return new JSONObject()
                     .put("sessionId", sessionId)
@@ -103,11 +105,12 @@ final class PhoneAutoControl {
                     .put("sessionEndMin", 510)
                     .put("deepStableMin", 10)
                     .put("remStableMin", 5)
-                    .put("deepCueIntervalSec", 30)
-                    .put("deepCuesPerBlock", 6)
-                    .put("maxDeepBlocks", 2)
+                    .put("deepCueIntervalSec", 300)
+                    .put("deepCuesPerBlock", 4)
+                    .put("maxDeepBlocks", 1)
                     .put("lucidCueIntervalSec", 180)
-                    .put("maxLucidCues", 2)
+                    .put("maxLucidCues", 0)
+                    .put("safeCueNights", prefs.getInt("safe_cue_night_streak", 0))
                     // Capable watches use the full sensor suite. Unsupported trackers
                     // are ignored by the watch after its live capability check.
                     .put("enableRawPpg", true)
@@ -137,20 +140,6 @@ final class PhoneAutoControl {
         PutDataRequest request = map.asPutDataRequest();
         request.setUrgent();
         return Wearable.getDataClient(context).putDataItem(request);
-    }
-
-    static void startStandby(Context context) {
-        android.content.SharedPreferences prefs = context.getSharedPreferences(
-                PREFS, Context.MODE_PRIVATE);
-        Intent intent = new Intent(context, CuePlaybackService.class)
-                .setAction(CuePlaybackService.ACTION_AUTO_ENABLE)
-                .putExtra(CuePlaybackService.EXTRA_GAIN,
-                        prefs.getFloat("auto_gain", 0.04f))
-                .putExtra(CuePlaybackService.EXTRA_LOCAL_NODE_ID,
-                        prefs.getString("local_phone_node", ""))
-                .putExtra(CuePlaybackService.EXTRA_WATCH_NODE_ID,
-                        prefs.getString("bound_watch_node", ""));
-        ContextCompat.startForegroundService(context, intent);
     }
 
     private PhoneAutoControl() {}

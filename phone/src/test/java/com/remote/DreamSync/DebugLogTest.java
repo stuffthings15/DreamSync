@@ -14,7 +14,7 @@ public final class DebugLogTest {
 
         String report = DebugLog.pipelineVerification(events);
 
-        assertTrue(report.contains("1. Phone sound check: PASS"));
+        assertTrue(report.contains("1. Phone fallback sound check (secondary): PASS"));
         assertTrue(report.contains("2. Wear OS watch discovered: PASS"));
         assertTrue(report.contains("8. Sensor readings and quality received: PASS"));
         assertTrue(report.contains("12. Awake watch setup haptic: PASS"));
@@ -44,5 +44,19 @@ public final class DebugLogTest {
         assertTrue(report.contains("14. User-run live watch sensor check: PASS"));
         assertTrue(report.contains(
                 "15. Advanced sensor handling: FAIL"));
+    }
+
+    @Test public void pipelineReportsVerboseWatchSensorAudioAndReportStages() {
+        String report = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_MOTION_REGISTERED | selected=accelerometer\n"
+                        + "2 | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED | HEART_RATE_BPM\n"
+                        + "3 | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA | accepted=1\n"
+                        + "4 | WATCH_SYSTEM_CHECK_WATCH_AUDIO_COMPLETED | builtInSpeaker=true\n"
+                        + "5 | SYSTEM_CHECK_REPORT_DISPLAYED | status=PASS\n");
+
+        assertTrue(report.contains("16. Watch motion sensor registration: PASS"));
+        assertTrue(report.contains("17. Health Services live heart-rate path: PASS"));
+        assertTrue(report.contains("18. Watch speaker test: PASS"));
+        assertTrue(report.contains("19. Phone result report displayed: PASS"));
     }
 }

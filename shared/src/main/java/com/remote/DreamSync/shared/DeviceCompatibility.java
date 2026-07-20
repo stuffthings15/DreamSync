@@ -53,7 +53,7 @@ public final class DeviceCompatibility {
                 || !capabilities.motion || !capabilities.heartRate) {
             return Status.NOT_SUPPORTED;
         }
-        if (capabilities.samsungSdk && capabilities.ibi
+        if (capabilities.ibi
                 && capabilities.skinTemperature && capabilities.offWrist
                 && capabilities.liveSelfTestPassed) {
             return Status.FULLY_SUPPORTED;
@@ -64,12 +64,12 @@ public final class DeviceCompatibility {
     public String reason(Capabilities capabilities) {
         Status status = classify(capabilities);
         if (status == Status.FULLY_SUPPORTED) {
-            return "Motion, heart rate, IBI, skin temperature, and off-wrist checks passed.";
+            return "Enhanced protection: motion, heart rate, IBI, skin temperature, and off-wrist checks passed.";
         }
         if (status == Status.NOT_SUPPORTED) {
             return "Wear OS motion and heart-rate sensors are required.";
         }
-        return "Core motion and heart-rate monitoring is available; advanced sensor signals are incomplete or unverified.";
+        return "Core protection is available. Advanced features remain visible and enable independently when their live checks pass.";
     }
 
     /** Features are selected from live capability checks, never a model allow-list. */

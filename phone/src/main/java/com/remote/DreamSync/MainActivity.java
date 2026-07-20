@@ -35,6 +35,8 @@ import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.remote.DreamSync.shared.PeerSelector;
+import com.remote.DreamSync.shared.ProgressiveCuePolicy;
+import com.remote.DreamSync.shared.ProtectionMode;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 
 import org.json.JSONArray;
@@ -73,6 +75,7 @@ public final class MainActivity extends Activity {
     private boolean calibrationPromptShowing;
     private boolean calibrationEnablePending;
     private boolean audioPreviewInProgress;
+    private boolean systemCheckReportShowing;
     private String startingState = "";
     private int watchInstallPollAttempt;
     private String pendingExportJson = "";
@@ -88,11 +91,7 @@ public final class MainActivity extends Activity {
                 }
                 String state = intent.getStringExtra("state");
                 if (state != null && state.startsWith("SYSTEM_CHECK_")) {
-                    long completedUtcMs = getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .getLong("last_system_check_utc", 0L);
-                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                            .putLong("last_system_check_displayed_utc", completedUtcMs)
-                            .apply();
+                    restoreLatestSystemCheckStatus();
                 }
                 updateReadiness();
                 updatePowerState();
@@ -122,8 +121,10 @@ public final class MainActivity extends Activity {
         if (pref("active_session_id").isEmpty()) restoreNotificationProtection();
         showOnboardingOnce();
         wireActions();
-        if (autoEnabled()) PhoneAutoControl.startStandby(this);
-        else retryPendingRemoteDisable();
+        if (autoEnabled()) {
+            DebugLog.append(this, "PHONE_WAITING_PASSIVELY",
+                    "watch owns sleep detection and primary audio; no always-running phone service");
+        } else retryPendingRemoteDisable();
         updateReadiness();
     }
 
@@ -141,10 +142,13 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         gainSeek.setProgress(Math.max(1, Math.min(10,
                 Math.round(prefs.getFloat("auto_gain", 0.04f) * 100f))));
-        String mode = prefs.getString("auto_mode", "DEEP");
-        if ("LUCID".equals(mode)) modeGroup.check(R.id.modeLucid);
-        else if ("COMBINED".equals(mode)) modeGroup.check(R.id.modeCombined);
-        else modeGroup.check(R.id.modeDeep);
+        ProtectionMode mode = ProtectionMode.fromStored(prefs.getString(
+                "auto_mode", ProtectionMode.PROTECT_ONLY.name()));
+        modeGroup.check(mode == ProtectionMode.EXPERIMENTAL_AUDIO
+                ? R.id.modeLucid : R.id.modeDeep);
+        if (!mode.name().equals(prefs.getString("auto_mode", ""))) {
+            prefs.edit().putString("auto_mode", mode.name()).apply();
+        }
     }
 
     private void wireActions() {
@@ -159,7 +163,6 @@ public final class MainActivity extends Activity {
             }
         });
         findViewById(R.id.previewDeepButton).setOnClickListener(v -> previewCue("DEEP"));
-        findViewById(R.id.practiceLucidButton).setOnClickListener(v -> runLucidPractice());
         findViewById(R.id.openWatchButton).setOnClickListener(v -> setupOrOpenWatch());
         findViewById(R.id.systemCheckButton).setOnClickListener(v -> runSystemCheck());
         powerButton.setOnClickListener(v -> toggleAutomaticMode());
@@ -218,7 +221,7 @@ public final class MainActivity extends Activity {
         float gain = cueGain();
         statusText.setText(continueEnable
                 ? "Playing the test cue. Setup will continue after confirmed playback."
-                : "Playing the cue on the phone speaker...");
+                : "Playing the fallback cue on the phone speaker...");
         remoteExecutor.execute(() -> {
             AudioOutput.Result result = audio.play(type, gain, () -> {});
             if (result.success) {
@@ -273,17 +276,18 @@ public final class MainActivity extends Activity {
             DebugLog.append(this, "SYSTEM_CHECK_BLOCKED", "reason=no bound watch");
             return;
         }
-        statusText.setText("System check 1 of 2: testing the phone speaker...");
+        statusText.setText("Opening the watch check: sound, motion, and heart rate...");
         DebugLog.append(this, "SYSTEM_CHECK_REQUESTED",
-                "phoneAudio=true;watchMotion=true;watchHeartRate=true");
-        playCuePreview("DEEP", false, () -> confirmCueWasAudible(false));
+                "watchAudioPrimary=true;watchMotion=true;watchHeartRate=true;"
+                        + "phoneAudioFallback=true");
+        startWatchSystemCheck();
     }
 
     private void confirmCueWasAudible(boolean continueEnable) {
         if (continueEnable) showPowerStarting("CONFIRM THE SOUND YOU HEARD...");
         new AlertDialog.Builder(this)
                 .setTitle("Did you hear the test cue?")
-                .setMessage("Choose Yes only if the quiet pink-noise pair was audible from the phone speaker.")
+                .setMessage("Choose Yes only if the quiet pink-noise pair was audible from the secondary phone fallback speaker.")
                 .setPositiveButton("Yes", (dialog, which) -> {
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putBoolean("last_calibration_audible_confirmed", true)
@@ -377,35 +381,12 @@ public final class MainActivity extends Activity {
                 .apply();
     }
 
-    private void runLucidPractice() {
-        int count = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getInt("lucid_practice_count", 0);
-        new AlertDialog.Builder(this)
-                .setTitle("Lucid cue conditioning")
-                .setMessage("Current block: " + count + "/10\n\n"
-                        + "Play the exact chime. Ask: Am I dreaming? Check text or a clock twice. "
-                        + "Picture recognizing the chime inside a dream.")
-                .setPositiveButton(count >= 10 ? "Practice again" : "Play + record", (dialog, which) -> {
-                    previewCue("LUCID");
-                    int next = Math.min(10, getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .getInt("lucid_practice_count", 0) + 1);
-                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                            .putInt("lucid_practice_count", next)
-                            .putLong("lucid_practice_utc", System.currentTimeMillis())
-                            .apply();
-                    statusText.setText("Lucid conditioning recorded: " + next + "/10.");
-                    updateReadiness();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
     private void toggleAutomaticMode() {
         if (autoEnabled()) {
             startingState = "";
             turnDreamSyncOff();
         } else {
-            showPowerStarting("CHECKING PHONE SPEAKER...");
+            showPowerStarting("FINDING WATCH...");
             turnDreamSyncOn();
         }
     }
@@ -415,29 +396,16 @@ public final class MainActivity extends Activity {
         AudioOutput audio = new AudioOutput(this);
         AudioOutput.Result preflight = audio.preflight();
         if (!preflight.success) {
-            DebugLog.append(this, "TURN_ON_BLOCKED", "reason=" + preflight.reason);
-            statusText.setText("Not ready: " + preflight.reason + ".");
-            startingState = "";
-            updateReadiness();
-            return;
+            DebugLog.append(this, "PHONE_AUDIO_FALLBACK_UNAVAILABLE",
+                    "reason=" + preflight.reason + ";watchAudioPrimary=true");
         }
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
         boolean calibrationHeard = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("last_calibration_audible_confirmed", false);
         if (calibration.isEmpty() || !calibrationHeard) {
-            DebugLog.append(this, "TURN_ON_BLOCKED",
-                    "reason=audible sound calibration required");
-            beginGuidedCalibration();
-            return;
-        }
-        if (("LUCID".equals(selectedMode()) || "COMBINED".equals(selectedMode()))
-                && getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getInt("lucid_practice_count", 0) < 10) {
-            statusText.setText("Complete the 10-step lucid conditioning block first.");
-            startingState = "";
-            updatePowerState();
-            return;
+            DebugLog.append(this, "PHONE_AUDIO_FALLBACK_UNCALIBRATED",
+                    "watchAudioPrimary=true;automaticModeContinues=true");
         }
         String generation = UUID.randomUUID().toString();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
@@ -528,18 +496,8 @@ public final class MainActivity extends Activity {
                 .apply();
         startingState = "";
         updatePowerState();
-        try {
-            PhoneAutoControl.startStandby(this);
-            DebugLog.append(this, "PHONE_STANDBY_STARTED",
-                    "waiting continuously for watch sleep detection");
-        } catch (RuntimeException error) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putBoolean("auto_enabled", false).apply();
-            statusText.setText("Could not keep DreamSync ready: " + safeMessage(error));
-            DebugLog.append(this, "PHONE_STANDBY_FAILED", safeMessage(error));
-            updatePowerState();
-            return;
-        }
+        DebugLog.append(this, "PHONE_PASSIVE_READY",
+                "watch owns low-power detection and primary audio; phone service starts only for an opted-in fallback session");
         final String enrollmentId = enrollment;
         DebugLog.append(this, "AUTO_CONFIG_PUBLISH_REQUESTED",
                 "mode=" + mode + ";gain=" + gain + ";automaticEveryNight=true");
@@ -766,8 +724,7 @@ public final class MainActivity extends Activity {
         try {
             JSONObject summary = new JSONObject(summaryText);
             String line = "Session " + summary.optLong("minutes", 0) + " min"
-                    + " | Deep " + summary.optInt("deepCues", 0)
-                    + " | Lucid " + summary.optInt("lucidCues", 0)
+                    + " | Experimental pairs " + summary.optInt("deepCues", 0)
                     + " | Awakenings " + summary.optInt("awakeningCount", 0)
                     + " | WASO " + Math.round(summary.optDouble(
                     "wakeAfterSleepOnsetMinutes", 0.0)) + " min"
@@ -794,7 +751,6 @@ public final class MainActivity extends Activity {
         EditText disturbance = field(form, "How disturbing were cues? 0-10", true);
         EditText awareness = field(form, "Cue noticed: no / unsure / yes", false);
         EditText recall = field(form, "Dream recall 0-3", true);
-        EditText lucid = field(form, "Lucid dream: no / unsure / yes", false);
         EditText adverse = field(form, "Headache, nightmare, anxiety, sleepiness, or none", false);
         EditText notes = field(form, "Dream journal and notes", false);
 
@@ -813,7 +769,7 @@ public final class MainActivity extends Activity {
                             disturbance.getText().toString(), 0, 10, 0);
                     survey.cueAwareness = choice(awareness.getText().toString());
                     survey.dreamRecall = boundedInt(recall.getText().toString(), 0, 3, 0);
-                    survey.lucidDream = choice(lucid.getText().toString());
+                    survey.lucidDream = "UNSURE";
                     survey.adverseEffects = adverse.getText().toString().trim();
                     survey.dreamNotes = notes.getText().toString().trim();
                     survey.submittedUtcMs = System.currentTimeMillis();
@@ -822,6 +778,7 @@ public final class MainActivity extends Activity {
                         dao.upsertSurvey(survey);
                         SessionEntity session = dao.session(sessionId);
                         if (session != null) {
+                            updateSafeCueNightStreak(session, survey);
                             dao.upsertSession(session);
                             runOnUiThread(() -> {
                                 showFriendlySummary(session.summaryJson);
@@ -874,6 +831,28 @@ public final class MainActivity extends Activity {
                 .remove("last_calibration")
                 .putString("disturbance_adjusted_session", sessionId)
                 .apply();
+    }
+
+    private void updateSafeCueNightStreak(
+            SessionEntity session,
+            MorningSurveyEntity survey
+    ) {
+        if (!ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(session.mode)) return;
+        int cueLinkedArousals = 0;
+        try {
+            cueLinkedArousals = new JSONObject(session.summaryJson)
+                    .optInt("cueLinkedArousals", 0);
+        } catch (JSONException ignored) {}
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PREFS, MODE_PRIVATE);
+        int current = preferences.getInt("safe_cue_night_streak", 0);
+        int next = new ProgressiveCuePolicy().nextSafeNightStreak(
+                current, cueLinkedArousals, survey.disturbanceRating);
+        preferences.edit().putInt("safe_cue_night_streak", next).apply();
+        DebugLog.append(this, "EXPERIMENTAL_AUDIO_PROGRESSION",
+                "previousSafeNights=" + current + ";nextSafeNights=" + next
+                        + ";cueLinkedArousals=" + cueLinkedArousals
+                        + ";disturbance=" + survey.disturbanceRating);
     }
 
     private void showHistory() {
@@ -1111,8 +1090,6 @@ public final class MainActivity extends Activity {
                 .getString("last_calibration", "");
         boolean calibrationHeard = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("last_calibration_audible_confirmed", false);
-        int practice = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getInt("lucid_practice_count", 0);
         String compatibility = "not checked";
         String capabilityJson = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("watch_capabilities", "");
@@ -1127,11 +1104,19 @@ public final class MainActivity extends Activity {
                 .getInt("charge_reminder_record_count", 0);
         String systemCheck = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_system_check_status", "not run");
+        boolean watchAudioCompleted = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("last_system_check_watch_audio_completed", false);
+        String watchAudioState = watchAudioCompleted
+                ? getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("last_watch_audio_audible", false)
+                ? "heard" : "OS playback passed; hearing not confirmed"
+                : "not checked";
         readinessText.setText((autoEnabled() ? "ON" : "OFF")
-                + " | speaker " + (audio.success ? "ready" : audio.reason)
-                + " | calibration " + (calibration.isEmpty() || !calibrationHeard
-                ? "needed" : "heard + saved")
-                + " | lucid practice " + practice + "/10"
+                + " | watch sound primary " + watchAudioState
+                + " | phone fallback " + (audio.success ? "ready" : audio.reason)
+                + " / " + (calibration.isEmpty() || !calibrationHeard
+                ? "not calibrated" : "calibrated")
+                + " | mode " + ProtectionMode.fromStored(selectedMode()).name()
                 + " | watch " + compatibility
                 + " | system check " + systemCheck.toLowerCase(Locale.US)
                 + " | charge reminder " + (chargeRecords >= ChargeReminderScheduler.MIN_RECORDS
@@ -1191,8 +1176,8 @@ public final class MainActivity extends Activity {
                         + "Turn DreamSync On once. It passively watches for supported sleep signals every night and starts conservative confirmation after likely sleep. Turn it Off at any time. "
                         + "After three recorded sleep starts, the phone learns your usual sleep time and reminds you to charge the watch three hours earlier. Until then, charge it several hours before your normal sleep time. "
                         + "First validation targets Galaxy Watch Ultra 2024 and 2025. Other Galaxy Watch4-and-later models receive basic monitoring unless DreamSync's live sensor check confirms advanced support. Apple Watch is planned but is not supported in this release. "
-                        + "DreamSync is an adult wellness app that estimates cue-ready windows from wrist motion and heart rate. "
-                        + "Its deep cue pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
+                        + "Protect only is the default. Experimental watch sound stays locked until seven valid baseline nights are recorded and the watch passes its speaker and sensor checks. "
+                        + "Its optional sound pattern is shaped by peer-reviewed EEG research, but DreamSync does not measure EEG or reproduce laboratory phase locking. "
                         + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
                         + "Stop if cues disturb sleep or cause adverse effects, and consult a qualified healthcare professional for medical advice. "
                         + "Data stays local unless you export it.")
@@ -1284,7 +1269,15 @@ public final class MainActivity extends Activity {
                         .replace('_', ' ');
                 live = values.optString("manufacturer", "") + " "
                         + values.optString("model", "") + "\n"
-                        + status + "\n" + values.optString("reason", "");
+                        + status + "\n" + values.optString("reason", "") + "\n\n"
+                        + "Available now:\n"
+                        + featureLine("Motion", values.optBoolean("motion"))
+                        + featureLine("Heart rate", values.optBoolean("standardHeartRate"))
+                        + featureLine("IBI / HRV", values.optBoolean("ibi"))
+                        + featureLine("Skin temperature", values.optBoolean("skinTemperature"))
+                        + featureLine("Off-wrist protection", values.optBoolean("offWrist"))
+                        + featureLine("Raw PPG", values.optBoolean("rawPpg"))
+                        + "\nHigher-end features turn on independently when the watch reports them.";
             } catch (JSONException error) {
                 live = "Live compatibility data could not be read. Run a new automatic session.";
             }
@@ -1316,14 +1309,13 @@ public final class MainActivity extends Activity {
                         + "<b>What DreamSync does</b><br>"
                         + "1. Turn <b>DreamSync On</b> once. Low-power watch monitoring checks for an asleep-state signal, or uses a conservative passive heart-rate fallback on compatible watches, every night until you turn it Off.<br>"
                         + "2. Your watch estimates sleep onset from sustained low motion, heart-rate change, signal quality, time of night, and—when the approved Samsung SDK is packaged—IBI stability, skin-temperature trend, and off-wrist status. This is an estimate, not a sleep-stage diagnosis.<br>"
-                        + "3. Cues are allowed only after a stable, low-motion period, from 25 to 145 minutes after estimated sleep onset.<br>"
-                        + "4. A deep cue is two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.<br>"
-                        + "5. Default deep mode requests no more than 12 paired cues. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops cues for the night and lowers the saved session gain. A seven-night rolling baseline personalizes safe estimates; earlier nights use conservative defaults.<br><br>"
+                        + "3. Protect only monitors continuity without playing sleep audio. Experimental watch sound remains locked until seven valid baseline nights are recorded.<br>"
+                        + "4. An experimental sound is two 50 ms pink-noise bursts, 1.075 seconds apart, with 5 ms fades.<br>"
+                        + "5. The first eligible cue night allows one pair. The allowance can rise to two, then four only after consecutive low-disturbance nights. Each pair is followed by five quiet observation minutes. Any arousal sign starts a 20-minute quiet period. The first cue-linked wake sign stops sound for the night and lowers the next gain by 30%.<br><br>"
                         + "<b>What the peer-reviewed study found</b><br>"
                         + "In a randomized crossover laboratory study of 14 healthy young men, EEG phase-locked paired tones increased slow-oscillation power and amplitude without changing time spent in the measured sleep stages. About 172 paired stimulations were delivered on average across 120 minutes. Hormone analyses used 10 to 14 participants, and immune-cell results used a nine-person subset; growth hormone was unchanged. DreamSync does not measure or claim those outcomes.<br><br>"
                         + "<b>The important difference</b><br>"
-                        + "The laboratory system used EEG, in-ear headphones, and sound calibrated to 50 dB SPL. DreamSync has no EEG, blocks headphone routes, and uses a user-calibrated phone speaker level rather than a laboratory SPL value. It copies the published acoustic pattern, not the phase-locking method. Open-loop research did not show a word-pair memory benefit and some participants noticed the sounds; this is why DreamSync uses fewer, barely audible cues and stops early when waking is detected.<br><br>"
-                        + "Lucid cues are a separate conditioning feature. These studies do not prove that DreamSync causes lucid dreams.<br><br>"
+                        + "The laboratory system used EEG, in-ear headphones, and sound calibrated to 50 dB SPL. DreamSync has no EEG, blocks headphone routes, and uses the built-in watch speaker. Optional phone fallback stays Off unless the user enables it. DreamSync copies the published acoustic pattern, not the phase-locking method. Open-loop research did not show a word-pair memory benefit and some participants noticed the sounds; this is why DreamSync uses fewer, barely audible cues and stops early when waking is detected.<br><br>"
                         + "<b>Peer-reviewed sources</b><br>"
                         + "<a href=\"https://doi.org/10.1038/s41467-017-02170-3\">Besedovsky et al., Nature Communications (2017)</a><br>"
                         + "<a href=\"https://doi.org/10.1016/j.neuron.2013.03.006\">Ngo et al., Neuron (2013)</a><br>"
@@ -1344,13 +1336,17 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Privacy & safety")
                 .setMessage("DreamSync uses motion and heart-rate readings from your watch only to estimate cue-ready windows during a night session. "
-                        + "Session history, cue events, check-ins, and dream notes stay on your devices unless you choose Export. "
+                        + "Session history, cue events, check-ins, and night notes stay on your devices unless you choose Export. "
                         + "DreamSync has no account, ads, analytics, or automatic cloud upload. You can export or delete your data at any time.\n\n"
-                        + "Wellness only: DreamSync does not measure EEG or guarantee deeper sleep, memory, immune, or lucid-dream outcomes. "
+                        + "Wellness only: DreamSync does not measure EEG or guarantee deeper sleep, memory, immune, or dream outcomes. "
                         + "It is not a medical device and does not diagnose, treat, cure, or prevent any medical condition. "
                         + "Stop using it if cues disturb your sleep, and consult a qualified healthcare professional for medical advice, diagnosis, or treatment.")
                 .setPositiveButton("Done", null)
                 .show();
+    }
+
+    private String featureLine(String name, boolean available) {
+        return (available ? "✓ " : "— ") + name + "\n";
     }
 
     @Override protected void onStart() {
@@ -1384,7 +1380,8 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         long completedUtcMs = prefs.getLong("last_system_check_utc", 0L);
         long displayedUtcMs = prefs.getLong("last_system_check_displayed_utc", 0L);
-        if (completedUtcMs <= 0L || completedUtcMs <= displayedUtcMs) return;
+        if (completedUtcMs <= 0L || completedUtcMs <= displayedUtcMs
+                || systemCheckReportShowing || isFinishing()) return;
         String result = prefs.getString("last_system_check_status", "FAIL");
         if (!"PASS".equals(result)) result = "FAIL";
         String reason = prefs.getString(
@@ -1393,6 +1390,77 @@ public final class MainActivity extends Activity {
         prefs.edit().putLong("last_system_check_displayed_utc", completedUtcMs).apply();
         DebugLog.append(this, "SYSTEM_CHECK_RESULT_RESTORED",
                 "status=" + result + ";reason=" + reason);
+        showSystemCheckReport(result, reason, completedUtcMs);
+    }
+
+    private void showSystemCheckReport(String result, String reason, long completedUtcMs) {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int motionSamples = prefs.getInt("last_system_check_motion_samples", 0);
+        int heartSamples = prefs.getInt("last_system_check_heart_samples", 0);
+        boolean motionRegistered = prefs.getBoolean(
+                "last_system_check_motion_registered", false);
+        boolean heartRegistered = prefs.getBoolean(
+                "last_system_check_heart_registered", false);
+        boolean watchAudioStarted = prefs.getBoolean(
+                "last_system_check_watch_audio_started", false);
+        boolean watchAudioCompleted = prefs.getBoolean(
+                "last_system_check_watch_audio_completed", false);
+        String watchAudioReason = prefs.getString(
+                "last_system_check_watch_audio_reason", "not reported");
+        String measureAvailability = prefs.getString(
+                "last_system_check_measure_availability", "not reported");
+        String message = "Result: " + result + "\n"
+                + "Reason: " + reason + "\n\n"
+                + "Watch sound: " + (watchAudioCompleted ? "PLAYBACK COMPLETED"
+                : watchAudioStarted ? "STARTED BUT FAILED" : "DID NOT START") + "\n"
+                + "Audio detail: " + watchAudioReason + "\n"
+                + "Motion: " + motionSamples + " samples; registered="
+                + motionRegistered + "\n"
+                + "Heart rate: " + heartSamples + " samples; registered="
+                + heartRegistered + "\n"
+                + "Health Services heart state: " + measureAvailability + "\n\n"
+                + "Export Debug Log contains the sensor inventory, every registration attempt, "
+                + "5/15/30-second progress, audio route, and the final payload.";
+        systemCheckReportShowing = true;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle("Watch check " + result)
+                .setMessage(message)
+                .setCancelable(false)
+                .setOnDismissListener(dialog -> systemCheckReportShowing = false);
+        if (watchAudioStarted || watchAudioCompleted) {
+            builder.setPositiveButton("I heard watch sound", (dialog, which) -> {
+                prefs.edit()
+                        .putBoolean("last_watch_audio_audible", true)
+                        .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
+                        .apply();
+                DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_AUDIBLE_CONFIRMED",
+                        "completedUtcMs=" + completedUtcMs);
+            });
+            builder.setNegativeButton("No watch sound", (dialog, which) -> {
+                String failure = "Watch reported playback, but the user heard no watch sound.";
+                prefs.edit()
+                        .putBoolean("last_watch_audio_audible", false)
+                        .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
+                        .putString("last_system_check_status", "FAIL")
+                        .putString("last_system_check_reason", failure)
+                        .apply();
+                statusText.setText("Watch system check FAIL: " + failure);
+                DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_NOT_AUDIBLE", failure);
+            });
+            builder.setNeutralButton("Close", null);
+        } else {
+            builder.setPositiveButton("Close", null);
+        }
+        builder.show();
+        DebugLog.append(this, "SYSTEM_CHECK_REPORT_DISPLAYED",
+                "status=" + result + ";motionSamples=" + motionSamples
+                        + ";heartSamples=" + heartSamples
+                        + ";watchAudioStarted=" + watchAudioStarted
+                        + ";watchAudioCompleted=" + watchAudioCompleted);
+    }
+
+    boolean isSystemCheckReportShowingForTest() {
+        return systemCheckReportShowing;
     }
 
     private void setupOrOpenWatch() {
@@ -1488,9 +1556,8 @@ public final class MainActivity extends Activity {
 
     private String selectedMode() {
         int checked = modeGroup.getCheckedRadioButtonId();
-        if (checked == R.id.modeLucid) return "LUCID";
-        if (checked == R.id.modeCombined) return "COMBINED";
-        return "DEEP";
+        if (checked == R.id.modeLucid) return ProtectionMode.EXPERIMENTAL_AUDIO.name();
+        return ProtectionMode.PROTECT_ONLY.name();
     }
 
     private float cueGain() {

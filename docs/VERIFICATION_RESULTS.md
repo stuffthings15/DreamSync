@@ -4,6 +4,19 @@ Date: 20 July 2026
 
 ## Verified locally
 
+### Current 1.3.0 test build
+
+- Prepared phone version code 33 and Wear OS version code 34 (`1.3.0-test`). These builds have not been uploaded to Google Play in this verification pass.
+- 70 local unit tests passed with 0 failures, 0 errors, and 0 skipped.
+- Six phone and six Wear OS instrumentation tests compile into test APKs. They were not executed on physical hardware in this pass.
+- Phone and Wear OS lint passed with no blocking errors.
+- Phone and Wear OS debug APKs built successfully.
+- Phone APK SHA-256: `5A4A0EB562A5ACE0947F52D6D13433D94A24CFC8180E2DDEB3447EB108BBD9E3`.
+- Wear OS APK SHA-256: `7F0BDA3644428BCA1054C762212735232676DC359BBFC06E72B5DFB5ED0993EC`.
+- Protect only is the default. Experimental watch sound requires seven valid baseline nights, starts at one pair, can progress to two and four after low-disturbance nights, observes for five minutes after each pair, pauses 20 minutes after arousal signs, and reduces the next gain by 30% after a cue-linked arousal.
+- Passive watch monitoring is restored after reboot through WorkManager. A fresh phone-watch handshake is still required before any sound.
+- The compatibility screen reports motion, standard heart rate, IBI/HRV, skin temperature, off-wrist protection, and raw PPG independently; higher-end features remain enabled whenever the live provider reports them.
+
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
@@ -33,16 +46,16 @@ Date: 20 July 2026
 ## Sleep-continuity implementation
 
 - One persistent On/Off choice controls nightly operation. While On, Wear Health Services uses the optional asleep-state signal or a conservative three-sample passive-HR candidate inside the normal sleep window to create a fresh confirmation session every night.
-- Turn On now guides the required one-time quiet cue calibration, finds reachable or previously known watches, opens the official watch Play install when the watch app is missing, polls for completion, then binds and synchronizes setup.
-- Sound checks wait for confirmed playback instead of assuming the foreground service succeeded. The phone explicitly selects the built-in speaker when available, uses local PCM WAV playback, uses AudioTrack on Android 8, reports the exact backend and route failure, and saves it to a privacy-safe Export Debug Log file.
-- Sound calibration now requires an explicit user confirmation that the cue was audible. **Run phone + watch check** then launches a bound, expiring 45-second watch test that records actual motion and heart-rate samples, permissions, registration, off-wrist state, and every available advanced-sensor count. Missing results fail after two minutes and are logged.
-- The live check now repairs missing activity/heart permission, sends a 240 ms awake-only test vibration, states that sound remains on the phone, and restores its final pass/fail reason when the phone screen returns.
+- Turn On finds reachable or previously known watches, opens the official watch Play install when the watch app is missing, polls for completion, then binds and synchronizes setup. Phone-speaker calibration is optional because the phone is now fallback output.
+- The watch built-in speaker is the primary cue path. A streaming AudioTrack selects and verifies that route. Phone playback runs only when watch audio fails before start; no fallback runs after watch playback begins.
+- **Run watch system check** launches a bound, expiring 45-second watch test. It records the standard sensor inventory, every motion registration attempt, Health Services MeasureClient capability/registration/availability/data, standard and Samsung heart paths, watch-speaker preflight/start/completion, vibration, permissions, off-wrist state, and advanced sensors.
+- The phone opens a detailed pass/fail report after every returned result and asks whether watch audio was actually heard. The debug export includes 5/15/30-second progress and the full final payload. Missing results fail after two minutes.
 - The watch contains no user settings. It automatically opens the phone controls on manual launch and automatically retries delayed phone configuration during first-time setup.
 - Passive HR alone never enables a cue. Higher-rate sustained stillness, fresh heart rate, signal quality, and all later safety gates remain required.
 - The phone keeps a visible low-priority connected-device service while On; reboot and package-update receivers restore both phone readiness and watch passive registration.
 - Deterministic flow: On and waiting, passive asleep signal, confirming sleep, stable sleep, possible arousal, recovered, and session stopped.
 - Sleep onset still requires sustained low motion plus fresh cardiac data.
-- Motion-only sessions log but cannot trigger deep or lucid cues.
+- Motion-only sessions log but cannot trigger experimental sound.
 - A seven-night rolling median baseline stores resting HR, IBI, RMSSD, skin temperature, and onset timing while early nights use conservative defaults.
 - Arousal starts a 20-minute quiet period.
 - The first cue-linked wake sign disables cues for the night and lowers gain.
@@ -71,7 +84,7 @@ Date: 20 July 2026
 - The first terminal cause is preserved, exact watch terminal outcomes are stored, and a valid summary clears only the current session while preserving the recurring On enrollment for the next night.
 - Cue allowance is consumed only after `AUDIO_STARTED`.
 - Speaker route, mute, volume, focus, interruptions, initialization, calibration, and waveform version are checked.
-- No sleep haptics are used. The debug export explicitly reports `NONE_DURING_SLEEP`; cue audio is phone-speaker only.
+- No sleep haptics are used. The debug export explicitly reports `NONE_DURING_SLEEP`; cue audio is watch-speaker primary with phone-speaker pre-start fallback.
 - The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states. The watch gives one short confirmation vibration only while the user is awake after passive monitoring registers.
 - Phone loss, stale sensors, off-wrist state, low battery, storage failure, route problems, and process interruption prevent or disable cueing.
 - Logs, summaries, configuration, cue lifecycle, surveys, capabilities, and failures are local and exportable.

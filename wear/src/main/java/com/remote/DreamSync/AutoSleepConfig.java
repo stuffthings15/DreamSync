@@ -3,6 +3,8 @@ package com.remote.DreamSync;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.remote.DreamSync.shared.ProtectionMode;
+
 import org.json.JSONObject;
 
 final class AutoSleepConfig {
@@ -13,7 +15,7 @@ final class AutoSleepConfig {
     String enrollmentId = "";
     String phoneNodeId = "";
     String watchNodeId = "";
-    String mode = "DEEP";
+    String mode = ProtectionMode.PROTECT_ONLY.name();
     String status = "Off";
     float cueGain = 0.04f;
     long lastSessionUtcMs;
@@ -32,7 +34,8 @@ final class AutoSleepConfig {
             config.enrollmentId = safe(object.optString("enrollmentId", ""));
             config.phoneNodeId = safe(object.optString("phoneNodeId", ""));
             config.watchNodeId = safe(object.optString("watchNodeId", ""));
-            config.mode = sanitizeMode(object.optString("mode", "DEEP"));
+            config.mode = sanitizeMode(object.optString(
+                    "mode", ProtectionMode.PROTECT_ONLY.name()));
             config.cueGain = clampGain((float) object.optDouble("cueGain", 0.04));
             config.typicalSleepMinute = clampMinute(
                     object.optInt("typicalSleepMinute", -1));
@@ -50,7 +53,8 @@ final class AutoSleepConfig {
         config.enrollmentId = p.getString("enrollmentId", "");
         config.phoneNodeId = p.getString("phoneNodeId", "");
         config.watchNodeId = p.getString("watchNodeId", "");
-        config.mode = sanitizeMode(p.getString("mode", "DEEP"));
+        config.mode = sanitizeMode(p.getString(
+                "mode", ProtectionMode.PROTECT_ONLY.name()));
         config.status = p.getString("status", config.enabled ? "On" : "Off");
         config.cueGain = clampGain(p.getFloat("cueGain", 0.04f));
         config.lastSessionUtcMs = p.getLong("lastSessionUtcMs", 0L);
@@ -106,8 +110,7 @@ final class AutoSleepConfig {
     }
 
     private static String sanitizeMode(String value) {
-        if ("LUCID".equals(value) || "COMBINED".equals(value)) return value;
-        return "DEEP";
+        return ProtectionMode.fromStored(value).name();
     }
 
     private static float clampGain(float value) {

@@ -8,10 +8,11 @@ Date: 2026-07-20
 - Watch: Samsung or other Wear OS 3+ watch delivered through Google Play and passing DreamSync's capability check.
 - One persistent On/Off control on the phone. While On, the watch waits for likely sleep and starts a fresh nightly monitoring session automatically.
 - Core sensing uses watch motion and heart rate. Missing, stale, off-wrist, low-battery, or low-confidence data blocks cues.
-- Cue audio plays from the phone speaker. The phone shows clear `OFF`, `STARTING`, `ON`, and watch-confirmed states.
+- Protect only is the default and plays no sleep sound. Experimental watch sound stays locked until seven valid baseline nights, then begins at one pair and can rise to two and four only after low-disturbance nights.
+- Experimental audio plays from the built-in watch speaker. Phone fallback is Off unless the user explicitly enables it. The phone shows clear `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 - The watch has no settings. Manual launch refers the user to the phone. One short awake-only vibration confirms passive monitoring registration; no haptics are used during sleep.
 - Setup check, full-chain debug export, local history/export/deletion, watchdogs, and fail-closed protocol checks are included.
-- The awake watch check requests missing activity/heart permissions, sends a test vibration, records live motion and heart readings, and restores its final result on the phone.
+- The awake watch check requests missing activity/heart permissions, plays a watch-speaker cue, sends a test vibration, tries three standard motion paths, uses Wear Health Services for live heart rate, records every result, and opens a detailed report on the phone.
 - Durable watch results tolerate reasonable phone/watch clock drift. Time-sensitive cue messages keep the strict five-second future-time limit.
 
 ## High-end Samsung path
@@ -20,9 +21,9 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.2.7-test`, version code 29.
-- Wear OS `1.2.7-test`, version code 30.
-- 70 executed checks: 55 shared, 9 phone unit, and 6 phone instrumentation tests passed.
+- Phone `1.3.0-test`, version code 33.
+- Wear OS `1.3.0-test`, version code 34.
+- Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
 - Six Wear OS instrumentation tests compile; real watch sensors and vibration still require the physical Watch Ultra.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.
 

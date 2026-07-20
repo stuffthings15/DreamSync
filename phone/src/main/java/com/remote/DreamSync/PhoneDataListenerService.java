@@ -16,6 +16,7 @@ import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 import com.remote.DreamSync.shared.MessageGuard;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
+import com.remote.DreamSync.shared.ProtectionMode;
 import com.remote.DreamSync.shared.SessionOutcome;
 
 import org.json.JSONObject;
@@ -68,6 +69,12 @@ public final class PhoneDataListenerService extends WearableListenerService {
                     } else {
                         DebugLog.append(this, "WATCH_DIAGNOSTIC_REJECTED",
                                 rejection);
+                    }
+                    String base = com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX
+                            + envelope.sessionId + "/";
+                    if (path.startsWith(base)) {
+                        Wearable.getDataClient(this).deleteDataItems(
+                                event.getDataItem().getUri());
                     }
                 } else if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_AUTO_STATE_PREFIX
                         + envelope.sessionId) && validAutoEnvelope(envelope, sourceNodeId,
@@ -159,7 +166,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
         SessionEntity session = new SessionEntity();
         session.sessionId = envelope.sessionId;
         session.mode = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("auto_mode", "DEEP");
+                .getString("auto_mode", ProtectionMode.PROTECT_ONLY.name());
         session.state = "AUTO_STARTING";
         session.startUtcMs = now;
         session.configurationJson = config.toString();
@@ -169,22 +176,27 @@ public final class PhoneDataListenerService extends WearableListenerService {
         session.waveformVersion = com.remote.DreamSync.shared.CueWaveforms.VERSION;
         databaseExecutor.execute(() -> PhoneDatabase.get(this).dao().upsertSession(session));
 
-        Intent audio = new Intent(this, CuePlaybackService.class)
-                .setAction(CuePlaybackService.ACTION_AUTO_SESSION)
-                .putExtra(CuePlaybackService.EXTRA_SESSION_ID, envelope.sessionId)
-                .putExtra(CuePlaybackService.EXTRA_LOCAL_NODE_ID, phoneNode)
-                .putExtra(CuePlaybackService.EXTRA_WATCH_NODE_ID, watchNode)
-                .putExtra(CuePlaybackService.EXTRA_GAIN,
-                        getSharedPreferences(PREFS, MODE_PRIVATE)
-                                .getFloat("auto_gain", 0.04f));
-        try {
-            ContextCompat.startForegroundService(this, audio);
-            DebugLog.append(this, "AUTO_AUDIO_STANDBY_STARTED",
-                    "session pending watch sensor handshake");
-        } catch (RuntimeException error) {
-            failAutoSession(envelope.sessionId,
-                    "Phone standby could not start. No cues will play.");
-            return;
+        if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("phone_audio_fallback_enabled", false)) {
+            Intent audio = new Intent(this, CuePlaybackService.class)
+                    .setAction(CuePlaybackService.ACTION_AUTO_SESSION)
+                    .putExtra(CuePlaybackService.EXTRA_SESSION_ID, envelope.sessionId)
+                    .putExtra(CuePlaybackService.EXTRA_LOCAL_NODE_ID, phoneNode)
+                    .putExtra(CuePlaybackService.EXTRA_WATCH_NODE_ID, watchNode)
+                    .putExtra(CuePlaybackService.EXTRA_GAIN,
+                            getSharedPreferences(PREFS, MODE_PRIVATE)
+                                    .getFloat("auto_gain", 0.04f));
+            try {
+                ContextCompat.startForegroundService(this, audio);
+                DebugLog.append(this, "PHONE_AUDIO_FALLBACK_READY",
+                        "userOptIn=true;watchSpeakerPrimary=true");
+            } catch (RuntimeException error) {
+                DebugLog.append(this, "PHONE_AUDIO_FALLBACK_UNAVAILABLE",
+                        "watchSessionContinues=true;reason=" + safeMessage(error));
+            }
+        } else {
+            DebugLog.append(this, "PHONE_AUDIO_FALLBACK_DISABLED",
+                    "default=false;watchSpeakerPrimary=true");
         }
         PhoneAutoControl.publishSessionConfig(
                         this, envelope.sessionId, phoneNode, watchNode, config)
@@ -279,12 +291,7 @@ public final class PhoneDataListenerService extends WearableListenerService {
             edit.remove("bound_watch_node").remove("local_phone_node");
         }
         edit.apply();
-        if (autoEnabled) {
-            startService(new Intent(this, CuePlaybackService.class)
-                    .setAction(CuePlaybackService.ACTION_STANDBY));
-        } else {
-            stopService(new Intent(this, CuePlaybackService.class));
-        }
+        stopService(new Intent(this, CuePlaybackService.class));
         restoreNotificationProtection();
         databaseExecutor.execute(() -> {
             PhoneDao dao = PhoneDatabase.get(this).dao();
@@ -364,8 +371,11 @@ public final class PhoneDataListenerService extends WearableListenerService {
     ) {
         if (!com.remote.DreamSync.shared.Protocol.TYPE_DIAGNOSTIC.equals(
                 envelope.messageType)) return "reason=WRONG_TYPE";
-        if (!path.equals(com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX
-                + envelope.sessionId)) return "reason=WRONG_PATH";
+        String expectedPath = com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX
+                + envelope.sessionId;
+        if (!path.equals(expectedPath) && !path.startsWith(expectedPath + "/")) {
+            return "reason=WRONG_PATH";
+        }
         String active = pref("active_session_id");
         String enrollment = pref("auto_enrollment_id");
         if (!envelope.sessionId.equals(active) && !envelope.sessionId.equals(enrollment)) {
@@ -428,6 +438,34 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";lastHeartBpm=" + envelope.payload.getOrDefault("lastHeartBpm", "")
                 + ";motionRegistered=" + envelope.payload.getOrDefault("motionRegistered", "")
                 + ";heartRegistered=" + envelope.payload.getOrDefault("heartRegistered", "")
+                + ";motionSensor=" + cleanDetails(
+                envelope.payload.getOrDefault("motionSensor", ""))
+                + ";motionRegistrationDetails=" + cleanDetails(
+                envelope.payload.getOrDefault("motionRegistrationDetails", ""))
+                + ";sensorInventory=" + cleanDetails(
+                envelope.payload.getOrDefault("sensorInventory", ""))
+                + ";standardHeartRegistered="
+                + envelope.payload.getOrDefault("standardHeartRegistered", "")
+                + ";standardHeartSamples="
+                + envelope.payload.getOrDefault("standardHeartSamples", "")
+                + ";measureSupported="
+                + envelope.payload.getOrDefault("measureSupported", "")
+                + ";measureRegistered="
+                + envelope.payload.getOrDefault("measureRegistered", "")
+                + ";measureAvailability=" + cleanDetails(
+                envelope.payload.getOrDefault("measureAvailability", ""))
+                + ";measureHeartSamples="
+                + envelope.payload.getOrDefault("measureHeartSamples", "")
+                + ";samsungHeartSamples="
+                + envelope.payload.getOrDefault("samsungHeartSamples", "")
+                + ";watchAudioStarted="
+                + envelope.payload.getOrDefault("watchAudioStarted", "")
+                + ";watchAudioCompleted="
+                + envelope.payload.getOrDefault("watchAudioCompleted", "")
+                + ";watchAudioReason=" + cleanDetails(
+                envelope.payload.getOrDefault("watchAudioReason", ""))
+                + ";watchAudioDiagnostics=" + cleanDetails(
+                envelope.payload.getOrDefault("watchAudioDiagnostics", ""))
                 + ";hapticAvailable=" + envelope.payload.getOrDefault("hapticAvailable", "")
                 + ";hapticRequested=" + envelope.payload.getOrDefault("hapticRequested", "")
                 + ";offWrist=" + envelope.payload.getOrDefault("offWrist", "")
@@ -453,6 +491,23 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 PREFS, MODE_PRIVATE).edit()
                 .putString("last_system_check_status", status)
                 .putString("last_system_check_reason", reason)
+                .putString("last_system_check_details", details)
+                .putInt("last_system_check_motion_samples", integer(
+                        envelope.payload.getOrDefault("motionSamples", "0")))
+                .putInt("last_system_check_heart_samples", integer(
+                        envelope.payload.getOrDefault("heartSamples", "0")))
+                .putBoolean("last_system_check_motion_registered", Boolean.parseBoolean(
+                        envelope.payload.getOrDefault("motionRegistered", "false")))
+                .putBoolean("last_system_check_heart_registered", Boolean.parseBoolean(
+                        envelope.payload.getOrDefault("heartRegistered", "false")))
+                .putBoolean("last_system_check_watch_audio_started", Boolean.parseBoolean(
+                        envelope.payload.getOrDefault("watchAudioStarted", "false")))
+                .putBoolean("last_system_check_watch_audio_completed", Boolean.parseBoolean(
+                        envelope.payload.getOrDefault("watchAudioCompleted", "false")))
+                .putString("last_system_check_watch_audio_reason", cleanStatus(
+                        envelope.payload.getOrDefault("watchAudioReason", "")))
+                .putString("last_system_check_measure_availability", cleanStatus(
+                        envelope.payload.getOrDefault("measureAvailability", "")))
                 .putLong("last_system_check_utc", System.currentTimeMillis());
         if (envelope.cueId.equals(pref("pending_system_check_id"))) {
             edit.remove("pending_system_check_id");
@@ -567,6 +622,22 @@ public final class PhoneDataListenerService extends WearableListenerService {
 
     private String cleanStatus(String status) {
         return status.length() > 256 ? status.substring(0, 256) : status;
+    }
+
+    private String cleanDetails(String details) {
+        if (details == null) return "";
+        String clean = details.replace('\r', ' ').replace('\n', ' ');
+        return clean.length() > 4_000 ? clean.substring(0, 4_000) : clean;
+    }
+
+    private String safeMessage(Throwable error) {
+        if (error == null || error.getMessage() == null) return "unknown";
+        return cleanDetails(error.getMessage());
+    }
+
+    private int integer(String value) {
+        try { return Integer.parseInt(value); }
+        catch (RuntimeException ignored) { return 0; }
     }
 
     private String pref(String key) {

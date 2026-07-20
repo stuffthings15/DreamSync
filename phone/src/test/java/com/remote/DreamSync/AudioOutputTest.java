@@ -2,10 +2,17 @@ package com.remote.DreamSync;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public final class AudioOutputTest {
+    @Test public void availableBluetoothRoutesDoNotHideThePhoneSpeaker() {
+        assertTrue(AudioOutput.hasPhoneSpeaker(1, 2, 7, 8, 18));
+        assertFalse(AudioOutput.hasPhoneSpeaker(1, 7, 8, 18));
+    }
+
     @Test public void pcm16ClampsGainAndSamples() {
         short[] encoded = AudioOutput.pcm16(
                 new float[]{-2.0f, -1.0f, 0.0f, 0.5f, 1.0f, 2.0f}, 1.0f);

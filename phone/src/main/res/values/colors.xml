@@ -12,5 +12,6 @@
     <color name="ds_cream">#F5F0E1</color>
     <color name="ds_text">#EDEFFA</color>
     <color name="ds_muted">#9AA3C7</color>
+    <color name="ds_success">#72D6A0</color>
     <color name="ds_danger">#C05C63</color>
 </resources>

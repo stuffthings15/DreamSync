@@ -2,6 +2,10 @@ package com.remote.DreamSync;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 
 import androidx.health.services.client.HealthServices;
 import androidx.health.services.client.PassiveMonitoringClient;
@@ -21,6 +25,7 @@ import java.util.concurrent.Executor;
 
 final class AutoSleepMonitor {
     private static final Executor DIRECT = Runnable::run;
+    private static final String FEEDBACK_PREFS = "dreamsync_watch_feedback";
 
     static void enable(Context input, AutoSleepConfig config) {
         Context context = input.getApplicationContext();
@@ -76,6 +81,7 @@ final class AutoSleepMonitor {
                                         + passiveHeartRateSupported
                                         + ";hapticsDuringSleep=OFF"
                                         + ";audioOutput=PHONE_SPEAKER");
+                        confirmEnabledHaptic(context, config);
                         publishState(context, config, "ON", config.status);
                         broadcast(context, config.status);
                     } catch (Exception error) {
@@ -103,6 +109,8 @@ final class AutoSleepMonitor {
             if (notifyPhone && config.validBinding()) {
                 publishState(context, config, "OFF", "DreamSync is Off on the watch.");
             }
+            context.getSharedPreferences(FEEDBACK_PREFS, Context.MODE_PRIVATE)
+                    .edit().putBoolean("enabled_haptic_sent", false).apply();
             AutoSleepConfig.clear(context);
             broadcast(context, "DreamSync is Off.");
         }, DIRECT);
@@ -155,6 +163,30 @@ final class AutoSleepMonitor {
         context.sendBroadcast(new Intent(MainActivity.ACTION_AUTO_STATUS)
                 .setPackage(context.getPackageName())
                 .putExtra("status", status));
+    }
+
+    private static void confirmEnabledHaptic(Context context, AutoSleepConfig config) {
+        android.content.SharedPreferences feedback = context.getSharedPreferences(
+                FEEDBACK_PREFS, Context.MODE_PRIVATE);
+        if (feedback.getBoolean("enabled_haptic_sent", false)) return;
+        Vibrator vibrator;
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager manager = (VibratorManager) context.getSystemService(
+                    Context.VIBRATOR_MANAGER_SERVICE);
+            vibrator = manager == null ? null : manager.getDefaultVibrator();
+        } else {
+            vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+        }
+        if (vibrator == null || !vibrator.hasVibrator()) {
+            WatchDiagnostics.auto(context, config, "SETUP_HAPTIC_UNAVAILABLE",
+                    "watchHasVibrator=false;hapticsDuringSleep=OFF");
+            return;
+        }
+        vibrator.vibrate(VibrationEffect.createOneShot(
+                180L, VibrationEffect.DEFAULT_AMPLITUDE));
+        feedback.edit().putBoolean("enabled_haptic_sent", true).apply();
+        WatchDiagnostics.auto(context, config, "SETUP_HAPTIC_CONFIRMED",
+                "awakeSetupOnly=true;durationMs=180;hapticsDuringSleep=OFF");
     }
 
     private static String safeMessage(Throwable error) {

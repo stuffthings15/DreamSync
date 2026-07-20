@@ -8,6 +8,7 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.SystemClock;
 
 import com.remote.DreamSync.shared.CueWaveforms;
@@ -47,6 +48,8 @@ final class AudioOutput {
     private final float[] deepWaveform;
     private final float[] lucidWaveform;
     private volatile String lastBackend = "none";
+    private volatile int lastRouteType = -1;
+    private volatile boolean lastPreferredDeviceAccepted;
 
     AudioOutput(Context context) {
         appContext = context.getApplicationContext();
@@ -60,16 +63,11 @@ final class AudioOutput {
         if (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0) {
             return new Result(false, "phone media volume is muted");
         }
-        for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            int type = device.getType();
-            if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-                    || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                    || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
-                    || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                    || type == AudioDeviceInfo.TYPE_USB_HEADSET) {
-                return new Result(false, "disconnect headphones or Bluetooth audio");
-            }
-        }
+        // getDevices(GET_DEVICES_OUTPUTS) reports every available route, not the route
+        // currently used by media. A paired watch can therefore expose Bluetooth types
+        // even while the phone speaker is active. Only require a real phone speaker here;
+        // each playback backend explicitly prefers and verifies that speaker below.
+        if (phoneSpeaker() == null) return new Result(false, "phone speaker unavailable");
         if (audioManager.getMode() != AudioManager.MODE_NORMAL) {
             return new Result(false, "phone call or audio interruption is active");
         }
@@ -97,7 +95,26 @@ final class AudioOutput {
                 + ";mode=" + audioManager.getMode()
                 + ";musicActive=" + audioManager.isMusicActive()
                 + ";outputDeviceTypes=" + devices
+                + ";phoneSpeakerAvailable=" + (phoneSpeaker() != null)
+                + ";preferredSpeakerAccepted=" + lastPreferredDeviceAccepted
+                + ";routedDeviceType=" + lastRouteType
                 + ";lastBackend=" + lastBackend;
+    }
+
+    private AudioDeviceInfo phoneSpeaker() {
+        if (audioManager == null) return null;
+        for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
+        }
+        return null;
+    }
+
+    static boolean hasPhoneSpeaker(int... outputTypes) {
+        if (outputTypes == null) return false;
+        for (int type : outputTypes) {
+            if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return true;
+        }
+        return false;
     }
 
     Result play(String cueType, float gain, Runnable onStarted) {
@@ -128,6 +145,15 @@ final class AudioOutput {
         }
 
         try {
+            // MediaPlayer cannot select a preferred output until Android 9.
+            // AudioTrack supports speaker selection on every DreamSync phone version.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+                Attempt stream = playWithStreamingAudioTrack(samples, reportStarted);
+                if (stream.success && interrupted.get()) {
+                    return new Result(false, "audio focus interrupted");
+                }
+                return new Result(stream.success, stream.reason);
+            }
             Attempt mediaPlayer = playWavWithMediaPlayer(samples, reportStarted);
             if (mediaPlayer.success) {
                 if (interrupted.get()) return new Result(false, "audio focus interrupted");
@@ -175,10 +201,24 @@ final class AudioOutput {
                 player.setDataSource(input.getFD());
             }
             player.prepare();
+            AudioDeviceInfo speaker = phoneSpeaker();
+            if (speaker == null) return new Attempt(false, false, "phone speaker unavailable");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                lastPreferredDeviceAccepted = player.setPreferredDevice(speaker);
+            }
             player.setVolume(1.0f, 1.0f);
             player.start();
             started = player.isPlaying();
             if (!started) return new Attempt(false, false, "MediaPlayer did not enter playing state");
+            AudioDeviceInfo routed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? player.getRoutedDevice() : null;
+            if (routed != null) {
+                lastRouteType = routed.getType();
+                if (lastRouteType != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return new Attempt(false, true,
+                            "cue routed away from phone speaker;type=" + lastRouteType);
+                }
+            }
             lastBackend = "wav_mediaplayer";
             onStarted.run();
 
@@ -230,6 +270,9 @@ final class AudioOutput {
                 return new Attempt(false, false, "streaming AudioTrack initialization failed"
                         + ";minimumBuffer=" + minimum + ";requestedBuffer=" + bufferBytes);
             }
+            AudioDeviceInfo speaker = phoneSpeaker();
+            if (speaker == null) return new Attempt(false, false, "phone speaker unavailable");
+            lastPreferredDeviceAccepted = track.setPreferredDevice(speaker);
             track.play();
             started = track.getPlayState() == AudioTrack.PLAYSTATE_PLAYING;
             if (!started) return new Attempt(false, false, "streaming AudioTrack did not start");
@@ -244,6 +287,14 @@ final class AudioOutput {
                     return new Attempt(false, true, "streaming audio write failed code=" + written);
                 }
                 offset += written;
+            }
+            AudioDeviceInfo routed = track.getRoutedDevice();
+            if (routed != null) {
+                lastRouteType = routed.getType();
+                if (lastRouteType != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return new Attempt(false, true,
+                            "cue routed away from phone speaker;type=" + lastRouteType);
+                }
             }
             long deadline = SystemClock.elapsedRealtime() + expectedDurationMs(samples.length) + 2_000L;
             while (SystemClock.elapsedRealtime() < deadline

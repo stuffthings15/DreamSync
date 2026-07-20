@@ -61,6 +61,7 @@ public final class MainActivity extends Activity {
 
     private TextView statusText;
     private TextView readinessText;
+    private TextView powerStateText;
     private TextView gainLabel;
     private RadioGroup modeGroup;
     private SeekBar gainSeek;
@@ -72,6 +73,7 @@ public final class MainActivity extends Activity {
     private boolean calibrationPromptShowing;
     private boolean calibrationEnablePending;
     private boolean audioPreviewInProgress;
+    private String startingState = "";
     private int watchInstallPollAttempt;
     private String pendingExportJson = "";
     private String pendingDebugLog = "";
@@ -120,6 +122,7 @@ public final class MainActivity extends Activity {
     private void bindViews() {
         statusText = findViewById(R.id.statusText);
         readinessText = findViewById(R.id.readinessText);
+        powerStateText = findViewById(R.id.powerStateText);
         gainLabel = findViewById(R.id.gainLabel);
         modeGroup = findViewById(R.id.modeGroup);
         gainSeek = findViewById(R.id.gainSeek);
@@ -196,9 +199,14 @@ public final class MainActivity extends Activity {
             recordAudioFailure(preflight.reason);
             DebugLog.append(this, "SOUND_CHECK_BLOCKED", preflight.reason + ";" + audio.diagnostics());
             statusText.setText("Sound check blocked: " + preflight.reason + ".");
+            startingState = "";
+            updateReadiness();
             return;
         }
         audioPreviewInProgress = true;
+        if (continueEnable || calibrationEnablePending) {
+            showPowerStarting("PLAYING PHONE SOUND CHECK...");
+        }
         float gain = cueGain();
         statusText.setText(continueEnable
                 ? "Playing the test cue. Setup will continue after confirmed playback."
@@ -219,6 +227,7 @@ public final class MainActivity extends Activity {
                 audioPreviewInProgress = false;
                 if (!result.success) {
                     calibrationEnablePending = false;
+                    startingState = "";
                     statusText.setText("Sound check failed: " + result.reason
                             + ". Raise phone media volume, close other audio, and try again.");
                     updateReadiness();
@@ -263,6 +272,7 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmCueWasAudible(boolean continueEnable) {
+        if (continueEnable) showPowerStarting("CONFIRM THE SOUND YOU HEARD...");
         new AlertDialog.Builder(this)
                 .setTitle("Did you hear the test cue?")
                 .setMessage("Choose Yes only if the quiet pink-noise pair was audible from the phone speaker.")
@@ -283,6 +293,7 @@ public final class MainActivity extends Activity {
                 })
                 .setNegativeButton("No", (dialog, which) -> {
                     calibrationEnablePending = false;
+                    startingState = "";
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .remove("last_calibration")
                             .remove("last_calibration_audible_confirmed")
@@ -382,8 +393,13 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleAutomaticMode() {
-        if (autoEnabled()) turnDreamSyncOff();
-        else turnDreamSyncOn();
+        if (autoEnabled()) {
+            startingState = "";
+            turnDreamSyncOff();
+        } else {
+            showPowerStarting("CHECKING PHONE SPEAKER...");
+            turnDreamSyncOn();
+        }
     }
 
     private void turnDreamSyncOn() {
@@ -393,6 +409,8 @@ public final class MainActivity extends Activity {
         if (!preflight.success) {
             DebugLog.append(this, "TURN_ON_BLOCKED", "reason=" + preflight.reason);
             statusText.setText("Not ready: " + preflight.reason + ".");
+            startingState = "";
+            updateReadiness();
             return;
         }
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -409,6 +427,8 @@ public final class MainActivity extends Activity {
                 && getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0) < 10) {
             statusText.setText("Complete the 10-step lucid conditioning block first.");
+            startingState = "";
+            updatePowerState();
             return;
         }
         String generation = UUID.randomUUID().toString();
@@ -416,6 +436,7 @@ public final class MainActivity extends Activity {
                 .putString("pending_enable_generation", generation)
                 .apply();
         statusText.setText("Finding the paired Wear OS watch...");
+        showPowerStarting("FINDING WATCH...");
         findWatchForEnable(generation, CapabilityClient.FILTER_REACHABLE);
     }
 
@@ -433,7 +454,9 @@ public final class MainActivity extends Activity {
                 })
                 .setNegativeButton("Not now", (dialog, which) -> {
                     calibrationPromptShowing = false;
+                    startingState = "";
                     statusText.setText("DreamSync stays Off until the sound check is complete.");
+                    updatePowerState();
                 })
                 .setOnCancelListener(dialog -> calibrationPromptShowing = false)
                 .show();
@@ -495,6 +518,8 @@ public final class MainActivity extends Activity {
                 .putFloat("auto_gain", gain)
                 .remove("pending_enable_generation")
                 .apply();
+        startingState = "";
+        updatePowerState();
         try {
             PhoneAutoControl.startStandby(this);
             DebugLog.append(this, "PHONE_STANDBY_STARTED",
@@ -524,6 +549,7 @@ public final class MainActivity extends Activity {
                     DebugLog.append(this, "AUTO_CONFIG_PUBLISH_FAILED", safeMessage(error));
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putBoolean("auto_enabled", false).apply();
+                    startingState = "";
                     stopService(new Intent(this, CuePlaybackService.class));
                     statusText.setText("Could not synchronize automatic setup: "
                             + safeMessage(error));
@@ -570,7 +596,9 @@ public final class MainActivity extends Activity {
         if (watchInstallPollAttempt > WATCH_INSTALL_POLL_LIMIT) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .remove("pending_enable_generation").apply();
+            startingState = "";
             statusText.setText("Finish installing DreamSync on the watch, then tap Turn DreamSync On again.");
+            updatePowerState();
             return;
         }
         statusText.postDelayed(() -> {
@@ -624,6 +652,7 @@ public final class MainActivity extends Activity {
                 .remove("watch_live_session_id")
                 .remove("pending_enable_generation")
                 .apply();
+        startingState = "";
         stopService(new Intent(this, CuePlaybackService.class));
         restoreNotificationProtection();
         if (!sessionId.isEmpty()) databaseExecutor.execute(() -> {
@@ -674,7 +703,9 @@ public final class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .remove("pending_enable_generation")
                 .apply();
+        startingState = "";
         statusText.setText(message);
+        updatePowerState();
     }
 
     private void syncAutoSettingsIfEnabled() {
@@ -1101,8 +1132,41 @@ public final class MainActivity extends Activity {
     }
 
     private void updatePowerState() {
-        if (powerButton != null) powerButton.setText(
-                autoEnabled() ? "Turn DreamSync Off" : "Turn DreamSync On");
+        if (powerButton == null || powerStateText == null) return;
+        boolean enabled = autoEnabled();
+        boolean watchConfirmed = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("watch_auto_confirmed", false);
+        if (enabled && watchConfirmed) {
+            powerStateText.setText("ON — WATCH MONITORING EVERY NIGHT");
+            powerStateText.setTextColor(ContextCompat.getColor(this, R.color.ds_success));
+            powerButton.setText("Turn DreamSync Off");
+            powerButton.setBackgroundResource(R.drawable.btn_danger);
+            powerButton.setContentDescription("DreamSync is On. Tap to turn it Off.");
+        } else if (enabled) {
+            powerStateText.setText("ON — WAITING FOR WATCH CONFIRMATION");
+            powerStateText.setTextColor(ContextCompat.getColor(this, R.color.ds_violet));
+            powerButton.setText("Turn DreamSync Off");
+            powerButton.setBackgroundResource(R.drawable.btn_danger);
+            powerButton.setContentDescription(
+                    "DreamSync is On but waiting for the watch. Tap to turn it Off.");
+        } else if (!startingState.isEmpty()) {
+            powerStateText.setText("STARTING — " + startingState);
+            powerStateText.setTextColor(ContextCompat.getColor(this, R.color.ds_violet));
+            powerButton.setText("Starting DreamSync...");
+            powerButton.setBackgroundResource(R.drawable.btn_outline);
+            powerButton.setContentDescription("DreamSync setup is working.");
+        } else {
+            powerStateText.setText("OFF — NOT MONITORING");
+            powerStateText.setTextColor(ContextCompat.getColor(this, R.color.ds_danger));
+            powerButton.setText("Turn DreamSync On");
+            powerButton.setBackgroundResource(R.drawable.btn_primary);
+            powerButton.setContentDescription("DreamSync is Off. Tap to turn it On.");
+        }
+    }
+
+    private void showPowerStarting(String state) {
+        startingState = state == null ? "WORKING..." : state;
+        updatePowerState();
     }
 
     private boolean autoEnabled() {

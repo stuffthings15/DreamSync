@@ -9,14 +9,16 @@ public final class DebugLogTest {
         String events = "1 | SOUND_CHECK_FAILED | first\n"
                 + "2 | SOUND_CHECK_AUDIBLE_CONFIRMED | recovered\n"
                 + "3 | WATCH_FOUND | reachable\n"
-                + "4 | WATCH_HEARTBEAT | decision=BLOCKED: sleep onset not confirmed\n";
+                + "4 | WATCH_HEARTBEAT | decision=BLOCKED: sleep onset not confirmed\n"
+                + "5 | WATCH_SETUP_HAPTIC_CONFIRMED | awakeSetupOnly=true\n";
 
         String report = DebugLog.pipelineVerification(events);
 
         assertTrue(report.contains("1. Phone sound check: PASS"));
         assertTrue(report.contains("2. Wear OS watch discovered: PASS"));
         assertTrue(report.contains("8. Sensor readings and quality received: PASS"));
-        assertTrue(report.contains("12. Watch vibration/haptics: PASS"));
+        assertTrue(report.contains("12. Awake watch setup haptic: PASS"));
+        assertTrue(report.contains("Sleep haptics: OFF by design"));
     }
 
     @Test public void pipelineKeepsMissingNightStepsWaiting() {

@@ -76,6 +76,7 @@ final class DebugLog {
                 .append("lastSystemCheckUtcMs=").append(
                         prefs.getLong("last_system_check_utc", 0L)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
+                .append("awakeSetupHaptic=ONE_SHORT_CONFIRMATION_AFTER_WATCH_MONITORING_STARTS\n")
                 .append("hapticsDuringSleep=OFF_BY_DESIGN\n")
                 .append("sleepAudioOutput=PHONE_SPEAKER_ONLY\n");
         String eventsText;
@@ -142,7 +143,10 @@ final class DebugLog {
         step(out, 11, "Phone speaker audio lifecycle",
                 events, new String[]{" | CUE_AUDIO_STARTED |", " | CUE_PLAYBACK_COMPLETED |"},
                 new String[]{" | CUE_PLAYBACK_FAILED |", " | AUDIO_FAILED |"});
-        out.append("12. Watch vibration/haptics: PASS - intentionally OFF during sleep to protect continuity.\n");
+        step(out, 12, "Awake watch setup haptic",
+                events, new String[]{" | WATCH_SETUP_HAPTIC_CONFIRMED |"},
+                new String[]{" | WATCH_SETUP_HAPTIC_UNAVAILABLE |"});
+        out.append("    Sleep haptics: OFF by design to protect sleep continuity.\n");
         step(out, 13, "Terminal summary returned",
                 events, new String[]{" | SESSION_SUMMARY_RECEIVED |", " | SUMMARY_RECEIVED |"},
                 new String[]{" | SESSION_SUMMARY_FAILED |"});

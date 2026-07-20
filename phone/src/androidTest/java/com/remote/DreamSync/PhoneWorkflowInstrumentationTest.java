@@ -37,12 +37,19 @@ public final class PhoneWorkflowInstrumentationTest {
     }
 
     @Test public void largeTextWorkflowRemainsScrollable() {
+        InstrumentationRegistry.getInstrumentation().getTargetContext()
+                .getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean("auto_enabled", false)
+                .putBoolean("watch_auto_confirmed", false).apply();
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
                 View content = activity.findViewById(android.R.id.content);
                 assertNotNull(content);
                 assertTrue(containsScrollView(content));
                 assertNotNull(activity.findViewById(R.id.powerButton));
+                android.widget.TextView powerState = activity.findViewById(R.id.powerStateText);
+                assertNotNull(powerState);
+                assertTrue(powerState.getText().toString().contains("OFF"));
                 assertNotNull(activity.findViewById(R.id.systemCheckButton));
                 assertNotNull(activity.findViewById(R.id.exportButton));
                 assertNotNull(activity.findViewById(R.id.exportDebugButton));
@@ -79,6 +86,7 @@ public final class PhoneWorkflowInstrumentationTest {
         assertTrue(debug.contains("DreamSync phone debug log"));
         assertTrue(debug.contains("appVersion="));
         assertTrue(debug.contains("audio=mediaVolume="));
+        assertTrue(debug.contains("awakeSetupHaptic=ONE_SHORT_CONFIRMATION"));
         assertTrue(debug.contains("watchBound="));
         assertTrue(debug.contains("TEST_EVENT"));
         assertFalse(debug.contains("sensitive-node-value"));

@@ -68,10 +68,21 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/powerStateText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:accessibilityLiveRegion="polite"
+                android:text="OFF — NOT MONITORING"
+                android:textColor="@color/ds_danger"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
                 android:id="@+id/readinessText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:text="Turn On once. DreamSync watches for sleep every night until you turn it Off."
                 android:textColor="@color/ds_muted"
                 android:textSize="13sp" />

@@ -92,6 +92,7 @@ public final class WearWorkflowInstrumentationTest {
         assertNotNull(info.requestedPermissions);
         java.util.List<String> permissions = Arrays.asList(info.requestedPermissions);
         assertTrue(permissions.contains(Manifest.permission.ACTIVITY_RECOGNITION));
+        assertTrue(permissions.contains(Manifest.permission.VIBRATE));
         assertTrue(permissions.contains("android.permission.health.READ_HEART_RATE"));
         assertTrue(permissions.contains("android.permission.health.READ_SKIN_TEMPERATURE"));
         assertTrue(permissions.contains(

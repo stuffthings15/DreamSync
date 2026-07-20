@@ -17,6 +17,14 @@
 - Current phone and tablet screenshots captured from version code 9.
 - Live Google Play short and full descriptions saved with the official slogan and mission.
 
+## Internal testing
+
+- Phone version code 9 (`1.0.0`) published on 2026-07-19.
+- Wear OS version code 7 (`1.0.0`) published on 2026-07-19.
+- Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
+- Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
+- Both tracks use the `Dream Sync private testers` email list.
+
 ## Google Play gate
 
 This developer account must complete Google Play's required closed release with at least 12 continuously opted-in users for 14 days before production access can be requested.

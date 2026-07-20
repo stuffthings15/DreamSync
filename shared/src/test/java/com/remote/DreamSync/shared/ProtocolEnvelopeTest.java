@@ -33,4 +33,22 @@ public class ProtocolEnvelopeTest {
                 1_000L, 100L, Map.of());
         assertEquals(MessageGuard.Result.EXPIRED, guard.check(expired, "s1", "phone", 2_000L));
     }
+
+    @Test public void durableWatchResultAllowsReasonableClockSkew() {
+        ProtocolEnvelope result = ProtocolEnvelope.create(
+                Protocol.TYPE_SYSTEM_CHECK_RESULT, "enrollment", "check", "watch", "phone",
+                120_000L, Protocol.SYSTEM_CHECK_TTL_MS, Map.of("status", "PASS"));
+
+        assertEquals(MessageGuard.Result.ACCEPT,
+                new MessageGuard().check(result, "enrollment", "phone", "watch", 1_000L));
+    }
+
+    @Test public void cueMessagesKeepStrictFutureClockLimit() {
+        ProtocolEnvelope cue = ProtocolEnvelope.create(
+                Protocol.TYPE_CUE_REQUEST, "session", "cue", "watch", "phone",
+                20_000L, Protocol.CUE_TTL_MS, Map.of("cueType", "DEEP"));
+
+        assertEquals(MessageGuard.Result.EXPIRED,
+                new MessageGuard().check(cue, "session", "phone", "watch", 1_000L));
+    }
 }

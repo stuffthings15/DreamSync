@@ -16,6 +16,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ScrollView;
@@ -50,6 +53,7 @@ public final class MainActivity extends Activity {
 
     private static final int REQUEST_FOREGROUND_PERMISSIONS = 501;
     private static final int REQUEST_BACKGROUND_PERMISSION = 502;
+    private static final int REQUEST_SYSTEM_CHECK_PERMISSIONS = 503;
     private static final String READ_HEART_RATE = "android.permission.health.READ_HEART_RATE";
     private static final String READ_HEALTH_DATA_IN_BACKGROUND =
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND";
@@ -70,6 +74,7 @@ public final class MainActivity extends Activity {
     private int configSyncAttempt;
     private LiveSystemCheck liveSystemCheck;
     private boolean systemCheckMode;
+    private String pendingSystemCheckId = "";
     private final ExecutorService remoteExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
@@ -124,10 +129,34 @@ public final class MainActivity extends Activity {
                     "A sleep session is active.");
             return true;
         }
-        if (liveSystemCheck != null) liveSystemCheck.cancel("A newer check replaced this check.");
+        startSystemCheckWhenPermissionsReady(config, checkId);
+        return true;
+    }
+
+    private void startSystemCheckWhenPermissionsReady(
+            AutoSleepConfig config,
+            String checkId
+    ) {
+        List<String> missing = new ArrayList<>();
+        addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
+        addIfMissing(missing, heartPermission());
+        if (!missing.isEmpty()) {
+            pendingSystemCheckId = checkId;
+            statusText.setText("Allow activity and heart-rate access to run the watch check.");
+            requestPermissions(missing.toArray(new String[0]),
+                    REQUEST_SYSTEM_CHECK_PERMISSIONS);
+            WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_PERMISSION_REQUESTED",
+                    "activityMissing="
+                            + !hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)
+                            + ";heartMissing=" + !hasPermission(heartPermission()));
+            return;
+        }
+        pendingSystemCheckId = "";
+        if (liveSystemCheck != null) {
+            liveSystemCheck.cancel("A newer check replaced this check.");
+        }
         liveSystemCheck = new LiveSystemCheck(config, checkId);
         liveSystemCheck.start();
-        return true;
     }
 
     private boolean maybeHandleSetupLink(Intent intent) {
@@ -269,6 +298,8 @@ public final class MainActivity extends Activity {
         payload.put("heartSamples", "0");
         payload.put("motionRegistered", "false");
         payload.put("heartRegistered", "false");
+        payload.put("hapticAvailable", "false");
+        payload.put("hapticRequested", "false");
         payload.put("offWrist", "false");
         payload.put("additionalHealthPermission", "false");
         payload.put("advancedSensorsExpected", "false");
@@ -325,6 +356,10 @@ public final class MainActivity extends Activity {
                 + ";heartSamples=" + payload.getOrDefault("heartSamples", "0")
                 + ";lastHeartBpm=" + payload.getOrDefault("lastHeartBpm", "NaN")
                 + ";offWrist=" + payload.getOrDefault("offWrist", "false")
+                + ";hapticAvailable="
+                + payload.getOrDefault("hapticAvailable", "false")
+                + ";hapticRequested="
+                + payload.getOrDefault("hapticRequested", "false")
                 + ";samsungSdkConnected="
                 + payload.getOrDefault("samsungSdkConnected", "false")
                 + ";ibiSamples=" + payload.getOrDefault("ibiSamples", "0")
@@ -367,6 +402,8 @@ public final class MainActivity extends Activity {
         private boolean additionalHealthPermission;
         private boolean motionRegistered;
         private boolean heartRegistered;
+        private boolean hapticAvailable;
+        private boolean hapticRequested;
         private boolean finished;
         private String samsungDetail = "";
         private String forcedFailure = "";
@@ -379,6 +416,9 @@ public final class MainActivity extends Activity {
 
         void start() {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            HapticResult haptic = requestAwakeSystemCheckHaptic();
+            hapticAvailable = haptic.available;
+            hapticRequested = haptic.requested;
             activityPermission = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION);
             heartPermissionGranted = hasPermission(heartPermission());
             additionalHealthPermission = hasPermission(READ_ADDITIONAL_HEALTH_DATA);
@@ -386,6 +426,8 @@ public final class MainActivity extends Activity {
                     "checkId=" + checkId + ";durationSeconds=45"
                             + ";activityPermission=" + activityPermission
                             + ";heartPermission=" + heartPermissionGranted
+                            + ";hapticAvailable=" + hapticAvailable
+                            + ";hapticRequested=" + hapticRequested
                             + ";additionalHealthPermission="
                             + additionalHealthPermission);
             if (!activityPermission || !heartPermissionGranted || sensorManager == null) {
@@ -409,8 +451,9 @@ public final class MainActivity extends Activity {
                 }
             }
             startSamsungCheck();
-            statusText.setText("System check running. Wear the watch snugly and hold still. "
-                    + "Motion 0, heart 0.");
+            statusText.setText((hapticRequested
+                    ? "Test vibration sent. " : "Watch vibration unavailable. ")
+                    + "Sound stays on the phone. Checking motion 0, heart 0.");
             statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
         }
 
@@ -540,6 +583,8 @@ public final class MainActivity extends Activity {
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
             payload.put("motionRegistered", Boolean.toString(motionRegistered));
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
+            payload.put("hapticAvailable", Boolean.toString(hapticAvailable));
+            payload.put("hapticRequested", Boolean.toString(hapticRequested));
             payload.put("activityPermission", Boolean.toString(activityPermission));
             payload.put("heartPermission", Boolean.toString(heartPermissionGranted));
             payload.put("additionalHealthPermission",
@@ -568,6 +613,46 @@ public final class MainActivity extends Activity {
         if (value == null) return "";
         String cleaned = value.replaceAll("[^A-Za-z0-9._:-]", "");
         return cleaned.substring(0, Math.min(128, cleaned.length()));
+    }
+
+    private HapticResult requestAwakeSystemCheckHaptic() {
+        Vibrator vibrator;
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager manager = (VibratorManager) getSystemService(
+                    Context.VIBRATOR_MANAGER_SERVICE);
+            vibrator = manager == null ? null : manager.getDefaultVibrator();
+        } else {
+            vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        }
+        boolean available = vibrator != null && vibrator.hasVibrator();
+        if (!available) {
+            AutoSleepConfig config = AutoSleepConfig.load(this);
+            WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_HAPTIC_UNAVAILABLE",
+                    "watchHasVibrator=false;awakeCheckOnly=true");
+            return new HapticResult(false, false);
+        }
+        try {
+            vibrator.vibrate(VibrationEffect.createOneShot(
+                    240L, VibrationEffect.DEFAULT_AMPLITUDE));
+            AutoSleepConfig config = AutoSleepConfig.load(this);
+            WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_HAPTIC_REQUESTED",
+                    "durationMs=240;awakeCheckOnly=true;hapticsDuringSleep=OFF");
+            return new HapticResult(true, true);
+        } catch (RuntimeException error) {
+            WatchDiagnostics.auto(this, AutoSleepConfig.load(this),
+                    "SYSTEM_CHECK_HAPTIC_FAILED", safeMessage(error));
+            return new HapticResult(true, false);
+        }
+    }
+
+    private static final class HapticResult {
+        final boolean available;
+        final boolean requested;
+
+        HapticResult(boolean available, boolean requested) {
+            this.available = available;
+            this.requested = requested;
+        }
     }
 
     private static String safeMessage(Throwable error) {
@@ -687,6 +772,20 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_SYSTEM_CHECK_PERMISSIONS) {
+            String checkId = pendingSystemCheckId;
+            pendingSystemCheckId = "";
+            AutoSleepConfig config = AutoSleepConfig.load(this);
+            if (checkId.isEmpty() || !config.validBinding()) return;
+            if (!hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)
+                    || !hasPermission(heartPermission())) {
+                publishImmediateSystemCheckFailure(config, checkId,
+                        "Activity and heart-rate permissions are required on the watch.");
+            } else {
+                startSystemCheckWhenPermissionsReady(config, checkId);
+            }
+            return;
+        }
         if (!pendingEnable) return;
         if (requestCode == REQUEST_FOREGROUND_PERMISSIONS
                 || requestCode == REQUEST_BACKGROUND_PERMISSION) ensurePermissionsThenEnable();

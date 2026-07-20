@@ -51,19 +51,23 @@ public final class PhoneDataListenerService extends WearableListenerService {
 
                 if (path.startsWith(com.remote.DreamSync.shared.Protocol
                         .PATH_SYSTEM_CHECK_RESULT_PREFIX)) {
-                    if (validSystemCheckEnvelope(envelope, sourceNodeId, path)) {
+                    String rejection = systemCheckRejectionReason(
+                            envelope, sourceNodeId, path);
+                    if (rejection.isEmpty()) {
                         handleSystemCheckResult(envelope);
                     } else {
                         DebugLog.append(this, "WATCH_SYSTEM_CHECK_REJECTED",
-                                "reason=wrong device, enrollment, check id, version, duplicate, or expiry");
+                                rejection);
                     }
                 } else if (path.startsWith(
                         com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX)) {
-                    if (validDiagnosticEnvelope(envelope, sourceNodeId, path)) {
+                    String rejection = diagnosticRejectionReason(
+                            envelope, sourceNodeId, path);
+                    if (rejection.isEmpty()) {
                         handleDiagnostic(envelope);
                     } else {
                         DebugLog.append(this, "WATCH_DIAGNOSTIC_REJECTED",
-                                "reason=wrong device, trace, version, duplicate, or expiry");
+                                rejection);
                     }
                 } else if (path.equals(com.remote.DreamSync.shared.Protocol.PATH_AUTO_STATE_PREFIX
                         + envelope.sessionId) && validAutoEnvelope(envelope, sourceNodeId,
@@ -353,48 +357,63 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
     }
 
-    private boolean validDiagnosticEnvelope(
+    private String diagnosticRejectionReason(
             ProtocolEnvelope envelope,
             String sourceNodeId,
             String path
     ) {
         if (!com.remote.DreamSync.shared.Protocol.TYPE_DIAGNOSTIC.equals(
-                envelope.messageType)) return false;
+                envelope.messageType)) return "reason=WRONG_TYPE";
         if (!path.equals(com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX
-                + envelope.sessionId)) return false;
+                + envelope.sessionId)) return "reason=WRONG_PATH";
         String active = pref("active_session_id");
         String enrollment = pref("auto_enrollment_id");
         if (!envelope.sessionId.equals(active) && !envelope.sessionId.equals(enrollment)) {
-            return false;
+            return "reason=WRONG_TRACE";
         }
         String watch = pref("bound_watch_node");
         String phone = pref("local_phone_node");
-        if (watch.isEmpty() || phone.isEmpty() || !watch.equals(sourceNodeId)) return false;
-        return messageGuard.check(envelope, envelope.sessionId, phone, watch,
-                System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
+        if (watch.isEmpty() || phone.isEmpty()) return "reason=INCOMPLETE_BINDING";
+        if (!watch.equals(sourceNodeId)) return "reason=SOURCE_NODE_MISMATCH";
+        return guardRejectionReason(messageGuard.check(
+                envelope, envelope.sessionId, phone, watch, System.currentTimeMillis()),
+                envelope);
     }
 
-    private boolean validSystemCheckEnvelope(
+    private String systemCheckRejectionReason(
             ProtocolEnvelope envelope,
             String sourceNodeId,
             String path
     ) {
         if (!com.remote.DreamSync.shared.Protocol.TYPE_SYSTEM_CHECK_RESULT.equals(
-                envelope.messageType)) return false;
+                envelope.messageType)) return "reason=WRONG_TYPE";
         if (envelope.cueId.isEmpty() || !path.equals(
                 com.remote.DreamSync.shared.Protocol.PATH_SYSTEM_CHECK_RESULT_PREFIX
-                        + envelope.sessionId)) return false;
+                        + envelope.sessionId)) return "reason=WRONG_PATH_OR_CHECK_ID";
         String enrollment = pref("auto_enrollment_id");
         String watch = pref("bound_watch_node");
         String phone = pref("local_phone_node");
         String pendingCheck = pref("pending_system_check_id");
-        if (enrollment.isEmpty() || watch.isEmpty() || phone.isEmpty()
-                || !enrollment.equals(envelope.sessionId)
-                || !watch.equals(sourceNodeId)
-                || pendingCheck.isEmpty()
-                || !pendingCheck.equals(envelope.cueId)) return false;
-        return messageGuard.check(envelope, enrollment, phone, watch,
-                System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
+        if (enrollment.isEmpty() || watch.isEmpty() || phone.isEmpty()) {
+            return "reason=INCOMPLETE_BINDING";
+        }
+        if (!enrollment.equals(envelope.sessionId)) return "reason=WRONG_ENROLLMENT";
+        if (!watch.equals(sourceNodeId)) return "reason=SOURCE_NODE_MISMATCH";
+        if (pendingCheck.isEmpty() || !pendingCheck.equals(envelope.cueId)) {
+            return "reason=WRONG_CHECK_ID";
+        }
+        return guardRejectionReason(messageGuard.check(
+                envelope, enrollment, phone, watch, System.currentTimeMillis()), envelope);
+    }
+
+    private String guardRejectionReason(
+            MessageGuard.Result result,
+            ProtocolEnvelope envelope
+    ) {
+        if (result == MessageGuard.Result.ACCEPT) return "";
+        return "reason=" + result.name()
+                + ";clockDeltaMs=" + (System.currentTimeMillis() - envelope.sentUtcMs)
+                + ";protocolVersion=" + envelope.protocolVersion;
     }
 
     private void handleSystemCheckResult(ProtocolEnvelope envelope) {
@@ -409,6 +428,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";lastHeartBpm=" + envelope.payload.getOrDefault("lastHeartBpm", "")
                 + ";motionRegistered=" + envelope.payload.getOrDefault("motionRegistered", "")
                 + ";heartRegistered=" + envelope.payload.getOrDefault("heartRegistered", "")
+                + ";hapticAvailable=" + envelope.payload.getOrDefault("hapticAvailable", "")
+                + ";hapticRequested=" + envelope.payload.getOrDefault("hapticRequested", "")
                 + ";offWrist=" + envelope.payload.getOrDefault("offWrist", "")
                 + ";durationMs=" + envelope.payload.getOrDefault("durationMs", "")
                 + ";samsungSdkConnected="

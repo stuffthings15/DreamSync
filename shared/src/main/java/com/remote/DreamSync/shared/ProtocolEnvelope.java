@@ -9,6 +9,8 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 public final class ProtocolEnvelope {
+    private static final long DURABLE_FUTURE_CLOCK_SKEW_MS = 5L * 60L * 1000L;
+    private static final long CUE_FUTURE_CLOCK_SKEW_MS = 5_000L;
     public final int protocolVersion;
     public final String messageId;
     public final String messageType;
@@ -71,7 +73,17 @@ public final class ProtocolEnvelope {
     public boolean isExpired(long nowUtcMs) {
         if (ttlMs <= 0L) return true;
         long age = nowUtcMs - sentUtcMs;
-        return age < -5_000L || age > ttlMs;
+        long futureClockSkewMs = isCueLifecycleMessage()
+                ? CUE_FUTURE_CLOCK_SKEW_MS : DURABLE_FUTURE_CLOCK_SKEW_MS;
+        return age < -futureClockSkewMs || age > ttlMs;
+    }
+
+    private boolean isCueLifecycleMessage() {
+        return Protocol.TYPE_CUE_REQUEST.equals(messageType)
+                || Protocol.TYPE_CUE_ACCEPTED.equals(messageType)
+                || Protocol.TYPE_AUDIO_STARTED.equals(messageType)
+                || Protocol.TYPE_AUDIO_COMPLETED.equals(messageType)
+                || Protocol.TYPE_AUDIO_FAILED.equals(messageType);
     }
 
     public byte[] encode() {

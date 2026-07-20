@@ -86,6 +86,14 @@ public final class MainActivity extends Activity {
                     statusText.setText(status);
                     DebugLog.append(MainActivity.this, "WATCH_STATUS", status);
                 }
+                String state = intent.getStringExtra("state");
+                if (state != null && state.startsWith("SYSTEM_CHECK_")) {
+                    long completedUtcMs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .getLong("last_system_check_utc", 0L);
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putLong("last_system_check_displayed_utc", completedUtcMs)
+                            .apply();
+                }
                 updateReadiness();
                 updatePowerState();
                 return;
@@ -1357,6 +1365,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         expireSystemCheckIfNeeded();
+        restoreLatestSystemCheckStatus();
         String summary = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_summary", "");
         if (!summary.isEmpty()) showFriendlySummary(summary);
@@ -1369,6 +1378,21 @@ public final class MainActivity extends Activity {
                 && watchInstallPollAttempt == 0) {
             scheduleWatchInstallCheck(pendingGeneration);
         }
+    }
+
+    private void restoreLatestSystemCheckStatus() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        long completedUtcMs = prefs.getLong("last_system_check_utc", 0L);
+        long displayedUtcMs = prefs.getLong("last_system_check_displayed_utc", 0L);
+        if (completedUtcMs <= 0L || completedUtcMs <= displayedUtcMs) return;
+        String result = prefs.getString("last_system_check_status", "FAIL");
+        if (!"PASS".equals(result)) result = "FAIL";
+        String reason = prefs.getString(
+                "last_system_check_reason", "The watch returned no reason.");
+        statusText.setText("Watch system check " + result + ": " + reason);
+        prefs.edit().putLong("last_system_check_displayed_utc", completedUtcMs).apply();
+        DebugLog.append(this, "SYSTEM_CHECK_RESULT_RESTORED",
+                "status=" + result + ";reason=" + reason);
     }
 
     private void setupOrOpenWatch() {

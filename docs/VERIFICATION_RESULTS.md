@@ -9,18 +9,20 @@ Date: 20 July 2026
 - Package: `com.remote.DreamSync`.
 - Published phone internal-test code: 27 (`1.2.6-test`).
 - Published Wear OS internal-test code: 28 (`1.2.6-test`).
+- Prepared phone internal-test code: 29 (`1.2.7-test`).
+- Prepared Wear OS internal-test code: 30 (`1.2.7-test`).
 - Both 1.2.6-test releases were available to internal testers in Google Play Console on 2026-07-20. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
-- Clean shared tests: 53 checks, 0 failures, 0 errors, and 0 skipped, including persistent automatic-session start gating, passive-HR fallback timing, manufacturer-neutral full-sensor selection, and fail-closed live system-check evaluation.
-- Phone instrumentation passes 5/5 on an Android 16 phone emulator: Room 2-to-3 migration, large-font scrolling, persistent power control, required companion/audio/connected-device permissions, privacy-safe debug-log export, and visible On/Off state.
+- Clean shared tests: 55 checks, 0 failures, 0 errors, and 0 skipped, including durable clock-skew handling while keeping cue messages time-strict.
+- Phone instrumentation passes 6/6 on an Android 16 phone emulator, including restoration of the final watch-check result after returning from the watch.
 - Nine phone unit tests verify compatible PCM16 cue conversion, local WAV construction, quiet gain, clipping, hostile negative gain handling, built-in-speaker route selection, and the exported pipeline checklist.
-- Wear instrumentation passes 6/6 when installed on the same Android 16 emulator: Room 2-to-3 migration, single-use handshake, the scrollable phone-controlled watch screen, an unbound system-check link that fails closed, and awake-only confirmation feedback. This executes Android code but is not evidence of a real round Wear OS display or watch sensors.
+- Six Wear OS instrumentation tests compile. They are not treated as physical sensor, display, or vibration evidence for this build.
 - The first emulator run exposed missing Room schema assets in both test APKs. Both modules now package their exported schemas through the `androidTest` asset source set; clean rebuild and rerun pass.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS Android lint completes with no blocking errors.
 - Phone and Wear OS signed release bundles pass Gradle signing validation and `jarsigner` integrity verification.
 - Google Play accepted phone code 27 and Wear OS code 28; the Wear OS release preserved the previously supported wearable catalog.
-- Final signed bundle SHA-256 values are phone `875B76D5BFE3FE5CB2FB9AB6B0F9EC98FE190419F3F848B3D6E68FB54FFB7DEE` and Wear OS `47E9E31B0FCD9BB2C040ADFA08B72E77A08B5B3306FAE8B2E8D4E48B754D64C7`.
+- Prepared signed bundle SHA-256 values are phone `AEF1A37AF9050CDF1A2DDA348D3CF26C2E200F92B179CE8F7AFBB6253F9BB38D` and Wear OS `3ADB32AEC5C42D3FB1634B17400E76EC538382CADE8FAB16BA7A2D8BEA2183A1`.
 - Room schema 3 is generated on both devices with explicit version 2-to-3 migrations; existing local records are not intentionally destroyed.
 - Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
 - The research report has real source links and no broken citation markers or text-encoding artifacts.
@@ -34,6 +36,7 @@ Date: 20 July 2026
 - Turn On now guides the required one-time quiet cue calibration, finds reachable or previously known watches, opens the official watch Play install when the watch app is missing, polls for completion, then binds and synchronizes setup.
 - Sound checks wait for confirmed playback instead of assuming the foreground service succeeded. The phone explicitly selects the built-in speaker when available, uses local PCM WAV playback, uses AudioTrack on Android 8, reports the exact backend and route failure, and saves it to a privacy-safe Export Debug Log file.
 - Sound calibration now requires an explicit user confirmation that the cue was audible. **Run phone + watch check** then launches a bound, expiring 45-second watch test that records actual motion and heart-rate samples, permissions, registration, off-wrist state, and every available advanced-sensor count. Missing results fail after two minutes and are logged.
+- The live check now repairs missing activity/heart permission, sends a 240 ms awake-only test vibration, states that sound remains on the phone, and restores its final pass/fail reason when the phone screen returns.
 - The watch contains no user settings. It automatically opens the phone controls on manual launch and automatically retries delayed phone configuration during first-time setup.
 - Passive HR alone never enables a cue. Higher-rate sustained stillness, fresh heart rate, signal quality, and all later safety gates remain required.
 - The phone keeps a visible low-priority connected-device service while On; reboot and package-update receivers restore both phone readiness and watch passive registration.
@@ -63,7 +66,7 @@ Date: 20 July 2026
 ## Protocol and audio safety
 
 - One valid cue request can produce at most one playback; invalid requests produce none.
-- Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, wrong-sender, and reordered commands fail closed.
+- Duplicate, expired, malformed, wrong-version, wrong-session, wrong-device, wrong-sender, and reordered commands fail closed. Durable results allow up to five minutes of cross-device clock drift; cue lifecycle messages retain a strict five-second future-time limit.
 - Durable phone-watch state and summary items validate the source node, sender, receiver, session, type, protocol version, path, expiry, and duplicate ID before changing local state.
 - The first terminal cause is preserved, exact watch terminal outcomes are stored, and a valid summary clears only the current session while preserving the recurring On enrollment for the next night.
 - Cue allowance is consumed only after `AUDIO_STARTED`.

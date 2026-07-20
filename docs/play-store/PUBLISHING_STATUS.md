@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.2.6-test with unique phone and Wear OS version codes published to internal testing.
+- Version 1.2.6-test with unique phone and Wear OS version codes published to internal testing. Version 1.2.7-test is built and awaiting upload approval.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -59,6 +59,13 @@
 - The watch has no product settings or power controls. Manual launch sends the user to phone controls; only required first-time watch health-permission prompts remain on the watch.
 - Advanced Samsung status remains Basic monitoring only until the official SDK AAR, Samsung partnership approval, package/signature registration, and live Ultra self-test are complete.
 - The 1.2.6 sound path explicitly prefers the built-in phone speaker, uses AudioTrack on Android 8, and no longer treats an available Bluetooth watch route as active headphones. The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states.
+
+## Next internal-test build ready
+
+- Phone version code 29 and Wear OS version code 30 (`1.2.7-test`).
+- Fixes watch-result rejection caused by normal phone/watch clock drift while keeping cue timing strict.
+- Requests missing watch permissions, sends an awake-only test vibration, logs exact rejection reasons, and restores the completed watch-check status on the phone.
+- Signed bundle SHA-256: phone `AEF1A37AF9050CDF1A2DDA348D3CF26C2E200F92B179CE8F7AFBB6253F9BB38D`; Wear OS `3ADB32AEC5C42D3FB1634B17400E76EC538382CADE8FAB16BA7A2D8BEA2183A1`.
 
 ## Google Play gate
 

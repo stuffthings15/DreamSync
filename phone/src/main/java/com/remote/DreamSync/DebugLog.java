@@ -144,8 +144,11 @@ final class DebugLog {
                 events, new String[]{" | CUE_AUDIO_STARTED |", " | CUE_PLAYBACK_COMPLETED |"},
                 new String[]{" | CUE_PLAYBACK_FAILED |", " | AUDIO_FAILED |"});
         step(out, 12, "Awake watch setup haptic",
-                events, new String[]{" | WATCH_SETUP_HAPTIC_CONFIRMED |"},
-                new String[]{" | WATCH_SETUP_HAPTIC_UNAVAILABLE |"});
+                events, new String[]{" | WATCH_SETUP_HAPTIC_CONFIRMED |",
+                        " | WATCH_SYSTEM_CHECK_HAPTIC_REQUESTED |"},
+                new String[]{" | WATCH_SETUP_HAPTIC_UNAVAILABLE |",
+                        " | WATCH_SYSTEM_CHECK_HAPTIC_UNAVAILABLE |",
+                        " | WATCH_SYSTEM_CHECK_HAPTIC_FAILED |"});
         out.append("    Sleep haptics: OFF by design to protect sleep continuity.\n");
         step(out, 13, "Terminal summary returned",
                 events, new String[]{" | SESSION_SUMMARY_RECEIVED |", " | SUMMARY_RECEIVED |"},

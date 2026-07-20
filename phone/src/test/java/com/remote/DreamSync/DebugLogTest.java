@@ -30,8 +30,10 @@ public final class DebugLogTest {
 
     @Test public void pipelineReportsUserRunLiveSensorCheck() {
         String report = DebugLog.pipelineVerification(
-                "1 | WATCH_SYSTEM_CHECK_RESULT | status=PASS;motionSamples=30;heartSamples=2\n");
+                "1 | WATCH_SYSTEM_CHECK_HAPTIC_REQUESTED | durationMs=240\n"
+                        + "2 | WATCH_SYSTEM_CHECK_RESULT | status=PASS;motionSamples=30;heartSamples=2\n");
 
+        assertTrue(report.contains("12. Awake watch setup haptic: PASS"));
         assertTrue(report.contains("14. User-run live watch sensor check: PASS"));
     }
 

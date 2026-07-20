@@ -120,6 +120,27 @@ public final class PhoneWorkflowInstrumentationTest {
         }
     }
 
+    @Test public void completedWatchCheckIsRestoredWhenPhoneReturns() {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        long completedUtcMs = System.currentTimeMillis();
+        context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putLong("last_system_check_utc", completedUtcMs)
+                .putLong("last_system_check_displayed_utc", 0L)
+                .putString("last_system_check_status", "FAIL")
+                .putString("last_system_check_reason", "Heart-rate permission is missing.")
+                .apply();
+
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                android.widget.TextView status = activity.findViewById(R.id.statusText);
+                assertTrue(status.getText().toString().contains("Watch system check FAIL"));
+                assertTrue(status.getText().toString().contains("Heart-rate permission"));
+            });
+        }
+    }
+
     private static boolean containsScrollView(View view) {
         if (view instanceof ScrollView) return true;
         if (!(view instanceof android.view.ViewGroup)) return false;

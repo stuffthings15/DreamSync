@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.2.3-test with unique phone and Wear OS version codes published to internal testing.
+- Version 1.2.4-test with unique phone and Wear OS version codes published to internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -35,18 +35,21 @@
 - Wear OS version code 20 (`1.2.2-test`) published on 2026-07-19.
 - Phone version code 21 (`1.2.3-test`) published on 2026-07-20.
 - Wear OS version code 22 (`1.2.3-test`) published on 2026-07-20.
+- Phone version code 23 (`1.2.4-test`) published on 2026-07-20.
+- Wear OS version code 24 (`1.2.4-test`) published on 2026-07-20.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 21 (`1.2.3-test`) is available to internal testers.
-- Wear OS version code 22 (`1.2.3-test`) is available to internal testers.
-- Forty shared tests, six phone unit tests, seven Android instrumentation tests, phone and watch lint, signed-bundle, signature, and release-integrity checks passed before publishing.
-- The phone sound check now uses a local WAV player with streaming PCM fallback, waits for confirmed playback, reports exact failures, and provides a separate privacy-safe Export Debug Log button.
-- The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, no-haptics policy, and terminal summary.
-- Release bundle SHA-256: phone `B18C0020DBC314F3D95C32F5EACFB1DEDC29F8EAECE6A2D5A17692C00292EE90`; Wear OS `A6C598B95F5F90BA32F07DBA66E7697D8BFF54CB9234DBE2C455069737FFD66A`.
+- Phone version code 23 (`1.2.4-test`) is available to internal testers.
+- Wear OS version code 24 (`1.2.4-test`) is available to internal testers.
+- Forty-four shared tests, seven phone unit tests, eight Android instrumentation tests, phone and watch lint, signed-bundle, signature, and release-integrity checks passed before publishing.
+- The phone sound check uses a local WAV player with streaming PCM fallback and requires the user to confirm that the cue was audible. A saved calibration without that confirmation is rejected.
+- **Run phone + watch check** confirms phone audio, then runs a 45-second watch check for permissions, actual accelerometer and heart-rate samples, sensor registration, off-wrist state, and available Samsung advanced signals. The exact pass, fail, or two-minute timeout result is stored in Export Debug Log.
+- The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, user-run system check, no-haptics policy, and terminal summary.
+- Release bundle SHA-256: phone `ADA92814D3665729155486841564F39D8C95D89D7FB41BE97207E962E5158E26`; Wear OS `D47106BF8A80A07DE716EAAF45C3644D646892AC77D0AB35BB0760CDCEC715F2`.
 - This build adds persistent automatic nightly operation, broad Android 8.0+/Wear OS 3+ packaging, conservative passive-HR fallback, learned charge reminders, and full-sensor feature selection for capable watches.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.
 - The watch has no product settings or power controls. Manual launch sends the user to phone controls; only required first-time watch health-permission prompts remain on the watch.

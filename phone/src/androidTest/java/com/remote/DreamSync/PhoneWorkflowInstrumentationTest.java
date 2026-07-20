@@ -41,6 +41,7 @@ public final class PhoneWorkflowInstrumentationTest {
                 assertNotNull(content);
                 assertTrue(containsScrollView(content));
                 assertNotNull(activity.findViewById(R.id.powerButton));
+                assertNotNull(activity.findViewById(R.id.systemCheckButton));
                 assertNotNull(activity.findViewById(R.id.exportButton));
                 assertNotNull(activity.findViewById(R.id.exportDebugButton));
                 assertNotNull(activity.findViewById(R.id.deleteDataButton));

@@ -55,6 +55,7 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_DEBUG_EXPORT = 603;
     private static final String PREFS = "dreamsync_phone";
     private static final int WATCH_INSTALL_POLL_LIMIT = 40;
+    private static final long SYSTEM_CHECK_TIMEOUT_MS = 2L * 60L * 1000L;
 
     private TextView statusText;
     private TextView readinessText;
@@ -146,6 +147,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.previewDeepButton).setOnClickListener(v -> previewCue("DEEP"));
         findViewById(R.id.practiceLucidButton).setOnClickListener(v -> runLucidPractice());
         findViewById(R.id.openWatchButton).setOnClickListener(v -> setupOrOpenWatch());
+        findViewById(R.id.systemCheckButton).setOnClickListener(v -> runSystemCheck());
         powerButton.setOnClickListener(v -> toggleAutomaticMode());
         modeGroup.setOnCheckedChangeListener((group, checkedId) -> syncAutoSettingsIfEnabled());
         findViewById(R.id.morningButton).setOnClickListener(v -> {
@@ -171,6 +173,14 @@ public final class MainActivity extends Activity {
     }
 
     private void playCuePreview(String type, boolean continueEnable) {
+        playCuePreview(type, continueEnable, null);
+    }
+
+    private void playCuePreview(
+            String type,
+            boolean continueEnable,
+            Runnable onSuccess
+    ) {
         if (audioPreviewInProgress) {
             statusText.setText("A sound check is already running.");
             return;
@@ -217,8 +227,125 @@ public final class MainActivity extends Activity {
                     calibrationEnablePending = false;
                     turnDreamSyncOn();
                 }
+                if (onSuccess != null) onSuccess.run();
             });
         });
+    }
+
+    private void runSystemCheck() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!autoEnabled()) {
+            statusText.setText("Turn DreamSync On before running the full system check.");
+            DebugLog.append(this, "SYSTEM_CHECK_BLOCKED", "reason=DreamSync is Off");
+            return;
+        }
+        if (!prefs.getBoolean("watch_auto_confirmed", false)) {
+            DebugLog.append(this, "SYSTEM_CHECK_WATCH_UNCONFIRMED",
+                    "continuing so missing setup or permissions can be diagnosed");
+        }
+        if (!pref("active_session_id").isEmpty()) {
+            statusText.setText("A sleep session is active. Run the system check after it ends.");
+            DebugLog.append(this, "SYSTEM_CHECK_BLOCKED", "reason=sleep session active");
+            return;
+        }
+        if (pref("bound_watch_node").isEmpty()) {
+            statusText.setText("No watch is bound. Tap Set up watch app first.");
+            DebugLog.append(this, "SYSTEM_CHECK_BLOCKED", "reason=no bound watch");
+            return;
+        }
+        statusText.setText("System check 1 of 2: testing the phone speaker...");
+        DebugLog.append(this, "SYSTEM_CHECK_REQUESTED",
+                "phoneAudio=true;watchMotion=true;watchHeartRate=true");
+        playCuePreview("DEEP", false, () -> confirmCueWasAudible(false));
+    }
+
+    private void confirmCueWasAudible(boolean continueEnable) {
+        new AlertDialog.Builder(this)
+                .setTitle("Did you hear the test cue?")
+                .setMessage("Choose Yes only if the quiet pink-noise pair was audible from the phone speaker.")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putBoolean("last_calibration_audible_confirmed", true)
+                            .putLong("last_calibration_audible_confirmed_utc",
+                                    System.currentTimeMillis())
+                            .apply();
+                    DebugLog.append(this, "SOUND_CHECK_AUDIBLE_CONFIRMED",
+                            "confirmedByUser=true");
+                    if (continueEnable) {
+                        calibrationEnablePending = false;
+                        turnDreamSyncOn();
+                    } else {
+                        startWatchSystemCheck();
+                    }
+                })
+                .setNegativeButton("No", (dialog, which) -> {
+                    calibrationEnablePending = false;
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .remove("last_calibration")
+                            .remove("last_calibration_audible_confirmed")
+                            .remove("last_calibration_audible_confirmed_utc")
+                            .putString("last_audio_error", "User reported no audible test cue")
+                            .putLong("last_audio_error_utc", System.currentTimeMillis())
+                            .apply();
+                    DebugLog.append(this, "SOUND_CHECK_NOT_AUDIBLE",
+                            "OS playback completed but user heard no sound");
+                    DebugLog.append(this, "SYSTEM_CHECK_FAILED",
+                            "reason=user heard no phone cue");
+                    statusText.setText("System check failed: no audible phone cue. Export the debug log.");
+                    updateReadiness();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    private void startWatchSystemCheck() {
+        String targetNodeId = pref("bound_watch_node");
+        String enrollmentId = pref("auto_enrollment_id");
+        if (targetNodeId.isEmpty() || enrollmentId.isEmpty()) {
+            statusText.setText("System check stopped: watch binding is incomplete.");
+            DebugLog.append(this, "SYSTEM_CHECK_FAILED", "reason=incomplete binding");
+            return;
+        }
+        String checkId = UUID.randomUUID().toString();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("pending_system_check_id", checkId)
+                .putLong("last_system_check_requested_utc", System.currentTimeMillis())
+                .putString("last_system_check_status", "RUNNING")
+                .apply();
+        statusText.postDelayed(this::expireSystemCheckIfNeeded,
+                SYSTEM_CHECK_TIMEOUT_MS + 1_000L);
+        Intent remoteIntent = new Intent(Intent.ACTION_VIEW)
+                .setData(Uri.parse("dreamsync://watch/system-check").buildUpon()
+                        .appendQueryParameter("check", checkId)
+                        .appendQueryParameter("enrollment", enrollmentId)
+                        .build())
+                .addCategory(Intent.CATEGORY_BROWSABLE);
+        launchRemoteIntent(
+                remoteIntent,
+                targetNodeId,
+                "System check 2 of 2: keep the watch snug and still for about 45 seconds.",
+                "Could not start the watch system check: ",
+                () -> DebugLog.append(this, "WATCH_SYSTEM_CHECK_OPENED",
+                        "checkId=" + checkId + ";durationSeconds=45"));
+    }
+
+    private void expireSystemCheckIfNeeded() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String pending = prefs.getString("pending_system_check_id", "");
+        long requested = prefs.getLong("last_system_check_requested_utc", 0L);
+        if (pending.isEmpty() || requested <= 0L
+                || System.currentTimeMillis() - requested < SYSTEM_CHECK_TIMEOUT_MS) return;
+        String reason = "No watch result arrived within two minutes.";
+        prefs.edit()
+                .remove("pending_system_check_id")
+                .putString("last_system_check_status", "FAIL")
+                .putString("last_system_check_reason", reason)
+                .putLong("last_system_check_utc", System.currentTimeMillis())
+                .apply();
+        DebugLog.append(this, "SYSTEM_CHECK_FAILED",
+                "reason=watch result timeout;checkId=" + pending);
+        statusText.setText("System check failed: " + reason + " Export the debug log.");
+        updateReadiness();
     }
 
     private void recordAudioFailure(String reason) {
@@ -267,8 +394,11 @@ public final class MainActivity extends Activity {
         }
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
-        if (calibration.isEmpty()) {
-            DebugLog.append(this, "TURN_ON_BLOCKED", "reason=sound calibration required");
+        boolean calibrationHeard = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("last_calibration_audible_confirmed", false);
+        if (calibration.isEmpty() || !calibrationHeard) {
+            DebugLog.append(this, "TURN_ON_BLOCKED",
+                    "reason=audible sound calibration required");
             beginGuidedCalibration();
             return;
         }
@@ -296,7 +426,7 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("Play test cue", (dialog, which) -> {
                     calibrationPromptShowing = false;
                     calibrationEnablePending = true;
-                    playCuePreview("DEEP", true);
+                    playCuePreview("DEEP", false, () -> confirmCueWasAudible(true));
                 })
                 .setNegativeButton("Not now", (dialog, which) -> {
                     calibrationPromptShowing = false;
@@ -875,6 +1005,8 @@ public final class MainActivity extends Activity {
         AudioOutput.Result audio = new AudioOutput(this).preflight();
         String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_calibration", "");
+        boolean calibrationHeard = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("last_calibration_audible_confirmed", false);
         int practice = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("lucid_practice_count", 0);
         String compatibility = "not checked";
@@ -889,11 +1021,15 @@ public final class MainActivity extends Activity {
         } catch (JSONException ignored) {}
         int chargeRecords = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("charge_reminder_record_count", 0);
+        String systemCheck = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_system_check_status", "not run");
         readinessText.setText((autoEnabled() ? "ON" : "OFF")
                 + " | speaker " + (audio.success ? "ready" : audio.reason)
-                + " | calibration " + (calibration.isEmpty() ? "needed" : "saved")
+                + " | calibration " + (calibration.isEmpty() || !calibrationHeard
+                ? "needed" : "heard + saved")
                 + " | lucid practice " + practice + "/10"
                 + " | watch " + compatibility
+                + " | system check " + systemCheck.toLowerCase(Locale.US)
                 + " | charge reminder " + (chargeRecords >= ChargeReminderScheduler.MIN_RECORDS
                 ? "learned" : chargeRecords + "/3 nights"));
         updatePowerState();
@@ -1091,6 +1227,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        expireSystemCheckIfNeeded();
         String summary = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_summary", "");
         if (!summary.isEmpty()) showFriendlySummary(summary);

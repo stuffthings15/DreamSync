@@ -117,6 +117,17 @@
                     android:textColor="@color/ds_ice" />
 
             </LinearLayout>
+
+            <Button
+                android:id="@+id/systemCheckButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_outline"
+                android:stateListAnimator="@null"
+                android:text="Run phone + watch check"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
         </LinearLayout>
 
         <LinearLayout

@@ -55,6 +55,8 @@ final class DebugLog {
                 .append("autoEnabled=").append(prefs.getBoolean("auto_enabled", false)).append('\n')
                 .append("watchBound=").append(!prefs.getString("bound_watch_node", "").isEmpty()).append('\n')
                 .append("watchConfirmed=").append(prefs.getBoolean("watch_auto_confirmed", false)).append('\n')
+                .append("audibleCalibrationConfirmed=").append(
+                        prefs.getBoolean("last_calibration_audible_confirmed", false)).append('\n')
                 .append("watchInstallPending=").append(prefs.getBoolean("watch_install_pending", false)).append('\n')
                 .append("activeSession=").append(!prefs.getString("active_session_id", "").isEmpty()).append('\n')
                 .append("lastCalibrationUtcMs=").append(prefs.getLong("last_calibration_utc", 0L)).append('\n')
@@ -67,6 +69,12 @@ final class DebugLog {
                         prefs.getLong("last_watch_diagnostic_utc", 0L)).append('\n')
                 .append("lastWatchHeartbeatUtcMs=").append(
                         prefs.getLong("last_watch_heartbeat_utc", 0L)).append('\n')
+                .append("lastSystemCheckStatus=").append(sanitize(
+                        prefs.getString("last_system_check_status", "not run"), 32)).append('\n')
+                .append("lastSystemCheckReason=").append(sanitize(
+                        prefs.getString("last_system_check_reason", ""), 500)).append('\n')
+                .append("lastSystemCheckUtcMs=").append(
+                        prefs.getLong("last_system_check_utc", 0L)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
                 .append("hapticsDuringSleep=OFF_BY_DESIGN\n")
                 .append("sleepAudioOutput=PHONE_SPEAKER_ONLY\n");
@@ -94,8 +102,9 @@ final class DebugLog {
         out.append("No cue is expected until every sleep and safety gate passes. "
                 + "A blocked cue is a valid safety result.\n");
         step(out, 1, "Phone sound check",
-                events, new String[]{" | SOUND_CHECK_PASSED |"},
-                new String[]{" | SOUND_CHECK_FAILED |", " | SOUND_CHECK_BLOCKED |"});
+                events, new String[]{" | SOUND_CHECK_AUDIBLE_CONFIRMED |"},
+                new String[]{" | SOUND_CHECK_NOT_AUDIBLE |",
+                        " | SOUND_CHECK_FAILED |", " | SOUND_CHECK_BLOCKED |"});
         step(out, 2, "Wear OS watch discovered",
                 events, new String[]{" | WATCH_FOUND |"},
                 new String[]{" | WATCH_NOT_FOUND |"});
@@ -135,6 +144,10 @@ final class DebugLog {
         step(out, 13, "Terminal summary returned",
                 events, new String[]{" | SESSION_SUMMARY_RECEIVED |", " | SUMMARY_RECEIVED |"},
                 new String[]{" | SESSION_SUMMARY_FAILED |"});
+        step(out, 14, "User-run live watch sensor check",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_RESULT | status=PASS"},
+                new String[]{" | WATCH_SYSTEM_CHECK_RESULT | status=FAIL",
+                        " | SYSTEM_CHECK_FAILED |", " | SYSTEM_CHECK_BLOCKED |"});
         return out.toString();
     }
 

@@ -49,7 +49,15 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 String sourceNodeId = event.getDataItem().getUri().getHost();
                 if (sourceNodeId == null || sourceNodeId.isEmpty()) continue;
 
-                if (path.startsWith(
+                if (path.startsWith(com.remote.DreamSync.shared.Protocol
+                        .PATH_SYSTEM_CHECK_RESULT_PREFIX)) {
+                    if (validSystemCheckEnvelope(envelope, sourceNodeId, path)) {
+                        handleSystemCheckResult(envelope);
+                    } else {
+                        DebugLog.append(this, "WATCH_SYSTEM_CHECK_REJECTED",
+                                "reason=wrong device, enrollment, check id, version, duplicate, or expiry");
+                    }
+                } else if (path.startsWith(
                         com.remote.DreamSync.shared.Protocol.PATH_DIAGNOSTIC_PREFIX)) {
                     if (validDiagnosticEnvelope(envelope, sourceNodeId, path)) {
                         handleDiagnostic(envelope);
@@ -364,6 +372,67 @@ public final class PhoneDataListenerService extends WearableListenerService {
         if (watch.isEmpty() || phone.isEmpty() || !watch.equals(sourceNodeId)) return false;
         return messageGuard.check(envelope, envelope.sessionId, phone, watch,
                 System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
+    }
+
+    private boolean validSystemCheckEnvelope(
+            ProtocolEnvelope envelope,
+            String sourceNodeId,
+            String path
+    ) {
+        if (!com.remote.DreamSync.shared.Protocol.TYPE_SYSTEM_CHECK_RESULT.equals(
+                envelope.messageType)) return false;
+        if (envelope.cueId.isEmpty() || !path.equals(
+                com.remote.DreamSync.shared.Protocol.PATH_SYSTEM_CHECK_RESULT_PREFIX
+                        + envelope.sessionId)) return false;
+        String enrollment = pref("auto_enrollment_id");
+        String watch = pref("bound_watch_node");
+        String phone = pref("local_phone_node");
+        String pendingCheck = pref("pending_system_check_id");
+        if (enrollment.isEmpty() || watch.isEmpty() || phone.isEmpty()
+                || !enrollment.equals(envelope.sessionId)
+                || !watch.equals(sourceNodeId)
+                || pendingCheck.isEmpty()
+                || !pendingCheck.equals(envelope.cueId)) return false;
+        return messageGuard.check(envelope, enrollment, phone, watch,
+                System.currentTimeMillis()) == MessageGuard.Result.ACCEPT;
+    }
+
+    private void handleSystemCheckResult(ProtocolEnvelope envelope) {
+        String status = envelope.payload.getOrDefault("status", "FAIL");
+        if (!"PASS".equals(status)) status = "FAIL";
+        String reason = cleanStatus(envelope.payload.getOrDefault(
+                "reason", "Watch system check returned no reason."));
+        String details = "status=" + status
+                + ";reason=" + reason
+                + ";motionSamples=" + envelope.payload.getOrDefault("motionSamples", "")
+                + ";heartSamples=" + envelope.payload.getOrDefault("heartSamples", "")
+                + ";lastHeartBpm=" + envelope.payload.getOrDefault("lastHeartBpm", "")
+                + ";motionRegistered=" + envelope.payload.getOrDefault("motionRegistered", "")
+                + ";heartRegistered=" + envelope.payload.getOrDefault("heartRegistered", "")
+                + ";offWrist=" + envelope.payload.getOrDefault("offWrist", "")
+                + ";durationMs=" + envelope.payload.getOrDefault("durationMs", "")
+                + ";samsungSdkConnected="
+                + envelope.payload.getOrDefault("samsungSdkConnected", "")
+                + ";ibiSamples=" + envelope.payload.getOrDefault("ibiSamples", "")
+                + ";temperatureSamples="
+                + envelope.payload.getOrDefault("temperatureSamples", "")
+                + ";ppgSamples=" + envelope.payload.getOrDefault("ppgSamples", "");
+        DebugLog.append(this, "WATCH_SYSTEM_CHECK_RESULT", details);
+        android.content.SharedPreferences.Editor edit = getSharedPreferences(
+                PREFS, MODE_PRIVATE).edit()
+                .putString("last_system_check_status", status)
+                .putString("last_system_check_reason", reason)
+                .putLong("last_system_check_utc", System.currentTimeMillis());
+        if (envelope.cueId.equals(pref("pending_system_check_id"))) {
+            edit.remove("pending_system_check_id");
+        }
+        String capabilities = envelope.payload.getOrDefault("capabilityJson", "");
+        if (!capabilities.isEmpty()) edit.putString("watch_capabilities", capabilities);
+        edit.apply();
+        sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
+                .putExtra("status", "Watch system check " + status + ": " + reason)
+                .putExtra("state", "SYSTEM_CHECK_" + status)
+                .putExtra("sessionId", envelope.sessionId));
     }
 
     private void handleDiagnostic(ProtocolEnvelope envelope) {

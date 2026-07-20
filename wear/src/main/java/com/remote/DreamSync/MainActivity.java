@@ -8,9 +8,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 
@@ -19,11 +25,19 @@ import androidx.wear.remote.interactions.RemoteActivityHelper;
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.remote.DreamSync.shared.ProtocolEnvelope;
+import com.remote.DreamSync.shared.SystemCheckEvaluator;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -40,6 +54,7 @@ public final class MainActivity extends Activity {
             "android.permission.health.READ_SKIN_TEMPERATURE";
     private static final String USER_PREFS = "dreamsync_watch_user";
     private static final int CONFIG_SYNC_RETRY_LIMIT = 20;
+    private static final long SYSTEM_CHECK_DURATION_MS = 45_000L;
 
     private TextView statusText;
     private boolean pendingEnable;
@@ -48,6 +63,8 @@ public final class MainActivity extends Activity {
     private boolean receiverRegistered;
     private String pendingEnrollment = "";
     private int configSyncAttempt;
+    private LiveSystemCheck liveSystemCheck;
+    private boolean systemCheckMode;
     private final ExecutorService remoteExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
@@ -66,14 +83,43 @@ public final class MainActivity extends Activity {
         Button openPhoneButton = findViewById(R.id.openPhoneButton);
         openPhoneButton.setOnClickListener(v -> openPhoneApp());
         refreshState();
-        boolean setupLink = maybeHandleSetupLink(getIntent());
-        if (!setupLink) statusText.postDelayed(this::openPhoneApp, 350L);
+        boolean controlledLink = maybeHandleSystemCheckLink(getIntent())
+                || maybeHandleSetupLink(getIntent());
+        if (!controlledLink) statusText.postDelayed(this::openPhoneApp, 350L);
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        maybeHandleSetupLink(intent);
+        if (!maybeHandleSystemCheckLink(intent)) maybeHandleSetupLink(intent);
+    }
+
+    private boolean maybeHandleSystemCheckLink(Intent intent) {
+        Uri data = intent == null ? null : intent.getData();
+        if (data == null || !"dreamsync".equals(data.getScheme())
+                || !"watch".equals(data.getHost())
+                || !"/system-check".equals(data.getPath())) return false;
+        systemCheckMode = true;
+        String checkId = safeIdentifier(data.getQueryParameter("check"));
+        String enrollment = safeIdentifier(data.getQueryParameter("enrollment"));
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        if (checkId.isEmpty() || !config.validBinding()
+                || !config.enrollmentId.equals(enrollment)) {
+            statusText.setText("System check could not start. Return to the DreamSync phone app.");
+            WatchDiagnostics.local(this, "SYSTEM_CHECK_BLOCKED",
+                    "reason=missing or invalid phone-watch binding");
+            return true;
+        }
+        if (SleepSessionService.isRunning()) {
+            statusText.setText("A sleep session is active. Run the system check after it ends.");
+            publishImmediateSystemCheckFailure(config, checkId,
+                    "A sleep session is active.");
+            return true;
+        }
+        if (liveSystemCheck != null) liveSystemCheck.cancel("A newer check replaced this check.");
+        liveSystemCheck = new LiveSystemCheck(config, checkId);
+        liveSystemCheck.start();
+        return true;
     }
 
     private boolean maybeHandleSetupLink(Intent intent) {
@@ -198,6 +244,288 @@ public final class MainActivity extends Activity {
                 .addOnFailureListener(error -> openPhoneStoreOnConnectedDevice());
     }
 
+    private void publishImmediateSystemCheckFailure(
+            AutoSleepConfig config,
+            String checkId,
+            String reason
+    ) {
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("status", "FAIL");
+        payload.put("reason", reason);
+        payload.put("motionSamples", "0");
+        payload.put("heartSamples", "0");
+        payload.put("motionRegistered", "false");
+        payload.put("heartRegistered", "false");
+        payload.put("offWrist", "false");
+        payload.put("durationMs", "0");
+        payload.put("capabilityJson", "{}");
+        publishSystemCheckResult(config, checkId, payload);
+    }
+
+    private void publishSystemCheckResult(
+            AutoSleepConfig config,
+            String checkId,
+            Map<String, String> payload
+    ) {
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.remote.DreamSync.shared.Protocol.TYPE_SYSTEM_CHECK_RESULT,
+                config.enrollmentId,
+                checkId,
+                config.watchNodeId,
+                config.phoneNodeId,
+                System.currentTimeMillis(),
+                com.remote.DreamSync.shared.Protocol.SYSTEM_CHECK_TTL_MS,
+                payload);
+        PutDataMapRequest map = PutDataMapRequest.create(
+                com.remote.DreamSync.shared.Protocol.PATH_SYSTEM_CHECK_RESULT_PREFIX
+                        + config.enrollmentId);
+        map.getDataMap().putByteArray("envelope", envelope.encode());
+        map.getDataMap().putLong("updatedUtcMs", System.currentTimeMillis());
+        PutDataRequest request = map.asPutDataRequest();
+        request.setUrgent();
+        Wearable.getDataClient(this).putDataItem(request)
+                .addOnSuccessListener(item -> {
+                    String status = payload.getOrDefault("status", "FAIL");
+                    String reason = payload.getOrDefault("reason", "No reason returned.");
+                    WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_RESULT",
+                            "status=" + status + ";" + systemCheckDetails(payload));
+                    statusText.setText("System check " + status + ": " + reason
+                            + " Returning to phone controls...");
+                    statusText.postDelayed(
+                            () -> launchPhoneControls(config.phoneNodeId), 1_500L);
+                })
+                .addOnFailureListener(error -> {
+                    WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_RESULT_DELIVERY_FAILED",
+                            safeMessage(error));
+                    statusText.setText("System check finished, but the result could not reach the phone.");
+                });
+    }
+
+    private String systemCheckDetails(Map<String, String> payload) {
+        return "reason=" + payload.getOrDefault("reason", "")
+                + ";motionSamples=" + payload.getOrDefault("motionSamples", "0")
+                + ";heartSamples=" + payload.getOrDefault("heartSamples", "0")
+                + ";lastHeartBpm=" + payload.getOrDefault("lastHeartBpm", "NaN")
+                + ";offWrist=" + payload.getOrDefault("offWrist", "false")
+                + ";samsungSdkConnected="
+                + payload.getOrDefault("samsungSdkConnected", "false")
+                + ";ibiSamples=" + payload.getOrDefault("ibiSamples", "0")
+                + ";temperatureSamples="
+                + payload.getOrDefault("temperatureSamples", "0")
+                + ";ppgSamples=" + payload.getOrDefault("ppgSamples", "0");
+    }
+
+    private final class LiveSystemCheck implements SensorEventListener {
+        private final AutoSleepConfig config;
+        private final String checkId;
+        private final SensorManager sensorManager;
+        private final long startedElapsedMs = SystemClock.elapsedRealtime();
+        private final Runnable finishRunnable = this::finish;
+        private Sensor accelerometer;
+        private Sensor heartRate;
+        private SamsungHealthSensorBridge samsungBridge;
+        private Set<String> samsungTrackerTypes = new HashSet<>();
+        private volatile int motionSamples;
+        private volatile int standardHeartSamples;
+        private volatile int samsungHeartSamples;
+        private volatile int ibiSamples;
+        private volatile int temperatureSamples;
+        private volatile int ppgSamples;
+        private volatile double lastHeartBpm = Double.NaN;
+        private volatile boolean offWrist;
+        private volatile boolean samsungConnected;
+        private boolean activityPermission;
+        private boolean heartPermissionGranted;
+        private boolean motionRegistered;
+        private boolean heartRegistered;
+        private boolean finished;
+        private String samsungDetail = "";
+        private String forcedFailure = "";
+
+        LiveSystemCheck(AutoSleepConfig config, String checkId) {
+            this.config = config;
+            this.checkId = checkId;
+            sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        }
+
+        void start() {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            activityPermission = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION);
+            heartPermissionGranted = hasPermission(heartPermission());
+            WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_STARTED",
+                    "checkId=" + checkId + ";durationSeconds=45"
+                            + ";activityPermission=" + activityPermission
+                            + ";heartPermission=" + heartPermissionGranted);
+            if (!activityPermission || !heartPermissionGranted || sensorManager == null) {
+                if (sensorManager == null) forcedFailure = "Watch sensor service is unavailable.";
+                finish();
+                return;
+            }
+            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
+            if (accelerometer != null) {
+                motionRegistered = sensorManager.registerListener(
+                        this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+            }
+            if (heartRate != null) {
+                try {
+                    heartRegistered = sensorManager.registerListener(
+                            this, heartRate, SensorManager.SENSOR_DELAY_NORMAL);
+                } catch (SecurityException error) {
+                    heartRegistered = false;
+                    forcedFailure = "Heart-rate permission was rejected by the watch.";
+                }
+            }
+            startSamsungCheck();
+            statusText.setText("System check running. Wear the watch snugly and hold still. "
+                    + "Motion 0, heart 0.");
+            statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
+        }
+
+        private void startSamsungCheck() {
+            samsungBridge = new SamsungHealthSensorBridge(MainActivity.this,
+                    new SamsungHealthSensorBridge.Listener() {
+                        @Override public void onCapabilities(
+                                Set<String> trackerTypes, boolean connected, String detail) {
+                            samsungTrackerTypes = trackerTypes == null
+                                    ? new HashSet<>() : new HashSet<>(trackerTypes);
+                            samsungConnected = connected;
+                            samsungDetail = detail == null ? "" : detail;
+                        }
+
+                        @Override public void onHeartRate(
+                                long timestampMs, double bpm, List<Integer> ibiMs,
+                                boolean watchOffWrist) {
+                            offWrist = watchOffWrist;
+                            if (Double.isFinite(bpm)) {
+                                lastHeartBpm = bpm;
+                                samsungHeartSamples++;
+                            }
+                            if (ibiMs != null) ibiSamples += ibiMs.size();
+                        }
+
+                        @Override public void onSkinTemperature(
+                                long timestampMs, double skinC, double ambientC) {
+                            if (Double.isFinite(skinC)) temperatureSamples++;
+                        }
+
+                        @Override public void onPpgSample(long timestampMs, boolean valid) {
+                            if (valid) ppgSamples++;
+                        }
+
+                        @Override public void onBridgeError(String code, String detail) {
+                            samsungDetail = code + ": " + detail;
+                        }
+                    });
+            samsungBridge.start(true);
+        }
+
+        @Override public void onSensorChanged(SensorEvent event) {
+            if (finished || event == null || event.sensor == null) return;
+            if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER
+                    && event.values != null && event.values.length >= 3
+                    && Float.isFinite(event.values[0])
+                    && Float.isFinite(event.values[1])
+                    && Float.isFinite(event.values[2])) {
+                motionSamples++;
+            } else if (event.sensor.getType() == Sensor.TYPE_HEART_RATE
+                    && event.values != null && event.values.length > 0
+                    && Float.isFinite(event.values[0])
+                    && event.values[0] >= 30f && event.values[0] <= 220f) {
+                standardHeartSamples++;
+                lastHeartBpm = event.values[0];
+            }
+            if (motionSamples % 10 == 0 || standardHeartSamples > 0) {
+                statusText.setText("System check running. Wear the watch snugly and hold still. "
+                        + "Motion " + motionSamples + ", heart "
+                        + (standardHeartSamples + samsungHeartSamples) + ".");
+            }
+        }
+
+        @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            if (sensor != null && sensor.getType() == Sensor.TYPE_HEART_RATE
+                    && accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE) {
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_HEART_ACCURACY_UNRELIABLE", "checkId=" + checkId);
+            }
+        }
+
+        void cancel(String reason) {
+            if (finished) return;
+            forcedFailure = reason;
+            finish();
+        }
+
+        private void finish() {
+            if (finished) return;
+            finished = true;
+            statusText.removeCallbacks(finishRunnable);
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (sensorManager != null) sensorManager.unregisterListener(this);
+            if (samsungBridge != null) samsungBridge.stop();
+
+            int totalHeartSamples = standardHeartSamples + samsungHeartSamples;
+            boolean usableHeartRegistration = heartRegistered
+                    || (samsungConnected
+                    && samsungTrackerTypes.contains("HEART_RATE_CONTINUOUS"));
+            SystemCheckEvaluator.Result evaluation = new SystemCheckEvaluator().evaluate(
+                    activityPermission,
+                    heartPermissionGranted,
+                    motionRegistered,
+                    usableHeartRegistration,
+                    motionSamples,
+                    totalHeartSamples,
+                    offWrist);
+            boolean passed = evaluation.passed && forcedFailure.isEmpty();
+            String reason = forcedFailure.isEmpty() ? evaluation.reason : forcedFailure;
+            SensorCapabilitySnapshot capability = new SensorCapabilitySnapshot(
+                    motionSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES,
+                    standardHeartSamples >= SystemCheckEvaluator.MIN_HEART_SAMPLES,
+                    SamsungHealthSensorBridge.isPackaged(),
+                    samsungConnected,
+                    samsungTrackerTypes,
+                    passed,
+                    samsungDetail);
+            Map<String, String> payload = new LinkedHashMap<>();
+            payload.put("status", passed ? "PASS" : "FAIL");
+            payload.put("reason", reason);
+            payload.put("motionSamples", Integer.toString(motionSamples));
+            payload.put("heartSamples", Integer.toString(totalHeartSamples));
+            payload.put("lastHeartBpm", Double.isFinite(lastHeartBpm)
+                    ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
+            payload.put("motionRegistered", Boolean.toString(motionRegistered));
+            payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
+            payload.put("activityPermission", Boolean.toString(activityPermission));
+            payload.put("heartPermission", Boolean.toString(heartPermissionGranted));
+            payload.put("offWrist", Boolean.toString(offWrist));
+            payload.put("durationMs", Long.toString(
+                    Math.max(0L, SystemClock.elapsedRealtime() - startedElapsedMs)));
+            payload.put("samsungSdkPackaged", Boolean.toString(
+                    SamsungHealthSensorBridge.isPackaged()));
+            payload.put("samsungSdkConnected", Boolean.toString(samsungConnected));
+            payload.put("ibiSamples", Integer.toString(ibiSamples));
+            payload.put("temperatureSamples", Integer.toString(temperatureSamples));
+            payload.put("ppgSamples", Integer.toString(ppgSamples));
+            payload.put("capabilityJson", capability.toJson());
+            publishSystemCheckResult(config, checkId, payload);
+            liveSystemCheck = null;
+        }
+    }
+
+    private static String safeIdentifier(String value) {
+        if (value == null) return "";
+        String cleaned = value.replaceAll("[^A-Za-z0-9._:-]", "");
+        return cleaned.substring(0, Math.min(128, cleaned.length()));
+    }
+
+    private static String safeMessage(Throwable error) {
+        if (error == null) return "unknown";
+        Throwable cause = error.getCause() == null ? error : error.getCause();
+        String message = cause.getMessage();
+        return message == null || message.isBlank()
+                ? cause.getClass().getSimpleName() : message;
+    }
+
     private void openPhoneStoreOnConnectedDevice() {
         Wearable.getNodeClient(this).getConnectedNodes()
                 .addOnSuccessListener(nodes -> {
@@ -264,7 +592,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (pendingEnrollment.isEmpty()) refreshState();
+        if (pendingEnrollment.isEmpty() && !systemCheckMode) refreshState();
     }
 
     @Override protected void onStop() {
@@ -276,6 +604,9 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (liveSystemCheck != null) {
+            liveSystemCheck.cancel("The watch system check was interrupted.");
+        }
         remoteExecutor.shutdown();
         super.onDestroy();
     }

@@ -5,8 +5,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.view.View;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -23,6 +26,7 @@ public final class WearWorkflowInstrumentationTest {
 
     @After public void clearConfig() {
         SessionConfig.clear(context);
+        AutoSleepConfig.clear(context);
     }
 
     @Test public void handshakeCanBeConsumedOnlyOnce() {
@@ -48,6 +52,20 @@ public final class WearWorkflowInstrumentationTest {
                 assertNotNull(content);
                 assertTrue(containsScrollView(content));
                 assertNotNull(activity.findViewById(R.id.openPhoneButton));
+            });
+        }
+    }
+
+    @Test public void unboundSystemCheckLinkFailsClosed() {
+        Intent intent = new Intent(context, MainActivity.class)
+                .setData(Uri.parse("dreamsync://watch/system-check"
+                        + "?check=check-1&enrollment=enrollment-1"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                TextView status = activity.findViewById(R.id.statusText);
+                assertNotNull(status);
+                assertTrue(status.getText().toString().contains("could not start"));
             });
         }
     }

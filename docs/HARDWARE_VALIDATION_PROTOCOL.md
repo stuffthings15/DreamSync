@@ -1,6 +1,6 @@
 # DreamSync S23+ and Galaxy Watch Ultra validation protocol
 
-Version under test: phone 15 / Wear OS 16 (`1.2.0-test`)
+Version under test: phone 19 / Wear OS 20 (`1.2.2-test`)
 
 Primary devices: Samsung Galaxy S23+ and Galaxy Watch Ultra 2024 or 2025
 
@@ -21,11 +21,12 @@ The runner saves device serials, build fingerprints, package details, logs, and 
 
 | Area | Test | Pass condition | Evidence |
 |---|---|---|---|
-| Installation | Install phone and watch from their Play tester pages | Correct 1.1.2-test build opens on each device | Play screen plus collected package metadata |
+| Installation | Install phone and watch from their Play tester pages | Correct 1.2.2-test build opens on each device | Play screen plus collected package metadata |
 | Pair binding | Turn DreamSync On from the phone | One capability-matched watch is bound; no broadcast to other nodes | Export plus connection events |
 | Permissions | Deny, grant, and revoke each required permission | Clear explanation; no cue when a required permission is missing | Screen capture and event export |
 | Sensors | Wear watch normally for at least 30 minutes | Fresh motion and HR, usable sample rate/coverage, on-wrist state | Capability/signal export |
 | Sleep onset | Three sensor-only nights | Onset is estimated only after sustained low motion and fresh HR | Session exports and morning notes |
+| Audio check | Run the one-time phone sound check | Audible cue, confirmed completion, saved calibration, and no stale timeout message | Screen recording plus Export Debug Log |
 | Audio timing | Bench cue at each allowed volume | Two 50 ms bursts, 1.075 seconds apart, no clipping; gain never exceeds 10% | Audio capture and waveform version |
 | Audio route | Change media route, mute, headphones, and Bluetooth route | Automatic session/cueing blocks on unsafe or unknown routes | Event export and screen capture |
 | Arousal safety | Move/wake after a cue | 20-minute quiet period; first cue-linked wake disables further cues | Cue/arousal lifecycle export |
@@ -35,7 +36,7 @@ The runner saves device serials, build fingerprints, package details, logs, and 
 | Off-wrist | Remove the watch during a session | Cues stop; state explains off-wrist or stale signal | Watch event export |
 | Low battery | Controlled low-battery run | Cues disable before unsafe battery threshold | Battery/event export |
 | Storage failure | Fill or revoke available storage in a controlled test | Cues fail closed and terminal state explains storage failure | Event export |
-| UI | Font scaling and round-screen review | No clipped controls; Stop and Delete remain reachable | Screenshots |
+| UI | Font scaling and round-screen review | Phone On/Off, Export Debug Log, and Delete remain reachable; watch shows no settings and returns the user to phone controls | Screenshots |
 | Recovery | Reconnect after interruption | Summary recovers once; next night starts with clean binding | Phone history and session IDs |
 
 ## Required night sequence
@@ -59,4 +60,4 @@ The runner saves device serials, build fingerprints, package details, logs, and 
 
 ## Claim gate
 
-Passing this protocol can support wording such as “tested on Galaxy Watch Ultra” for the tested model/software combination. It cannot prove clinical sleep staging or that DreamSync keeps users asleep. Those claims require PSG comparison and the planned controlled 12-20-night study.
+Passing this protocol can support wording such as "tested on Galaxy Watch Ultra" for the tested model/software combination. It cannot prove clinical sleep staging or that DreamSync keeps users asleep. Those claims require PSG comparison and the planned controlled 12-20-night study.

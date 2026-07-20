@@ -10,9 +10,10 @@ Date: 2026-07-19
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Forty deterministic shared tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
-- Phone instrumentation passes 3/3 on an Android 16 emulator; Wear instrumentation passes 3/3 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations.
-- Google Play internal testing serves phone 15 and Wear 16 (`1.2.0-test`).
+- Forty deterministic shared tests and three phone audio-conversion tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Phone instrumentation passes 4/4 on an Android 16 emulator; Wear instrumentation passes 3/3 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations and privacy-safe debug export verification.
+- Google Play internal testing serves phone 19 and Wear 20 (`1.2.2-test`).
+- The one-time sound check waits for real playback, uses compatible PCM16 output, shows the exact error, and provides a separate bounded Export Debug Log without sleep data or node identifiers.
 - Audited source/asset/dependency provenance register, third-party notices, owner sign-off packet, and exact release fingerprints.
 - Reproducible S23+/Watch Ultra validation protocol and evidence-collection runner.
 - Persistent user On/Off, Wear Health Services asleep-state plus conservative passive-HR fallback, automatic fresh-session handshake, phone connected-device standby service, reboot recovery, and three-record learned charge reminder.

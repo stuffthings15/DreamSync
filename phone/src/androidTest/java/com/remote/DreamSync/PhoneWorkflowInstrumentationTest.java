@@ -1,6 +1,7 @@
 package com.remote.DreamSync;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
@@ -41,9 +42,25 @@ public final class PhoneWorkflowInstrumentationTest {
                 assertTrue(containsScrollView(content));
                 assertNotNull(activity.findViewById(R.id.powerButton));
                 assertNotNull(activity.findViewById(R.id.exportButton));
+                assertNotNull(activity.findViewById(R.id.exportDebugButton));
                 assertNotNull(activity.findViewById(R.id.deleteDataButton));
             });
         }
+    }
+
+    @Test public void debugExportContainsActionableDeviceStateWithoutNodeIds() {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        DebugLog.append(context, "TEST_EVENT", "sessionId=sensitive-node-value");
+
+        String debug = DebugLog.export(context, new AudioOutput(context));
+
+        assertTrue(debug.contains("DreamSync phone debug log"));
+        assertTrue(debug.contains("appVersion="));
+        assertTrue(debug.contains("audio=mediaVolume="));
+        assertTrue(debug.contains("watchBound="));
+        assertTrue(debug.contains("TEST_EVENT"));
+        assertFalse(debug.contains("sensitive-node-value"));
     }
 
     private static boolean containsScrollView(View view) {

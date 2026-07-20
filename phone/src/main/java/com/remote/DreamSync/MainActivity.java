@@ -52,8 +52,8 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQUEST_NOTIFICATIONS = 101;
     private static final int REQUEST_EXPORT = 602;
+    private static final int REQUEST_DEBUG_EXPORT = 603;
     private static final String PREFS = "dreamsync_phone";
-    private static final int CALIBRATION_POLL_LIMIT = 10;
     private static final int WATCH_INSTALL_POLL_LIMIT = 40;
 
     private TextView statusText;
@@ -68,15 +68,19 @@ public final class MainActivity extends Activity {
     private boolean summaryReceiverRegistered;
     private boolean calibrationPromptShowing;
     private boolean calibrationEnablePending;
-    private int calibrationPollAttempt;
+    private boolean audioPreviewInProgress;
     private int watchInstallPollAttempt;
     private String pendingExportJson = "";
+    private String pendingDebugLog = "";
 
     private final BroadcastReceiver summaryReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (PhoneDataListenerService.ACTION_STATUS_CHANGED.equals(intent.getAction())) {
                 String status = intent.getStringExtra("status");
-                if (status != null) statusText.setText(status);
+                if (status != null) {
+                    statusText.setText(status);
+                    DebugLog.append(MainActivity.this, "WATCH_STATUS", status);
+                }
                 updateReadiness();
                 updatePowerState();
                 return;
@@ -100,6 +104,7 @@ public final class MainActivity extends Activity {
         remoteExecutor = Executors.newSingleThreadExecutor();
         databaseExecutor = Executors.newSingleThreadExecutor();
         dao = PhoneDatabase.get(this).dao();
+        DebugLog.append(this, "APP_OPEN", "DreamSync phone app opened");
         requestNotificationPermissionIfNeeded();
         if (pref("active_session_id").isEmpty()) restoreNotificationProtection();
         showOnboardingOnce();
@@ -151,6 +156,7 @@ public final class MainActivity extends Activity {
         });
         findViewById(R.id.historyButton).setOnClickListener(v -> showHistory());
         findViewById(R.id.exportButton).setOnClickListener(v -> prepareExport());
+        findViewById(R.id.exportDebugButton).setOnClickListener(v -> prepareDebugExport());
         findViewById(R.id.deleteDataButton).setOnClickListener(v -> confirmDeleteAll());
         findViewById(R.id.scienceButton).setOnClickListener(v -> showScience());
         findViewById(R.id.sleepProtectionButton).setOnClickListener(
@@ -161,16 +167,65 @@ public final class MainActivity extends Activity {
     }
 
     private void previewCue(String type) {
-        AudioOutput.Result preflight = new AudioOutput(this).preflight();
-        if (!preflight.success) {
-            statusText.setText("Cannot preview cue: " + preflight.reason + ".");
+        playCuePreview(type, false);
+    }
+
+    private void playCuePreview(String type, boolean continueEnable) {
+        if (audioPreviewInProgress) {
+            statusText.setText("A sound check is already running.");
             return;
         }
-        String action = "LUCID".equals(type)
-                ? CuePlaybackService.ACTION_PREVIEW_LUCID : CuePlaybackService.ACTION_PREVIEW_DEEP;
-        armAudioService(action, cueGain(), "", "", "");
-        statusText.setText("Cue played on the phone speaker. Set it barely audible, then one step lower.");
-        readinessText.postDelayed(this::updateReadiness, 1_500L);
+        AudioOutput audio = new AudioOutput(getApplicationContext());
+        DebugLog.append(this, "SOUND_CHECK_REQUESTED", "type=" + type + ";" + audio.diagnostics());
+        AudioOutput.Result preflight = audio.preflight();
+        if (!preflight.success) {
+            calibrationEnablePending = false;
+            recordAudioFailure(preflight.reason);
+            DebugLog.append(this, "SOUND_CHECK_BLOCKED", preflight.reason + ";" + audio.diagnostics());
+            statusText.setText("Sound check blocked: " + preflight.reason + ".");
+            return;
+        }
+        audioPreviewInProgress = true;
+        float gain = cueGain();
+        statusText.setText(continueEnable
+                ? "Playing the test cue. Setup will continue after confirmed playback."
+                : "Playing the cue on the phone speaker...");
+        remoteExecutor.execute(() -> {
+            AudioOutput.Result result = audio.play(type, gain, () -> {});
+            if (result.success) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("last_calibration", audio.calibrationRecord(gain))
+                        .putLong("last_calibration_utc", System.currentTimeMillis())
+                        .remove("last_audio_error")
+                        .remove("last_audio_error_utc")
+                        .apply();
+            } else recordAudioFailure(result.reason);
+            DebugLog.append(this, result.success ? "SOUND_CHECK_PASSED" : "SOUND_CHECK_FAILED",
+                    result.reason + ";" + audio.diagnostics());
+            runOnUiThread(() -> {
+                audioPreviewInProgress = false;
+                if (!result.success) {
+                    calibrationEnablePending = false;
+                    statusText.setText("Sound check failed: " + result.reason
+                            + ". Raise phone media volume, close other audio, and try again.");
+                    updateReadiness();
+                    return;
+                }
+                statusText.setText("Sound check passed. Set the cue barely audible, then one step lower.");
+                updateReadiness();
+                if (continueEnable && calibrationEnablePending) {
+                    calibrationEnablePending = false;
+                    turnDreamSyncOn();
+                }
+            });
+        });
+    }
+
+    private void recordAudioFailure(String reason) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("last_audio_error", reason == null ? "unknown audio error" : reason)
+                .putLong("last_audio_error_utc", System.currentTimeMillis())
+                .apply();
     }
 
     private void runLucidPractice() {
@@ -202,6 +257,7 @@ public final class MainActivity extends Activity {
     }
 
     private void turnDreamSyncOn() {
+        DebugLog.append(this, "TURN_ON_REQUESTED", "Finding compatible watch");
         AudioOutput audio = new AudioOutput(this);
         AudioOutput.Result preflight = audio.preflight();
         if (!preflight.success) {
@@ -238,10 +294,7 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("Play test cue", (dialog, which) -> {
                     calibrationPromptShowing = false;
                     calibrationEnablePending = true;
-                    calibrationPollAttempt = 0;
-                    previewCue("DEEP");
-                    statusText.setText("Playing the test cue. DreamSync will continue setup automatically.");
-                    statusText.postDelayed(this::continueAfterCalibration, 700L);
+                    playCuePreview("DEEP", true);
                 })
                 .setNegativeButton("Not now", (dialog, which) -> {
                     calibrationPromptShowing = false;
@@ -249,24 +302,6 @@ public final class MainActivity extends Activity {
                 })
                 .setOnCancelListener(dialog -> calibrationPromptShowing = false)
                 .show();
-    }
-
-    private void continueAfterCalibration() {
-        if (!calibrationEnablePending) return;
-        String calibration = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("last_calibration", "");
-        if (!calibration.isEmpty()) {
-            calibrationEnablePending = false;
-            turnDreamSyncOn();
-            return;
-        }
-        calibrationPollAttempt++;
-        if (calibrationPollAttempt < CALIBRATION_POLL_LIMIT) {
-            statusText.postDelayed(this::continueAfterCalibration, 500L);
-        } else {
-            calibrationEnablePending = false;
-            statusText.setText("The sound check did not finish. Tap Turn DreamSync On to try again.");
-        }
     }
 
     private void findWatchForEnable(String generation, int filter) {
@@ -277,6 +312,7 @@ public final class MainActivity extends Activity {
                     if (!isCurrentEnableGeneration(generation)) return;
                     Node watch = chooseNode(capability.getNodes());
                     if (watch != null) {
+                        DebugLog.append(this, "WATCH_FOUND", "reachable=" + watch.isNearby());
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean("watch_install_pending", false)
                                 .putString("bound_watch_node", watch.getId())
@@ -289,6 +325,7 @@ public final class MainActivity extends Activity {
                             .getBoolean("watch_install_pending", false)) {
                         scheduleWatchInstallCheck(generation);
                     } else {
+                        DebugLog.append(this, "WATCH_NOT_FOUND", "No capable Wear OS node found");
                         openWatchPlayStoreForInstall(generation);
                     }
                 })
@@ -414,6 +451,7 @@ public final class MainActivity extends Activity {
     }
 
     private void turnDreamSyncOff() {
+        DebugLog.append(this, "TURN_OFF_REQUESTED", "Stopping automatic mode");
         String sessionId = pref("active_session_id");
         String watchNode = pref("bound_watch_node");
         String phoneNode = pref("local_phone_node");
@@ -652,6 +690,19 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void prepareDebugExport() {
+        statusText.setText("Preparing debug log...");
+        remoteExecutor.execute(() -> {
+            pendingDebugLog = DebugLog.export(
+                    getApplicationContext(), new AudioOutput(getApplicationContext()));
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TITLE, "dreamsync-phone-debug-log.txt");
+            runOnUiThread(() -> startActivityForResult(intent, REQUEST_DEBUG_EXPORT));
+        });
+    }
+
     private JSONObject buildExportJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("schemaVersion", 3);
@@ -661,6 +712,12 @@ public final class MainActivity extends Activity {
         root.put("chargeReminderLeadMinutes", ChargeReminderScheduler.LEAD_MINUTES);
         root.put("chargeReminderRecordCount", getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt("charge_reminder_record_count", 0));
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        root.put("audioDiagnostics", new JSONObject()
+                .put("lastCalibration", prefs.getString("last_calibration", ""))
+                .put("lastCalibrationUtcMs", prefs.getLong("last_calibration_utc", 0L))
+                .put("lastError", prefs.getString("last_audio_error", ""))
+                .put("lastErrorUtcMs", prefs.getLong("last_audio_error_utc", 0L)));
         JSONArray sessionArray = new JSONArray();
         for (SessionEntity session : dao.sessions()) {
             JSONObject item = new JSONObject();
@@ -729,13 +786,18 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_EXPORT || resultCode != RESULT_OK || data == null) return;
+        if ((requestCode != REQUEST_EXPORT && requestCode != REQUEST_DEBUG_EXPORT)
+                || resultCode != RESULT_OK || data == null) return;
         Uri uri = data.getData();
         if (uri == null) return;
         try (OutputStream output = getContentResolver().openOutputStream(uri)) {
             if (output == null) throw new IllegalStateException("No output stream");
-            output.write(pendingExportJson.getBytes(StandardCharsets.UTF_8));
-            statusText.setText("Data export saved.");
+            String contents = requestCode == REQUEST_DEBUG_EXPORT
+                    ? pendingDebugLog : pendingExportJson;
+            output.write(contents.getBytes(StandardCharsets.UTF_8));
+            statusText.setText(requestCode == REQUEST_DEBUG_EXPORT
+                    ? "Debug log saved. Send that file so the failure can be traced."
+                    : "Data export saved.");
         } catch (Exception error) {
             statusText.setText("Could not save export: " + safeMessage(error));
         }
@@ -754,6 +816,7 @@ public final class MainActivity extends Activity {
                     dao.deleteAllEvents();
                     dao.deleteAllSessions();
                     deleteReceivedLogs();
+                    DebugLog.clear(getApplicationContext());
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .remove("last_summary").remove("last_summary_session").apply();
                     runOnUiThread(this::publishWatchDeleteRequest);

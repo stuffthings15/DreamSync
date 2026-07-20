@@ -20,6 +20,8 @@ Turn **DreamSync On** once on the phone. Approve the watch health permissions on
 
 Install the phone app first. **Set up watch app** finds a connected Wear OS watch. If DreamSync is missing there, the phone opens DreamSync's official Play Store page on the watch. Tap **Install** once; the phone then detects, binds, and configures the watch automatically. Google Play requires that install confirmation, so Android apps cannot silently install the watch app in the background. The watch has no settings; opening it returns to the phone controls.
 
+The first Turn On runs a quiet phone-speaker sound check. DreamSync continues only after playback is confirmed. If it fails, the phone shows the exact reason. **Export debug log** saves a bounded technical report with app version, audio state, watch binding flags, and app-owned events; it excludes sleep-session content and raw device-node identifiers.
+
 The phone shows a low-priority ongoing notification while DreamSync is On. The watch registration persists independently of the app screen. Reboot receivers restore the On state. Turning DreamSync Off unregisters passive monitoring, stops the current session, and disables all cues. If required passive data, permissions, or the phone-watch link are unavailable, DreamSync fails closed and sends no cue.
 
 Charge the watch several hours before normal sleep time. After three completed records, DreamSync learns the median usual sleep start and schedules a phone reminder three hours earlier.
@@ -63,7 +65,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 - Package: `com.remote.DreamSync`
 - Publisher: Remote
 - Product name: DreamSync
-- Test version: phone 17 / Wear OS 18 (`1.2.1-test`)
+- Test version: phone 19 / Wear OS 20 (`1.2.2-test`)
 - Privacy policy and store copy are in `docs/play-store/`.
 
 Copyright 2026 Remote. All rights reserved.

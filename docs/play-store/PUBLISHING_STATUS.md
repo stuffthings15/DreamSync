@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.2.1-test with unique phone and Wear OS version codes published to internal testing.
+- Version 1.2.2-test with unique phone and Wear OS version codes published to internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -31,15 +31,18 @@
 - Wear OS version code 16 (`1.2.0-test`) published on 2026-07-19.
 - Phone version code 17 (`1.2.1-test`) published on 2026-07-19.
 - Wear OS version code 18 (`1.2.1-test`) published on 2026-07-19.
+- Phone version code 19 (`1.2.2-test`) published on 2026-07-19.
+- Wear OS version code 20 (`1.2.2-test`) published on 2026-07-19.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 17 (`1.2.1-test`) is available to internal testers.
-- Wear OS version code 18 (`1.2.1-test`) is available to internal testers.
-- Forty shared tests, lint, signed-bundle, signature, and release-integrity checks passed before publishing.
+- Phone version code 19 (`1.2.2-test`) is available to internal testers.
+- Wear OS version code 20 (`1.2.2-test`) is available to internal testers.
+- Forty shared tests, three phone audio-conversion tests, seven Android instrumentation tests, lint, signed-bundle, signature, and release-integrity checks passed before publishing.
+- The phone sound check now waits for confirmed playback, uses PCM16 for wider device compatibility, reports exact failures, and provides a separate privacy-safe Export Debug Log button.
 - This build adds persistent automatic nightly operation, broad Android 8.0+/Wear OS 3+ packaging, conservative passive-HR fallback, learned charge reminders, and full-sensor feature selection for capable watches.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.
 - The watch has no product settings or power controls. Manual launch sends the user to phone controls; only required first-time watch health-permission prompts remain on the watch.

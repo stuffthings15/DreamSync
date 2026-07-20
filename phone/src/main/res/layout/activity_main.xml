@@ -306,6 +306,16 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/exportDebugButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_outline"
+                android:text="Export debug log"
+                android:textAllCaps="false"
+                android:textColor="@color/ds_ice" />
+
+            <Button
                 android:id="@+id/sleepProtectionButton"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"

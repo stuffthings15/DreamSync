@@ -98,6 +98,7 @@ public final class CuePlaybackService extends Service
         mainHandler = new Handler(Looper.getMainLooper());
         Wearable.getMessageClient(this).addListener(this);
         createNotificationChannel();
+        DebugLog.append(this, "AUDIO_SERVICE_CREATED", "Phone audio service started");
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -111,6 +112,7 @@ public final class CuePlaybackService extends Service
             return START_NOT_STICKY;
         }
         if (ACTION_STOP.equals(intent.getAction())) {
+            DebugLog.append(this, "AUDIO_SERVICE_STOP", "Stop requested");
             armedSessionId = "";
             mainHandler.removeCallbacks(armWatchdog);
             restoreNotificationProtection();
@@ -151,6 +153,8 @@ public final class CuePlaybackService extends Service
             String type = ACTION_PREVIEW_LUCID.equals(action) ? "LUCID" : "DEEP";
             playbackExecutor.execute(() -> {
                 AudioOutput.Result result = audioOutput.play(type, armedGain, () -> {});
+                DebugLog.append(this, result.success ? "PREVIEW_PASSED" : "PREVIEW_FAILED",
+                        result.reason + ";" + audioOutput.diagnostics());
                 if (result.success) {
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                             .putString("last_calibration", audioOutput.calibrationRecord(armedGain))
@@ -201,6 +205,7 @@ public final class CuePlaybackService extends Service
     private void handleCue(String watchNode, ProtocolEnvelope envelope) {
         CueRequestValidator.Result validation = cueRequestValidator.validate(envelope);
         if (!validation.valid) {
+            DebugLog.append(this, "CUE_REJECTED", validation.reason);
             record(envelope, "CUE_REJECTED", validation.reason);
             sendAck(watchNode, envelope,
                     com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED,
@@ -227,6 +232,8 @@ public final class CuePlaybackService extends Service
                 ? com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_COMPLETED
                 : com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED;
         record(envelope, type, result.reason);
+        DebugLog.append(this, result.success ? "CUE_PLAYBACK_COMPLETED" : "CUE_PLAYBACK_FAILED",
+                result.reason + ";" + audioOutput.diagnostics());
         sendAck(watchNode, envelope, type, result.reason);
         startAsForeground(false);
     }
@@ -334,6 +341,7 @@ public final class CuePlaybackService extends Service
     }
 
     @Override public void onDestroy() {
+        DebugLog.append(this, "AUDIO_SERVICE_DESTROYED", "Phone audio service stopped");
         if (mainHandler != null) mainHandler.removeCallbacks(armWatchdog);
         Wearable.getMessageClient(this).removeListener(this);
         playbackExecutor.shutdownNow();

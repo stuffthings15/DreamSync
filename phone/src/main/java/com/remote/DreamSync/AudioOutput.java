@@ -63,12 +63,25 @@ final class AudioOutput {
                 + ";route=phone_speaker";
     }
 
+    String diagnostics() {
+        if (audioManager == null) return "audioService=unavailable";
+        StringBuilder devices = new StringBuilder();
+        for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (devices.length() > 0) devices.append(',');
+            devices.append(device.getType());
+        }
+        return "mediaVolume=" + audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                + "/" + audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                + ";mode=" + audioManager.getMode()
+                + ";musicActive=" + audioManager.isMusicActive()
+                + ";outputDeviceTypes=" + devices;
+    }
+
     Result play(String cueType, float gain, Runnable onStarted) {
         Result preflight = preflight();
         if (!preflight.success) return preflight;
         float[] source = "LUCID".equals(cueType) ? lucidWaveform : deepWaveform;
-        float[] samples = new float[source.length];
-        for (int i = 0; i < source.length; i++) samples[i] = source[i] * gain;
+        short[] samples = pcm16(source, gain);
 
         AtomicBoolean interrupted = new AtomicBoolean(false);
         AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(
@@ -92,11 +105,11 @@ final class AudioOutput {
             track = new AudioTrack.Builder()
                     .setAudioAttributes(attributes())
                     .setAudioFormat(new AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                             .setSampleRate(CueWaveforms.SAMPLE_RATE)
                             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                             .build())
-                    .setBufferSizeInBytes(samples.length * Float.BYTES)
+                    .setBufferSizeInBytes(samples.length * Short.BYTES)
                     .setTransferMode(AudioTrack.MODE_STATIC)
                     .build();
             if (track.getState() != AudioTrack.STATE_INITIALIZED) {
@@ -141,5 +154,15 @@ final class AudioOutput {
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build();
+    }
+
+    static short[] pcm16(float[] source, float gain) {
+        float safeGain = Math.max(0.0f, Math.min(1.0f, gain));
+        short[] output = new short[source.length];
+        for (int i = 0; i < source.length; i++) {
+            float sample = Math.max(-1.0f, Math.min(1.0f, source[i] * safeGain));
+            output[i] = (short) Math.round(sample * Short.MAX_VALUE);
+        }
+        return output;
     }
 }

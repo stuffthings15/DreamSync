@@ -7,18 +7,19 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Published phone internal-test code: 17 (`1.2.1-test`).
-- Published Wear OS internal-test code: 18 (`1.2.1-test`).
-- Both 1.2.1-test releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
+- Published phone internal-test code: 19 (`1.2.2-test`).
+- Published Wear OS internal-test code: 20 (`1.2.2-test`).
+- Both 1.2.2-test releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
 - Clean shared tests: 40 checks, 0 failures, 0 errors, and 0 skipped, including persistent automatic-session start gating, passive-HR fallback timing, and manufacturer-neutral full-sensor selection.
-- Phone instrumentation passes 3/3 on an Android 16 phone emulator: Room 2-to-3 migration, large-font scrolling, persistent power control, and required companion/audio/connected-device permissions.
+- Phone instrumentation passes 4/4 on an Android 16 phone emulator: Room 2-to-3 migration, large-font scrolling, persistent power control, required companion/audio/connected-device permissions, and privacy-safe debug-log export.
+- Three phone unit tests verify compatible PCM16 cue conversion, quiet gain, clipping, and hostile negative gain handling.
 - Wear instrumentation passes 3/3 when installed on the same Android 16 emulator: Room 2-to-3 migration, single-use handshake, and the scrollable phone-controlled watch screen. This executes Android code but is not evidence of a real round Wear OS display or watch sensors.
 - The first emulator run exposed missing Room schema assets in both test APKs. Both modules now package their exported schemas through the `androidTest` asset source set; clean rebuild and rerun pass.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS Android lint completes with no blocking errors.
 - Phone and Wear OS signed release bundles pass Gradle signing validation and `jarsigner` integrity verification.
-- Google Play accepted phone code 17 without device loss and Wear OS code 18 for all 72 previously supported wearable models.
+- Google Play accepted phone code 19 without device loss and Wear OS code 20 for all 72 previously supported wearable models.
 - Room schema 3 is generated on both devices with explicit version 2-to-3 migrations; existing local records are not intentionally destroyed.
 - Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
 - The research report has real source links and no broken citation markers or text-encoding artifacts.
@@ -30,6 +31,7 @@ Date: 19 July 2026
 
 - One persistent On/Off choice controls nightly operation. While On, Wear Health Services uses the optional asleep-state signal or a conservative three-sample passive-HR candidate inside the normal sleep window to create a fresh confirmation session every night.
 - Turn On now guides the required one-time quiet cue calibration, finds reachable or previously known watches, opens the official watch Play install when the watch app is missing, polls for completion, then binds and synchronizes setup.
+- Sound checks now wait for confirmed playback instead of assuming the foreground service succeeded. The phone uses broadly compatible PCM16 output, reports the exact playback failure, and saves it to a dedicated privacy-safe Export Debug Log file.
 - The watch contains no user settings. It automatically opens the phone controls on manual launch and automatically retries delayed phone configuration during first-time setup.
 - Passive HR alone never enables a cue. Higher-rate sustained stillness, fresh heart rate, signal quality, and all later safety gates remain required.
 - The phone keeps a visible low-priority connected-device service while On; reboot and package-update receivers restore both phone readiness and watch passive registration.
@@ -67,6 +69,7 @@ Date: 19 July 2026
 - No sleep haptics are used.
 - Phone loss, stale sensors, off-wrist state, low battery, storage failure, route problems, and process interruption prevent or disable cueing.
 - Logs, summaries, configuration, cue lifecycle, surveys, capabilities, and failures are local and exportable.
+- The separate phone debug export contains app version, Android/device summary, current audio volume/route state, watch binding flags, and bounded app-owned events. It excludes raw node IDs and sleep-session content.
 - The confirmed phone deletion control removes phone data and queues a bound, expiring, duplicate-guarded watch deletion command; deletion remains blocked while DreamSync is On or a session is active.
 
 ## Research and marketing boundary

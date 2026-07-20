@@ -19,6 +19,7 @@ Date: 19 July 2026
 - Room schema 3 is generated on both devices with explicit version 2-to-3 migrations; existing local records are not intentionally destroyed.
 - Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
 - The research report has real source links and no broken citation markers or text-encoding artifacts.
+- The revised 11-slide capstone presentation preserves the source visual system and passes template fidelity, slide-overflow, empty-placeholder, visual review, and forbidden-branding checks.
 
 ## Sleep-continuity implementation
 

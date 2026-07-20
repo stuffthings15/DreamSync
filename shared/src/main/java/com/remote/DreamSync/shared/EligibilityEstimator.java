@@ -1,6 +1,7 @@
 package com.remote.DreamSync.shared;
 
 public final class EligibilityEstimator {
+    public static final String VERSION = "eligibility-v2";
     public enum State {
         SETTLING,
         AWAKE_OR_MOVING,

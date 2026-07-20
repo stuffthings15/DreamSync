@@ -1,6 +1,7 @@
 package com.remote.DreamSync.shared;
 
 public final class SignalQualityMonitor {
+    public static final String VERSION = "quality-v2";
     public static final long MOTION_STALE_MS = 5_000L;
     public static final long HEART_STALE_MS = 180_000L;
 

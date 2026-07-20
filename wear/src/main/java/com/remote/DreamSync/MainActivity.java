@@ -68,7 +68,9 @@ public final class MainActivity extends Activity {
         startButton.setOnClickListener(v -> beginAutomaticDetection());
         stopButton.setOnClickListener(v -> {
             pendingStart = false;
-            stopService(new Intent(this, SleepSessionService.class));
+            startService(new Intent(this, SleepSessionService.class)
+                    .setAction(SleepSessionService.ACTION_STOP)
+                    .putExtra("terminationReason", "USER_STOPPED"));
             SessionConfig.clear(this);
             statusText.setText("Session stopped.");
         });
@@ -289,8 +291,12 @@ public final class MainActivity extends Activity {
 
     private void startNightService(boolean overnightHeartRateExpected) {
         pendingStart = false;
+        SessionConfig config = SessionConfig.load(this);
         Intent intent = new Intent(this, SleepSessionService.class)
-                .setAction(SleepSessionService.ACTION_START);
+                .setAction(SleepSessionService.ACTION_START)
+                .putExtra(SleepSessionService.EXTRA_START_SESSION_ID, config.sessionId)
+                .putExtra(SleepSessionService.EXTRA_HANDSHAKE_MESSAGE_ID,
+                        config.handshakeMessageId);
         try {
             startForegroundService(intent);
             statusText.setText(overnightHeartRateExpected

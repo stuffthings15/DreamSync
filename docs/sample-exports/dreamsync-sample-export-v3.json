@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "dreamsync-export-v3",
+  "deidentified": true,
+  "sessionId": "sample-session-0001",
+  "protocolVersion": 1,
+  "versions": {
+    "featureEngine": "feature-v1",
+    "qualityMonitor": "quality-v2",
+    "eligibilityEstimator": "eligibility-v2",
+    "replayHarness": "replay-v2",
+    "waveform": "pink-pair-v1"
+  },
+  "configuration": {
+    "deepCueEnabled": true,
+    "lucidCueEnabled": false,
+    "maximumGain": 0.04,
+    "quietPeriodMinutes": 20,
+    "deepWindowMinutes": [20, 120]
+  },
+  "signalQuality": {
+    "motionRegistered": true,
+    "heartRegistered": true,
+    "offWrist": false,
+    "motionCoverage": 0.98,
+    "heartCoverage": 0.95,
+    "observedMotionHz": 25.0,
+    "observedHeartHz": 1.0
+  },
+  "eligibilityEpochs": [
+    {"elapsedMs": 0, "state": "PREPARING_FOR_SLEEP", "reason": "stability gate"},
+    {"elapsedMs": 60000, "state": "NREM_ELIGIBLE", "reason": "quality and window gates passed"},
+    {"elapsedMs": 120000, "state": "POSSIBLE_AROUSAL", "reason": "motion and cardiac change"}
+  ],
+  "cueLifecycle": [
+    {"cueId": "sample-cue-1", "state": "REQUESTED", "elapsedMs": 60000},
+    {"cueId": "sample-cue-1", "state": "AUDIO_STARTED", "elapsedMs": 60120},
+    {"cueId": "sample-cue-1", "state": "COMPLETED", "elapsedMs": 62400}
+  ],
+  "arousals": [
+    {"elapsedMs": 120000, "cueLinked": true, "action": "cues disabled for night"}
+  ],
+  "survey": {
+    "restedness": 4,
+    "disturbance": 2,
+    "awakenings": 1,
+    "cueAwareness": "unsure",
+    "dreamRecall": "partial",
+    "adverseEffects": "none"
+  },
+  "battery": {"startPercent": 88, "endPercent": 71},
+  "connectionFailures": [
+    {"elapsedMs": 180000, "kind": "PHONE_HEARTBEAT_STALE", "cueingDisabled": true}
+  ],
+  "terminalResult": "PHONE_LOST"
+}

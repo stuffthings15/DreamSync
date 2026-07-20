@@ -83,6 +83,7 @@ public final class WearCommandListenerService extends WearableListenerService {
         if (current.isCurrent(System.currentTimeMillis())
                 && !current.sessionId.equals(config.sessionId)
                 && current.createdUtcMs >= config.createdUtcMs) return;
+        config.handshakeMessageId = envelope.messageId;
         config.save(this);
         databaseExecutor.execute(() -> {
             WearSessionEntity session = new WearSessionEntity();

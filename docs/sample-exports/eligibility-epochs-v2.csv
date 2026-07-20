@@ -1,0 +1,4 @@
+elapsedMs,motionRms,heartMedian,heartSd,baselineHeart,arousal,motionReady,heartReady,offWrist,ibiReady,temperatureReady,ibiRmssdMs,temperatureC,baselineTemperatureC
+0,0.061,58.0,1.8,64.0,false,true,true,false,true,true,46.2,33.1,32.7
+60000,0.054,57.0,1.5,64.0,false,true,true,false,true,true,48.5,33.2,32.7
+120000,0.190,69.0,6.4,64.0,true,true,true,false,true,true,31.0,33.2,32.7

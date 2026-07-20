@@ -13,6 +13,7 @@ final class SessionConfig {
     String sessionId = "";
     String phoneNodeId = "";
     String watchNodeId = "";
+    String handshakeMessageId = "";
     String mode = "DEEP";
     long createdUtcMs;
     long expiresUtcMs;
@@ -68,6 +69,7 @@ final class SessionConfig {
         sessionId = safeIdentifier(sessionId);
         phoneNodeId = safeIdentifier(phoneNodeId);
         watchNodeId = safeIdentifier(watchNodeId);
+        handshakeMessageId = safeIdentifier(handshakeMessageId);
         mode = sanitizeMode(mode);
         cueGain = clampFloat(cueGain, 0.005f, 0.10f);
         armTimeoutMin = clampInt(armTimeoutMin, 30, 360);
@@ -96,6 +98,7 @@ final class SessionConfig {
         c.sessionId = p.getString("sessionId", c.sessionId);
         c.phoneNodeId = p.getString("phoneNodeId", c.phoneNodeId);
         c.watchNodeId = p.getString("watchNodeId", c.watchNodeId);
+        c.handshakeMessageId = p.getString("handshakeMessageId", c.handshakeMessageId);
         c.mode = sanitizeMode(p.getString("mode", c.mode));
         c.createdUtcMs = p.getLong("createdUtcMs", c.createdUtcMs);
         c.expiresUtcMs = p.getLong("expiresUtcMs", c.expiresUtcMs);
@@ -123,6 +126,8 @@ final class SessionConfig {
                 .putString("sessionId", sessionId)
                 .putString("phoneNodeId", phoneNodeId)
                 .putString("watchNodeId", watchNodeId)
+                .putString("handshakeMessageId", handshakeMessageId)
+                .putBoolean("handshakeConsumed", false)
                 .putString("mode", mode)
                 .putLong("createdUtcMs", createdUtcMs)
                 .putLong("expiresUtcMs", expiresUtcMs)
@@ -141,6 +146,24 @@ final class SessionConfig {
                 .putInt("maxLucidCues", maxLucidCues)
                 .putBoolean("enableRawPpg", enableRawPpg)
                 .apply();
+    }
+
+    static boolean consumeHandshake(
+            Context context,
+            String expectedSessionId,
+            String expectedHandshakeMessageId
+    ) {
+        SharedPreferences preferences = context.getSharedPreferences(
+                PREFS, Context.MODE_PRIVATE);
+        if (expectedSessionId == null || expectedSessionId.isEmpty()
+                || expectedHandshakeMessageId == null || expectedHandshakeMessageId.isEmpty()
+                || !expectedSessionId.equals(preferences.getString("sessionId", ""))
+                || !expectedHandshakeMessageId.equals(
+                        preferences.getString("handshakeMessageId", ""))
+                || preferences.getBoolean("handshakeConsumed", false)) {
+            return false;
+        }
+        return preferences.edit().putBoolean("handshakeConsumed", true).commit();
     }
 
     static void clear(Context context) {

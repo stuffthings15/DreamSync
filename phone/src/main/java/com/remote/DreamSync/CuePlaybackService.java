@@ -16,6 +16,7 @@ import android.os.SystemClock;
 import com.google.android.gms.wearable.MessageClient;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Wearable;
+import com.remote.DreamSync.shared.CueRequestValidator;
 import com.remote.DreamSync.shared.MessageGuard;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 
@@ -40,6 +41,7 @@ public final class CuePlaybackService extends Service
     private static final long ARM_CONFIRM_TIMEOUT_MS = 10L * 60L * 1000L;
 
     private final MessageGuard messageGuard = new MessageGuard();
+    private final CueRequestValidator cueRequestValidator = new CueRequestValidator();
     private ExecutorService playbackExecutor;
     private ExecutorService databaseExecutor;
     private AudioOutput audioOutput;
@@ -166,20 +168,23 @@ public final class CuePlaybackService extends Service
     }
 
     private void handleCue(String watchNode, ProtocolEnvelope envelope) {
+        CueRequestValidator.Result validation = cueRequestValidator.validate(envelope);
+        if (!validation.valid) {
+            record(envelope, "CUE_REJECTED", validation.reason);
+            sendAck(watchNode, envelope,
+                    com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED,
+                    validation.reason);
+            return;
+        }
         if (dao.playedCueCount(envelope.cueId) > 0) {
             sendLatestState(watchNode, envelope);
             return;
         }
-        String cueType = envelope.payload.getOrDefault("cueType", "");
-        if (!"DEEP".equals(cueType) && !"LUCID".equals(cueType)) {
-            sendAck(watchNode, envelope,
-                    com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_FAILED, "unsupported cue type");
-            return;
-        }
+        String cueType = validation.cueType;
         record(envelope, com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED, "accepted");
         sendAck(watchNode, envelope,
                 com.remote.DreamSync.shared.Protocol.TYPE_CUE_ACCEPTED, "accepted");
-        float gain = clampGain(parseFloat(envelope.payload.get("gain"), armedGain));
+        float gain = validation.gain;
         AudioOutput.Result result = audioOutput.play(cueType, gain, () -> {
             record(envelope, com.remote.DreamSync.shared.Protocol.TYPE_AUDIO_STARTED,
                     audioOutput.calibrationRecord(gain));
@@ -247,14 +252,6 @@ public final class CuePlaybackService extends Service
                 .remove("previous_interruption_filter")
                 .putBoolean("notification_protection_active", false)
                 .apply();
-    }
-
-    private float parseFloat(String value, float fallback) {
-        try {
-            float parsed = Float.parseFloat(value);
-            return Float.isFinite(parsed) ? parsed : fallback;
-        }
-        catch (Exception ignored) { return fallback; }
     }
 
     private float clampGain(float gain) {

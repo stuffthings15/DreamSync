@@ -7,11 +7,12 @@ Date: 19 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Published phone internal-test code: 10 (`1.1.0-test`).
-- Published Wear OS internal-test code: 8 (`1.1.0-test`).
+- Published phone internal-test code: 11 (`1.1.1-test`).
+- Published Wear OS internal-test code: 12 (`1.1.1-test`).
 - Both releases were available to internal testers in Google Play Console on 2026-07-19. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
-- Clean shared tests: 19 checks, 0 failures.
+- Clean shared tests: 27 checks, 0 failures.
+- Phone and Wear OS Android instrumentation test APKs compile; device execution remains pending because no test device was attached.
 - Phone and Wear OS debug builds pass.
 - Phone and Wear OS Android lint completes with no blocking errors.
 - Phone and Wear OS signed release bundles pass Gradle signing validation and `jarsigner` integrity verification.

@@ -40,4 +40,20 @@ public class ProtocolPropertyTest {
         assertThrows(IllegalArgumentException.class,
                 () -> ProtocolEnvelope.decode("not-an-envelope".getBytes()));
     }
+
+    @Test public void expiryWrongSessionAndReconnectFailClosed() {
+        ProtocolEnvelope request = new ProtocolEnvelope(
+                Protocol.VERSION, "message", Protocol.TYPE_CUE_REQUEST,
+                "session-a", "cue-a", "watch", "phone",
+                1_000L, 15_000L, Map.of("cueType", "DEEP", "gain", "0.04"));
+        MessageGuard firstConnection = new MessageGuard();
+        assertEquals(MessageGuard.Result.EXPIRED,
+                firstConnection.check(request, "session-a", "phone", 20_001L));
+        assertEquals(MessageGuard.Result.WRONG_SESSION,
+                new MessageGuard().check(request, "session-b", "phone", 2_000L));
+
+        MessageGuard reconnected = new MessageGuard();
+        assertEquals(MessageGuard.Result.WRONG_SESSION,
+                reconnected.check(request, "fresh-session", "phone", 2_000L));
+    }
 }

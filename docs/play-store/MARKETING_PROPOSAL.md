@@ -6,9 +6,13 @@ DreamSync is the sleep-first cue companion for adults who want a transparent, pr
 
 The marketing promise is simple: DreamSync explains what it does, shows the peer-reviewed work that shaped it, and clearly separates laboratory findings from what a consumer watch can estimate.
 
+## Brand slogan
+
+Dream uninterrupted.
+
 ## Primary message
 
-Sleep-first cues shaped by peer-reviewed studies, with private on-device data.
+Sleep-first cues guided by your Wear OS watch, with private on-device data.
 
 Supporting points:
 
@@ -59,7 +63,7 @@ Supporting points:
 
 ## Screenshot messages
 
-- Sleep-first cues, guided by your watch.
+- Dream uninterrupted.
 - Research-shaped paired pink-noise cues.
 - A wake sign stops cueing for the night.
 - Private history, check-ins, export, and deletion.

@@ -12,11 +12,11 @@
 
 ## Short description
 
-Sleep-first cues shaped by peer-reviewed studies, with private on-device data.
+Dream uninterrupted. Sleep-first cues guided by your Wear OS watch.
 
 ## Full description
 
-DreamSync pairs your Android phone with a Wear OS watch to deliver quiet, research-shaped sleep cues during conservative cue-ready windows. Protecting your sleep always takes priority over delivering a cue.
+Dream uninterrupted. DreamSync pairs your Android phone with a Wear OS watch to deliver quiet, research-shaped sleep cues during conservative cue-ready windows. Protecting your sleep always takes priority over delivering a cue.
 
 HOW IT WORKS
 

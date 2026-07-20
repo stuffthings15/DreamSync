@@ -1,5 +1,7 @@
 # DreamSync
 
+**Dream uninterrupted.**
+
 DreamSync is an Android and Wear OS wellness app that plays low-volume sleep cues only when a paired watch detects conservative cue-ready windows from motion and heart-rate signals. Protecting sleep always takes priority over delivering a cue.
 
 DreamSync does not measure EEG, diagnose sleep, treat a medical condition, guarantee deeper sleep, or guarantee lucid dreams. Session data stays on the user's devices unless the user chooses Export.

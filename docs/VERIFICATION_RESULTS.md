@@ -20,6 +20,8 @@ Date: 19 July 2026
 - Legacy product, publisher, package, and research-test labels are removed from source and Markdown files.
 - The research report has real source links and no broken citation markers or text-encoding artifacts.
 - The revised 11-slide capstone presentation preserves the source visual system and passes template fidelity, slide-overflow, empty-placeholder, visual review, and forbidden-branding checks.
+- `SOURCE_PROVENANCE.md`, `THIRD_PARTY_NOTICES.md`, and `PROVENANCE_SIGNOFF_TEMPLATE.md` trace the audited commit, release assets, runtime dependency families, inherited-prototype risk, and exact owner evidence needed before production.
+- `HARDWARE_VALIDATION_PROTOCOL.md` and `tools/Run-DreamSyncHardwareValidation.ps1` provide one repeatable phone/watch evidence collection path without claiming that unexecuted device tests passed.
 
 ## Sleep-continuity implementation
 
@@ -78,3 +80,4 @@ Date: 19 July 2026
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
 - Google Play closed-release gate and all production-policy tasks remain external to local code.
+- The hardware runner parsed successfully and its list-only preflight found zero attached Android devices on 2026-07-19; physical execution therefore remains pending.

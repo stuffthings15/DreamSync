@@ -12,11 +12,14 @@ Date: 2026-07-19
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
 - Thirty-three deterministic shared tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
 - Google Play internal testing serves phone 13 and Wear 14 (`1.1.2-test`).
+- Audited source/asset/dependency provenance register, third-party notices, owner sign-off packet, and exact release fingerprints.
+- Reproducible S23+/Watch Ultra validation protocol and evidence-collection runner.
 
 ## Compiled but not device-executed
 
 - Android instrumentation tests for permission/workflow and Room migration behavior.
 - Samsung adapter path when the official SDK AAR is supplied.
+- Hardware evidence runner is syntax-checked and can enumerate Android devices; no phone or watch was attached for execution.
 
 ## External gates
 
@@ -24,7 +27,7 @@ Date: 2026-07-19
 - Physical S23+ and Galaxy Watch Ultra sensor, audio, route, disconnect, permission, process-death, off-wrist, and battery validation.
 - PSG comparison before sleep-stage accuracy claims.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
-- Written source/asset ownership evidence before public production release.
+- Owner-signed prototype/source/asset declaration and its supporting attachments before public production release.
 - Google closed-test and production-access requirements.
 
 DreamSync remains experimental, stage-gated, non-medical, and designed to protect sleep continuity. The slogan `Dreams Redefined.` is branding, not a guarantee.

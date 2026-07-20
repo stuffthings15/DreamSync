@@ -11,3 +11,4 @@ captures/
 .idea/
 *.iml
 reports/generated/
+docs/hardware-validation/

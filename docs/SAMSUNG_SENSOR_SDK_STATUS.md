@@ -2,11 +2,11 @@
 
 Status: **official SDK v1.4.1 installed locally; blocked on Samsung partner approval and live hardware verification**.
 
-DreamSync's adapter, Android 16 permissions, Samsung continuous accelerometer, heart-rate/IBI, skin-temperature, off-wrist, explicit Green/IR/Red PPG selection, short raw-PPG windows, runtime capability checks, standard Wear OS fallback, and conditional Gradle dependency are implemented. The official v1.4.1 library is installed locally and remains ignored by Git under Samsung's license. The Samsung paths must still pass compilation, internal-track installation, and live Galaxy Watch Ultra verification.
+DreamSync's adapter, Android 16 permissions, Samsung continuous accelerometer, heart-rate/IBI, skin-temperature, off-wrist, explicit Green/IR/Red PPG selection, short raw-PPG windows, runtime capability checks, and standard Wear OS fallback are implemented. The official v1.4.1 library is installed locally and remains ignored by Git under Samsung's license. Wear release builds now fail unless its exact SHA-256 and required API contract verify. Compilation and packaging pass; internal-track installation and live Galaxy Watch Ultra verification remain.
 
 ## Required owner/Samsung steps
 
-1. Run `gradlew.bat :wear:verifySamsungSensorSdk`.
+1. Run `gradlew.bat :wear:verifySamsungSensorSdk`. Every Wear release build runs this gate automatically.
 2. Enable Health Platform developer mode for private device testing.
 3. Run the live check on a Galaxy Watch. Confirm changing Samsung accelerometer values, heart rate, IBI, skin temperature, off-wrist behavior, and the short raw-PPG window in Export Debug Log.
 4. Submit the signed-in [Samsung Health Sensor SDK partner request](https://developer.samsung.com/SHealth/business-partner/m48wzh9rwz606k0h).

@@ -9,6 +9,8 @@ def dreamSyncReleaseSigningReady = dreamSyncKeystore
         && file(dreamSyncKeystore).isFile()
         && dreamSyncStorePassword
         && dreamSyncKeyPassword
+def samsungSensorAar = file('libs/samsung-health-sensor-api.aar')
+def samsungSensorAarSha256 = '893cd5d6564db0f304bf511a555c1d65ca6bccc8475fc979ff1d71d50680344c'
 
 android {
     namespace 'com.remote.DreamSync'
@@ -18,8 +20,8 @@ android {
         applicationId 'com.remote.DreamSync'
         minSdk 30
         targetSdk 36
-        versionCode 62
-        versionName '1.3.14-test'
+        versionCode 64
+        versionName '1.3.15-test'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         javaCompileOptions {
             annotationProcessorOptions {
@@ -78,22 +80,77 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.room:room-testing:2.8.4'
-    def samsungSensorAar = file('libs/samsung-health-sensor-api.aar')
     if (samsungSensorAar.exists()) {
         implementation files(samsungSensorAar)
     }
 }
 
-tasks.register('verifySamsungSensorSdk') {
+def verifySamsungSensorSdk = tasks.register('verifySamsungSensorSdk') {
     group = 'verification'
-    description = 'Fails unless the official Samsung Health Sensor SDK AAR is present.'
+    description = 'Verifies the official Samsung Health Sensor SDK v1.4.1 AAR and required API contract.'
     doLast {
-        def aar = file('libs/samsung-health-sensor-api.aar')
+        def aar = samsungSensorAar
         if (!aar.isFile() || aar.length() == 0L) {
             throw new GradleException(
                     'Official Samsung AAR missing: wear/libs/samsung-health-sensor-api.aar. ' +
                     'Download it while signed in at Samsung Developer; never use an unofficial copy.')
         }
-        println "Samsung sensor AAR ready: ${aar.name} (${aar.length()} bytes)"
+
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        aar.withInputStream { input ->
+            byte[] buffer = new byte[8192]
+            int count
+            while ((count = input.read(buffer)) > 0) {
+                digest.update(buffer, 0, count)
+            }
+        }
+        def actualSha256 = digest.digest().collect { String.format('%02x', it) }.join()
+        if (actualSha256 != samsungSensorAarSha256) {
+            throw new GradleException(
+                    "Unexpected Samsung SDK AAR checksum. Expected ${samsungSensorAarSha256}, got ${actualSha256}.")
+        }
+
+        def requiredClasses = [
+                'com/samsung/android/service/health/tracking/HealthTrackingService.class',
+                'com/samsung/android/service/health/tracking/HealthTracker.class',
+                'com/samsung/android/service/health/tracking/ConnectionListener.class',
+                'com/samsung/android/service/health/tracking/data/HealthTrackerType.class',
+                'com/samsung/android/service/health/tracking/data/PpgType.class',
+                'com/samsung/android/service/health/tracking/data/ValueKey$AccelerometerSet.class',
+                'com/samsung/android/service/health/tracking/data/ValueKey$HeartRateSet.class'
+        ] as Set
+        def foundClasses = [] as Set
+        def outerZip = new java.util.zip.ZipFile(aar)
+        try {
+            def classesEntry = outerZip.getEntry('classes.jar')
+            if (classesEntry == null) {
+                throw new GradleException('Samsung SDK AAR does not contain classes.jar.')
+            }
+            def nestedZip = new java.util.zip.ZipInputStream(outerZip.getInputStream(classesEntry))
+            try {
+                def entry
+                while ((entry = nestedZip.nextEntry) != null) {
+                    if (requiredClasses.contains(entry.name)) {
+                        foundClasses.add(entry.name)
+                    }
+                }
+            } finally {
+                nestedZip.close()
+            }
+        } finally {
+            outerZip.close()
+        }
+        def missingClasses = requiredClasses - foundClasses
+        if (!missingClasses.isEmpty()) {
+            throw new GradleException("Samsung SDK API contract is incomplete. Missing: ${missingClasses.sort().join(', ')}")
+        }
+
+        println "Official Samsung Health Sensor SDK v1.4.1 verified: ${aar.name} (${actualSha256})"
+    }
+}
+
+tasks.configureEach { candidate ->
+    if (candidate.name in ['preReleaseBuild', 'assembleRelease', 'bundleRelease']) {
+        candidate.dependsOn(verifySamsungSensorSdk)
     }
 }

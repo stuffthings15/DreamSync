@@ -12,3 +12,4 @@ captures/
 *.iml
 reports/generated/
 docs/hardware-validation/
+wear/libs/samsung-health-sensor-api.aar

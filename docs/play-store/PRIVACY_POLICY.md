@@ -6,7 +6,7 @@ DreamSync is published by Remote. This policy explains how the Android phone and
 
 ## Data used by DreamSync
 
-During a night session, DreamSync uses watch motion and heart-rate readings to estimate cue-ready windows. Any arousal sign starts a 20-minute quiet period, and the first cue-linked wake sign stops further cues for the night. The app may also store session history, cue events, morning check-ins, and optional dream notes.
+During a night session, DreamSync uses watch motion and heart-rate readings to estimate cue-ready windows. On supported Galaxy Watches, the optional Samsung sensor integration can also use inter-beat intervals, locally derived HRV/RMSSD, skin and ambient temperature trends, short raw-PPG signal-quality windows, and off-wrist status. Raw PPG values are not stored; DreamSync stores only quality counts. Any arousal sign starts a 20-minute quiet period, and the first cue-linked wake sign stops further cues for the night. The app may also store session history, cue events, morning check-ins, and optional dream notes.
 
 ## Research basis and limits
 

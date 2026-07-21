@@ -28,6 +28,7 @@ import java.util.Set;
 final class SamsungHealthSensorBridge {
     interface Listener {
         void onCapabilities(Set<String> trackerTypes, boolean connected, String detail);
+        void onAccelerometer(long timestampMs, double xMs2, double yMs2, double zMs2);
         void onHeartRate(long timestampMs, double bpm, List<Integer> ibiMs, boolean offWrist);
         void onSkinTemperature(long timestampMs, double skinC, double ambientC);
         void onPpgSample(long timestampMs, boolean valid);
@@ -36,6 +37,7 @@ final class SamsungHealthSensorBridge {
 
     private static final String ROOT = "com.samsung.android.service.health.tracking.";
     private static final String DATA = ROOT + "data.";
+    private static final double ACCELEROMETER_MS2_PER_LSB = 9.81 * 4.0 / 16_383.75;
 
     private final Context context;
     private final Listener listener;
@@ -102,10 +104,12 @@ final class SamsungHealthSensorBridge {
                 configureTrackers(enableRawPpg);
             } else if ("onConnectionFailed".equals(name)) {
                 connected = false;
+                String detail = args == null || args.length == 0
+                        ? "unknown" : describeSdkError(args[0]);
                 listener.onBridgeError("SDK_CONNECTION_FAILED",
-                        args == null || args.length == 0 ? "unknown" : safe(args[0]));
+                        detail);
                 listener.onCapabilities(Collections.emptySet(), false,
-                        args == null || args.length == 0 ? "connection failed" : safe(args[0]));
+                        detail);
             } else if ("onConnectionEnded".equals(name)) {
                 connected = false;
                 listener.onBridgeError("SDK_CONNECTION_ENDED", "Health Platform disconnected");
@@ -126,7 +130,11 @@ final class SamsungHealthSensorBridge {
                 for (Object tracker : (Iterable<?>) result) supported.add(tracker.toString());
             }
             supportedTrackerTypes = Collections.unmodifiableSet(new HashSet<>(supported));
-            listener.onCapabilities(supported, true, "Samsung Health Sensor SDK connected");
+            listener.onCapabilities(supported, true,
+                    "state=CONNECTED;source=SAMSUNG_HEALTH_SENSOR_SDK;supported=" + supported);
+            if (supported.contains("ACCELEROMETER_CONTINUOUS")) {
+                attach("ACCELEROMETER_CONTINUOUS", this::handleAccelerometer);
+            }
             if (supported.contains("HEART_RATE_CONTINUOUS")) {
                 attach("HEART_RATE_CONTINUOUS", this::handleHeartRate);
             }
@@ -153,9 +161,7 @@ final class SamsungHealthSensorBridge {
             Class<?> trackerTypeClass = Class.forName(DATA + "HealthTrackerType");
             Object trackerType = Enum.valueOf((Class<? extends Enum>) trackerTypeClass,
                     trackerName);
-            Object tracker = service.getClass()
-                    .getMethod("getHealthTracker", trackerTypeClass)
-                    .invoke(service, trackerType);
+            Object tracker = createTracker(trackerName, trackerTypeClass, trackerType);
             Class<?> listenerType = Class.forName(ROOT + "HealthTracker$TrackerEventListener");
             Object trackerListener = Proxy.newProxyInstance(
                     listenerType.getClassLoader(),
@@ -179,9 +185,32 @@ final class SamsungHealthSensorBridge {
                     .invoke(tracker, trackerListener);
             trackers.put(trackerName, tracker);
             trackerListeners.put(trackerName, trackerListener);
+            listener.onCapabilities(supportedTrackerTypes, connected,
+                    "tracker=" + trackerName
+                            + ";state=LISTENING;source=SAMSUNG_HEALTH_SENSOR_SDK");
         } catch (Throwable error) {
             listener.onBridgeError(trackerName + "_START_FAILED", safe(error));
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Object createTracker(
+            String trackerName, Class<?> trackerTypeClass, Object trackerType
+    ) throws Exception {
+        if ("PPG_CONTINUOUS".equals(trackerName)
+                || "PPG_ON_DEMAND".equals(trackerName)) {
+            Class<?> ppgTypeClass = Class.forName(DATA + "PpgType");
+            Set<Object> ppgTypes = new HashSet<>();
+            for (String name : new String[]{"GREEN", "IR", "RED"}) {
+                ppgTypes.add(Enum.valueOf((Class<? extends Enum>) ppgTypeClass, name));
+            }
+            return service.getClass()
+                    .getMethod("getHealthTracker", trackerTypeClass, Set.class)
+                    .invoke(service, trackerType, ppgTypes);
+        }
+        return service.getClass()
+                .getMethod("getHealthTracker", trackerTypeClass)
+                .invoke(service, trackerType);
     }
 
     /** Raw PPG is power-heavy, so sessions open it only for short quality windows. */
@@ -216,19 +245,67 @@ final class SamsungHealthSensorBridge {
                     "ValueKey$HeartRateSet", "IBI_LIST");
             List<Integer> ibiStatus = integerListValue(point,
                     "ValueKey$HeartRateSet", "IBI_STATUS_LIST");
-            List<Integer> validIbi = new ArrayList<>();
-            for (int i = 0; i < ibi.size(); i++) {
-                int value = ibi.get(i);
-                int valueStatus = i < ibiStatus.size() ? ibiStatus.get(i) : 0;
-                if (valueStatus == 0 && value >= 250 && value <= 2_000) validIbi.add(value);
-            }
-            boolean offWrist = status != null && status == -3;
-            if (bpm != null && bpm >= 30 && bpm <= 220) {
-                listener.onHeartRate(timestamp, bpm, validIbi, offWrist);
-            } else if (offWrist) {
-                listener.onHeartRate(timestamp, Double.NaN, validIbi, true);
+            if (isOffWristHeartRateStatus(status)) {
+                listener.onHeartRate(timestamp, Double.NaN, Collections.emptyList(), true);
+            } else if (isUsableHeartRateSample(status, bpm)) {
+                listener.onHeartRate(timestamp, bpm,
+                        filterUsableIbi(status, ibi, ibiStatus), false);
             }
         }
+    }
+
+    /** Samsung reports usable continuous-HR measurements only with status 1. */
+    static boolean isUsableHeartRateStatus(Integer status) {
+        return status != null && status == 1;
+    }
+
+    static boolean isOffWristHeartRateStatus(Integer status) {
+        return status != null && status == -3;
+    }
+
+    static boolean isUsableHeartRateSample(Integer status, Integer bpm) {
+        return isUsableHeartRateStatus(status)
+                && bpm != null && bpm >= 30 && bpm <= 220;
+    }
+
+    static List<Integer> filterUsableIbi(
+            Integer heartRateStatus, List<Integer> ibi, List<Integer> ibiStatus
+    ) {
+        if (!isUsableHeartRateStatus(heartRateStatus)
+                || ibi == null || ibi.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Integer> validIbi = new ArrayList<>();
+        for (int i = 0; i < ibi.size(); i++) {
+            int value = ibi.get(i);
+            int valueStatus = ibiStatus != null && i < ibiStatus.size()
+                    ? ibiStatus.get(i) : -1;
+            if (valueStatus == 0 && value >= 250 && value <= 2_000) {
+                validIbi.add(value);
+            }
+        }
+        return validIbi;
+    }
+
+    private void handleAccelerometer(List<?> points) throws Exception {
+        for (Object point : points) {
+            Integer rawX = integerValue(
+                    point, "ValueKey$AccelerometerSet", "ACCELEROMETER_X");
+            Integer rawY = integerValue(
+                    point, "ValueKey$AccelerometerSet", "ACCELEROMETER_Y");
+            Integer rawZ = integerValue(
+                    point, "ValueKey$AccelerometerSet", "ACCELEROMETER_Z");
+            if (rawX == null || rawY == null || rawZ == null) continue;
+            listener.onAccelerometer(
+                    timestamp(point),
+                    accelerometerRawToMetersPerSecondSquared(rawX),
+                    accelerometerRawToMetersPerSecondSquared(rawY),
+                    accelerometerRawToMetersPerSecondSquared(rawZ));
+        }
+    }
+
+    static double accelerometerRawToMetersPerSecondSquared(int rawValue) {
+        return rawValue * ACCELEROMETER_MS2_PER_LSB;
     }
 
     private void handleSkinTemperature(List<?> points) throws Exception {
@@ -333,5 +410,23 @@ final class SamsungHealthSensorBridge {
                     + (message == null || message.isEmpty() ? "" : ": " + message);
         }
         return error.toString();
+    }
+
+    private static String describeSdkError(Object error) {
+        if (error == null) return "unknown";
+        String detail = safe(error);
+        try {
+            Object code = error.getClass().getMethod("getErrorCode").invoke(error);
+            detail += ";errorCode=" + code;
+        } catch (Throwable ignored) {
+            // Tracker errors are enums and do not expose a numeric connection code.
+        }
+        try {
+            Object resolvable = error.getClass().getMethod("hasResolution").invoke(error);
+            detail += ";hasResolution=" + resolvable;
+        } catch (Throwable ignored) {
+            // Not every Samsung SDK error has a resolution API.
+        }
+        return detail;
     }
 }

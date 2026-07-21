@@ -103,6 +103,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final long EVALUATION_INTERVAL_MS = 5_000L;
     private static final long MOTION_SENSOR_PROBE_TIMEOUT_MS = 10_000L;
     private static final long HEART_SENSOR_PROBE_TIMEOUT_MS = 30_000L;
+    static final long SAMSUNG_SENSOR_STARTUP_GRACE_MS = 45_000L;
+    static final long SAMSUNG_MOTION_STALE_MS = 10_000L;
+    static final int SAMSUNG_MOTION_STABLE_SAMPLES = 5;
+    static final long SAMSUNG_MOTION_STABLE_WINDOW_MS = 150L;
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
     private static final long CUE_AROUSAL_WINDOW_MS =
             ProtectionConfig.POST_CUE_OBSERVATION_MS;
@@ -149,6 +153,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private volatile long lastMotionSampleMs;
     private volatile long lastHeartSampleMs;
     private volatile long lastStandardHeartSampleMs;
+    private volatile long lastSamsungMotionSampleMs;
+    private volatile long lastSamsungMotionCandidateMs;
+    private volatile long lastSamsungHeartSampleMs;
     private volatile long lastIbiSampleMs;
     private volatile long lastTemperatureSampleMs;
     private long lastHeartbeatMs;
@@ -167,6 +174,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean heartRateRegistered;
     private String heartRegistrationDetails = "";
     private volatile boolean offWrist;
+    private volatile boolean samsungMotionActive;
+    private volatile boolean samsungHeartActive;
+    private volatile int samsungMotionCandidateSamples;
+    private volatile long samsungMotionCandidateSinceMs;
     private volatile boolean samsungSdkConnected;
     private volatile Set<String> samsungTrackerTypes = Collections.emptySet();
     private volatile String samsungDetail = "standard Wear OS sensors";
@@ -178,6 +189,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean storageHealthy = true;
     private boolean sessionInitialized;
     private boolean permissionSafetyLatched;
+    private long motionRecoveryDeadlineMs;
+    private String motionRecoveryReason = "";
+    private volatile String activeMotionSource = "NONE";
+    private volatile String activeHeartSource = "NONE";
 
     private int deepBlocks;
     private int deepCues;
@@ -220,8 +235,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private final SensorProvider liveSensorProvider = new SensorProvider() {
         @Override public String id() {
-            return samsungSdkConnected
-                    ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS";
+            return sensorSourceSummary();
         }
 
         @Override public CapabilityReport capabilities() {
@@ -408,12 +422,25 @@ public final class SleepSessionService extends Service implements SensorEventLis
         startSamsungSensors();
         persistSession("WAITING_FOR_SLEEP", "");
         if (!accelerometerRegistered) {
-            terminateSession(SessionState.SENSOR_FAILED, "SENSOR_FAILED",
-                    "accelerometer did not register");
-            persistEvent("SENSOR_FAILED", "", "accelerometer did not register");
-            logEvent("SENSOR_FAILED", "Accelerometer did not register");
-            stopSelf();
-            return;
+            if (SamsungHealthSensorBridge.isPackaged()
+                    && SamsungHealthSensorBridge.isSamsungWatch()) {
+                beginMotionRecoveryGrace(
+                        sessionStartMs,
+                        "waiting for Samsung accelerometer startup");
+                persistEvent("MOTION_SENSOR_STARTUP_GRACE", "",
+                        "durationMs=" + SAMSUNG_SENSOR_STARTUP_GRACE_MS
+                                + ";cues=blocked;source=SAMSUNG_HEALTH_SENSOR_SDK");
+                WatchDiagnostics.session(this, config, "MOTION_SENSOR_STARTUP_GRACE",
+                        "durationMs=" + SAMSUNG_SENSOR_STARTUP_GRACE_MS
+                                + ";cues=blocked;standardMotionRegistered=false");
+            } else {
+                terminateSession(SessionState.SENSOR_FAILED, "SENSOR_FAILED",
+                        "accelerometer did not register");
+                persistEvent("SENSOR_FAILED", "", "accelerometer did not register");
+                logEvent("SENSOR_FAILED", "Accelerometer did not register");
+                stopSelf();
+                return;
+            }
         }
         persistEvent("AUTO_SLEEP_CONFIRMATION_STARTED", "", "detectionTimeoutMin=" + config.armTimeoutMin);
         WatchDiagnostics.session(this, config, "FULL_SENSOR_SESSION_STARTED",
@@ -429,7 +456,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 heartRate != null,
                 config.armTimeoutMin
         ));
-        broadcastStatus("Sleep detected • confirming sustained sleep signals • cues off");
+        broadcastStatus(motionRecoveryDeadlineMs > 0L
+                ? "Connecting watch motion sensor • cues off"
+                : "Sleep detected • confirming sustained sleep signals • cues off");
         evaluatorHandler.postDelayed(evaluator, EVALUATION_INTERVAL_MS);
     }
 
@@ -476,6 +505,44 @@ public final class SleepSessionService extends Service implements SensorEventLis
                                 "SENSOR_CAPABILITIES", capabilitySnapshot().toJson());
                     }
 
+                    @Override public void onAccelerometer(
+                            long timestampMs, double xMs2, double yMs2, double zMs2) {
+                        if (!Double.isFinite(xMs2) || !Double.isFinite(yMs2)
+                                || !Double.isFinite(zMs2)) return;
+                        long now = timeProvider.elapsedRealtimeMs();
+                        if (samsungMotionActive && lastSamsungMotionSampleMs > 0L
+                                && now - lastSamsungMotionSampleMs
+                                > SAMSUNG_MOTION_STALE_MS) {
+                            restoreStandardMotionFallback(
+                                    now, "Samsung accelerometer resumed after a stale gap");
+                        }
+                        if (!samsungMotionActive) {
+                            if (lastSamsungMotionCandidateMs == 0L
+                                    || now - lastSamsungMotionCandidateMs
+                                    > SAMSUNG_MOTION_STALE_MS) {
+                                samsungMotionCandidateSamples = 0;
+                                samsungMotionCandidateSinceMs = now;
+                            }
+                            lastSamsungMotionCandidateMs = now;
+                            samsungMotionCandidateSamples++;
+                            if (!isStableSamsungMotion(
+                                    samsungMotionCandidateSamples,
+                                    now - samsungMotionCandidateSinceMs)) return;
+                            activateSamsungMotion(now);
+                        }
+                        accelerometerRegistered = true;
+                        lastSamsungMotionSampleMs = now;
+                        lastMotionSampleMs = now;
+                        currentMotionProbeSamples++;
+                        double dynamicAcceleration = motionVectorFilter.observe(
+                                true, xMs2, yMs2, zMs2);
+                        synchronized (sampleLock) {
+                            motionSamples.addLast(
+                                    new SleepFeatureEngine.Sample(now, dynamicAcceleration));
+                            prune(motionSamples, now - 10L * 60L * 1000L);
+                        }
+                    }
+
                     @Override public void onHeartRate(
                             long timestampMs, double bpm, List<Integer> ibiMs,
                             boolean watchOffWrist) {
@@ -483,11 +550,15 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         offWrist = watchOffWrist;
                         if (Double.isFinite(bpm) && bpm >= 30.0 && bpm <= 220.0) {
                             lastHeartSampleMs = now;
+                            lastSamsungHeartSampleMs = now;
                             heartRateRegistered = true;
-                            if (!registeredHeartRateSensors.isEmpty()) {
-                                sensorManager.unregisterListener(
-                                        SleepSessionService.this,
-                                        registeredHeartRateSensors.get(0));
+                            if (!samsungHeartActive) {
+                                samsungHeartActive = true;
+                                activeHeartSource = "SAMSUNG_HEALTH_SENSOR_SDK";
+                                for (Sensor sensor : registeredHeartRateSensors) {
+                                    sensorManager.unregisterListener(
+                                            SleepSessionService.this, sensor);
+                                }
                                 registeredHeartRateSensors = Collections.emptyList();
                                 activeHeartRateSensor = null;
                                 heartSensorProbesExhausted = true;
@@ -539,8 +610,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 });
         // A high-end watch must not be reduced to the core profile. The bridge still
         // attaches only tracker types reported by the device at runtime.
-        boolean rawPpgPermission = ContextCompat.checkSelfPermission(
-                this, READ_ADDITIONAL_HEALTH_DATA) == PackageManager.PERMISSION_GRANTED;
+        boolean rawPpgPermission = samsungPpgPermissionGranted();
         if (config.enableRawPpg && SamsungHealthSensorBridge.isPackaged()
                 && SamsungHealthSensorBridge.isSamsungWatch() && !rawPpgPermission) {
             persistEvent("ADVANCED_PERMISSION_MISSING", "",
@@ -552,9 +622,132 @@ public final class SleepSessionService extends Service implements SensorEventLis
         samsungBridge.start(false);
     }
 
+    static String samsungPpgPermissionForSdk(int sdkInt) {
+        return sdkInt >= 36
+                ? READ_ADDITIONAL_HEALTH_DATA : Manifest.permission.BODY_SENSORS;
+    }
+
+    private boolean samsungPpgPermissionGranted() {
+        return ContextCompat.checkSelfPermission(
+                this, samsungPpgPermissionForSdk(Build.VERSION.SDK_INT))
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    static boolean isStableSamsungMotion(int samples, long observedWindowMs) {
+        return samples >= SAMSUNG_MOTION_STABLE_SAMPLES
+                && observedWindowMs >= SAMSUNG_MOTION_STABLE_WINDOW_MS;
+    }
+
+    private void activateSamsungMotion(long now) {
+        long stableWindowMs = Math.max(0L, now - samsungMotionCandidateSinceMs);
+        samsungMotionActive = true;
+        activeMotionSource = "SAMSUNG_HEALTH_SENSOR_SDK";
+        if (sensorManager != null) {
+            for (Sensor sensor : registeredMotionSensors) {
+                sensorManager.unregisterListener(SleepSessionService.this, sensor);
+            }
+        }
+        registeredMotionSensors = Collections.emptyList();
+        activeMotionSensor = null;
+        motionSensorProbesExhausted = true;
+        currentMotionProbeSamples = Math.max(
+                currentMotionProbeSamples, SystemCheckEvaluator.MIN_MOTION_SAMPLES);
+        motionVectorFilter.reset();
+        accelerometerRegistered = true;
+        completeMotionRecoveryGrace(now, activeMotionSource);
+        WatchDiagnostics.session(this, config, "MOTION_SENSOR_SOURCE_SWITCHED",
+                "source=" + activeMotionSource
+                        + ";stableSamples=" + samsungMotionCandidateSamples
+                        + ";stableWindowMs=" + stableWindowMs
+                        + ";standardProbeStopped=true");
+    }
+
+    private void restoreStandardMotionFallback(long now, String reason) {
+        if (!samsungMotionActive) return;
+        samsungMotionActive = false;
+        activeMotionSource = "NONE";
+        lastSamsungMotionSampleMs = 0L;
+        lastSamsungMotionCandidateMs = 0L;
+        samsungMotionCandidateSamples = 0;
+        samsungMotionCandidateSinceMs = 0L;
+        lastMotionSampleMs = 0L;
+        currentMotionProbeSamples = 0;
+        activeMotionSensor = null;
+        registeredMotionSensors = Collections.emptyList();
+        motionSensorProbeIndex = -1;
+        motionSensorProbeStartedMs = 0L;
+        motionSensorProbesExhausted = false;
+        accelerometerRegistered = false;
+        motionVectorFilter.reset();
+        beginMotionRecoveryGrace(now, reason);
+        WatchDiagnostics.session(this, config, "SAMSUNG_MOTION_STALLED",
+                "reason=" + reason + ";action=restore_standard_fallback;cues=blocked");
+        startNextMotionSensorProbe("Samsung accelerometer stalled");
+    }
+
+    private void restoreStandardHeartFallback(String reason) {
+        if (!samsungHeartActive) return;
+        samsungHeartActive = false;
+        activeHeartSource = "NONE";
+        lastSamsungHeartSampleMs = 0L;
+        lastHeartSampleMs = 0L;
+        lastStandardHeartSampleMs = 0L;
+        activeHeartRateSensor = null;
+        registeredHeartRateSensors = Collections.emptyList();
+        heartSensorProbeIndex = -1;
+        heartSensorProbeStartedMs = 0L;
+        heartSensorProbesExhausted = false;
+        heartRateRegistered = false;
+        WatchDiagnostics.session(this, config, "SAMSUNG_HEART_STALLED",
+                "reason=" + reason + ";action=restore_standard_fallback");
+        startNextHeartSensorProbe("Samsung heart-rate stream stalled");
+    }
+
+    private void beginMotionRecoveryGrace(long now, String reason) {
+        motionRecoveryDeadlineMs = now + SAMSUNG_SENSOR_STARTUP_GRACE_MS;
+        motionRecoveryReason = reason;
+        latestDecision = "BLOCKED: " + reason;
+    }
+
+    private void completeMotionRecoveryGrace(long now, String source) {
+        if (motionRecoveryDeadlineMs <= 0L) return;
+        long remainingMs = Math.max(0L, motionRecoveryDeadlineMs - now);
+        persistEvent("MOTION_SENSOR_RECOVERED", "",
+                "source=" + source + ";remainingGraceMs=" + remainingMs);
+        WatchDiagnostics.session(this, config, "MOTION_SENSOR_RECOVERED",
+                "source=" + source + ";remainingGraceMs=" + remainingMs);
+        motionRecoveryDeadlineMs = 0L;
+        motionRecoveryReason = "";
+    }
+
+    private boolean waitForMotionRecoveryOrFail(long now) {
+        if (motionRecoveryDeadlineMs <= 0L) return false;
+        if (lastMotionSampleMs > 0L
+                && now - lastMotionSampleMs <= SignalQualityMonitor.MOTION_STALE_MS) {
+            completeMotionRecoveryGrace(now, activeMotionSource);
+            return false;
+        }
+        if (now < motionRecoveryDeadlineMs) {
+            latestSignalQuality = motionRecoveryReason;
+            latestDecision = "BLOCKED: " + motionRecoveryReason;
+            broadcastStatus("Connecting watch motion sensor • cues off");
+            return true;
+        }
+        String failure = motionRecoveryReason + "; no live motion before grace expired";
+        terminateSession(SessionState.SENSOR_FAILED, "SENSOR_FAILED", failure);
+        persistEvent("SENSOR_FAILED", "", failure);
+        logEvent("SENSOR_FAILED", failure);
+        WatchDiagnostics.session(this, config, "MOTION_SENSOR_RECOVERY_FAILED", failure);
+        stopSelf();
+        return true;
+    }
+
+    private String sensorSourceSummary() {
+        return "motion=" + activeMotionSource + ";heart=" + activeHeartSource;
+    }
+
     private SensorCapabilitySnapshot capabilitySnapshot() {
-        boolean rawPpgPermission = ContextCompat.checkSelfPermission(
-                this, READ_ADDITIONAL_HEALTH_DATA) == PackageManager.PERMISSION_GRANTED;
+        boolean rawPpgPermission = samsungPpgPermissionGranted();
         AdvancedSensorVerification.Result advanced =
                 new AdvancedSensorVerification().evaluate(
                         samsungSdkConnected,
@@ -600,6 +793,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         lastHeartSampleMs = sampleElapsedMs;
         heartRateRegistered = true;
+        if (!samsungHeartActive) activeHeartSource = "HEALTH_SERVICES_PASSIVE";
         synchronized (sampleLock) {
             heartSamples.addLast(new SleepFeatureEngine.Sample(sampleElapsedMs, bpm));
             prune(heartSamples, now - 20L * 60L * 1000L);
@@ -706,7 +900,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (event == null || event.sensor == null || event.values == null) return;
         long now = event.timestamp > 0L
                 ? event.timestamp / 1_000_000L : timeProvider.elapsedRealtimeMs();
-        if (MotionSensorRegistration.accepts(registeredMotionSensors, event.sensor)
+        if (!samsungMotionActive
+                && MotionSensorRegistration.accepts(registeredMotionSensors, event.sensor)
                 && event.values.length >= 3
                 && Float.isFinite(event.values[0])
                 && Float.isFinite(event.values[1])
@@ -720,6 +915,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             if (!MotionSensorRegistration.accepts(
                     Collections.singletonList(activeMotionSensor), event.sensor)) return;
             lastMotionSampleMs = now;
+            activeMotionSource = "STANDARD_WEAR_OS";
+            completeMotionRecoveryGrace(now, activeMotionSource);
             currentMotionProbeSamples++;
             double x = event.values[0];
             double y = event.values[1];
@@ -746,6 +943,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         Collections.singletonList(activeHeartRateSensor), event.sensor)) return;
                 lastHeartSampleMs = now;
                 lastStandardHeartSampleMs = now;
+                activeHeartSource = "STANDARD_WEAR_OS";
                 synchronized (sampleLock) {
                     heartSamples.addLast(new SleepFeatureEngine.Sample(now, bpm));
                     prune(heartSamples, now - 20L * 60L * 1000L);
@@ -783,6 +981,14 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void evaluateAndAct() {
         long now = timeProvider.elapsedRealtimeMs();
         double armedElapsedMin = (now - sessionStartMs) / 60_000.0;
+        if (samsungMotionActive && lastSamsungMotionSampleMs > 0L
+                && now - lastSamsungMotionSampleMs > SAMSUNG_MOTION_STALE_MS) {
+            restoreStandardMotionFallback(now, "Samsung accelerometer stream became stale");
+        }
+        if (samsungHeartActive && lastSamsungHeartSampleMs > 0L
+                && now - lastSamsungHeartSampleMs > SignalQualityMonitor.HEART_STALE_MS) {
+            restoreStandardHeartFallback("Samsung heart-rate stream became stale");
+        }
         if (currentMotionProbeSamples < SystemCheckEvaluator.MIN_MOTION_SAMPLES
                 && !motionSensorProbesExhausted
                 && motionSensorProbeStartedMs > 0L
@@ -806,6 +1012,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             stopSelf();
             return;
         }
+        if (waitForMotionRecoveryOrFail(now)) return;
 
         SleepFeatureEngine.Snapshot features = calculateFeatures(now, armedElapsedMin);
         updateBaseline(now, armedElapsedMin, features);
@@ -1019,8 +1226,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean openRawPpgWindow(long now, long durationMs, String reason) {
         if (!config.enableRawPpg || samsungBridge == null
                 || !samsungTrackerTypes.contains("PPG_CONTINUOUS")
-                || ContextCompat.checkSelfPermission(this, READ_ADDITIONAL_HEALTH_DATA)
-                != PackageManager.PERMISSION_GRANTED) return false;
+                || !samsungPpgPermissionGranted()) return false;
         boolean started = samsungBridge.setRawPpgEnabled(true);
         if (!started) return false;
         rawPpgWindowActive = true;
@@ -1619,7 +1825,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     event,
                     currentGain,
                     offWrist,
-                    samsungSdkConnected ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS",
+                    sensorSourceSummary(),
                     sanitizeCsv(latestDecision),
                     features.motionSampleCount30,
                     features.heartSampleCount2,
@@ -1655,7 +1861,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                     sanitizeCsv(details),
                     currentGain,
                     offWrist,
-                    samsungSdkConnected ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS",
+                    sensorSourceSummary(),
                     sanitizeCsv(latestDecision),
                     "NONE",
                     "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK"
@@ -1749,8 +1955,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
         payload.put("rawPpgWindowActive", Boolean.toString(rawPpgWindowActive));
         payload.put("hapticsAction", "NONE_DURING_SLEEP");
         payload.put("audioAction", "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
-        payload.put("sensorSource", samsungSdkConnected
-                ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS");
+        payload.put("sensorSource", sensorSourceSummary());
+        payload.put("motionSource", activeMotionSource);
+        payload.put("heartSource", activeHeartSource);
         ProtocolEnvelope envelope = ProtocolEnvelope.create(
                 com.remote.DreamSync.shared.Protocol.TYPE_HEARTBEAT,
                 config.sessionId, "", config.watchNodeId, config.phoneNodeId,
@@ -1849,8 +2056,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         snapshot.sleepPhase = latestSleepPhase;
         snapshot.estimatedSleepOnsetElapsedMs = estimatedSleepOnsetMs;
         snapshot.baselineNights = personalBaseline.nights;
-        snapshot.sensorSource = samsungSdkConnected
-                ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS";
+        snapshot.sensorSource = sensorSourceSummary();
         snapshot.capabilityJson = capabilitySnapshot().toJson();
         snapshot.terminationReason = terminationReason == null ? "" : terminationReason;
         databaseExecutor.execute(() -> dao.upsertSession(snapshot));
@@ -1914,8 +2120,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("lastDecision", latestDecision);
             summary.put("hapticsAction", "NONE_DURING_SLEEP");
             summary.put("audioAction", "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
-            summary.put("sensorSource", samsungSdkConnected
-                    ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS");
+            summary.put("sensorSource", sensorSourceSummary());
+            summary.put("motionSource", activeMotionSource);
+            summary.put("heartSource", activeHeartSource);
             summary.put("capabilities", new JSONObject(capabilitySnapshot().toJson()));
             summary.put("personalBaselineNights", personalBaseline.nights);
             summary.put("personalizedBaselineReady", personalBaseline.personalized());
@@ -1926,7 +2133,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             sensorQuality.put("motionRegistered", accelerometerRegistered);
             sensorQuality.put("heartRateRegistered", heartRateRegistered);
             sensorQuality.put("heartRateCandidates", registeredHeartRateSensors.size());
-            sensorQuality.put("heartRateSource", MotionSensorRegistration.describe(
+            sensorQuality.put("motionSource", activeMotionSource);
+            sensorQuality.put("heartRateSource", activeHeartSource);
+            sensorQuality.put("standardHeartSensor", MotionSensorRegistration.describe(
                     activeHeartRateSensor == null ? heartRate : activeHeartRateSensor));
             sensorQuality.put("heartRegistrationDetails", heartRegistrationDetails);
             sensorQuality.put("offWrist", offWrist);

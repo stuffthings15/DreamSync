@@ -154,17 +154,35 @@ public final class MainActivity extends Activity {
         List<String> missing = new ArrayList<>();
         addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
         addIfMissing(missing, heartPermission());
+        boolean samsungSdkAvailable = SamsungHealthSensorBridge.isSamsungWatch()
+                && SamsungHealthSensorBridge.isPackaged();
+        if (samsungSdkAvailable) {
+            if (Build.VERSION.SDK_INT >= 36) {
+                addIfMissing(missing, READ_SKIN_TEMPERATURE);
+            }
+            addIfMissing(missing, samsungPpgPermission());
+        }
         if (!missing.isEmpty()) {
             pendingSystemCheckId = checkId;
-            statusText.setText("Allow activity and heart-rate access to run the watch check.");
+            statusText.setText("Allow the listed watch sensor access to run the check.");
             requestPermissions(missing.toArray(new String[0]),
                     REQUEST_SYSTEM_CHECK_PERMISSIONS);
             WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_PERMISSION_REQUESTED",
                     "activityMissing="
                             + !hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)
-                            + ";heartMissing=" + !hasPermission(heartPermission()));
+                            + ";heartMissing=" + !hasPermission(heartPermission())
+                            + ";skinTemperatureMissing=" + (samsungSdkAvailable
+                            && Build.VERSION.SDK_INT >= 36
+                            && !hasPermission(READ_SKIN_TEMPERATURE))
+                            + ";samsungPpgPermission=" + samsungPpgPermission()
+                            + ";samsungPpgPermissionMissing=" + (samsungSdkAvailable
+                            && !hasPermission(samsungPpgPermission())));
             return;
         }
+        startLiveSystemCheck(config, checkId);
+    }
+
+    private void startLiveSystemCheck(AutoSleepConfig config, String checkId) {
         pendingSystemCheckId = "";
         if (liveSystemCheck != null) {
             liveSystemCheck.cancel("A newer check replaced this check.");
@@ -243,10 +261,12 @@ public final class MainActivity extends Activity {
             List<String> missing = new ArrayList<>();
             addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
             addIfMissing(missing, heartPermission);
-            if (Build.VERSION.SDK_INT >= 36) addIfMissing(missing, READ_SKIN_TEMPERATURE);
             if (SamsungHealthSensorBridge.isSamsungWatch()
                     && SamsungHealthSensorBridge.isPackaged()) {
-                addIfMissing(missing, READ_ADDITIONAL_HEALTH_DATA);
+                if (Build.VERSION.SDK_INT >= 36) {
+                    addIfMissing(missing, READ_SKIN_TEMPERATURE);
+                }
+                addIfMissing(missing, samsungPpgPermission());
             }
             if (Build.VERSION.SDK_INT >= 33) addIfMissing(
                     missing, Manifest.permission.POST_NOTIFICATIONS);
@@ -369,8 +389,16 @@ public final class MainActivity extends Activity {
                 + ";lastHeartBpm=" + payload.getOrDefault("lastHeartBpm", "NaN")
                 + ";motionRegistered="
                 + payload.getOrDefault("motionRegistered", "false")
+                + ";activeMotionSource="
+                + payload.getOrDefault("activeMotionSource", "NONE")
+                + ";standardMotionSamples="
+                + payload.getOrDefault("standardMotionSamples", "0")
+                + ";samsungMotionSamples="
+                + payload.getOrDefault("samsungMotionSamples", "0")
                 + ";heartRegistered="
                 + payload.getOrDefault("heartRegistered", "false")
+                + ";activeHeartSource="
+                + payload.getOrDefault("activeHeartSource", "NONE")
                 + ";motionSensor=" + payload.getOrDefault("motionSensor", "")
                 + ";motionRegistrationDetails="
                 + payload.getOrDefault("motionRegistrationDetails", "")
@@ -400,6 +428,10 @@ public final class MainActivity extends Activity {
                 + ";temperatureSamples="
                 + payload.getOrDefault("temperatureSamples", "0")
                 + ";ppgSamples=" + payload.getOrDefault("ppgSamples", "0")
+                + ";samsungPpgPermission="
+                + payload.getOrDefault("samsungPpgPermission", "")
+                + ";samsungPpgPermissionGranted="
+                + payload.getOrDefault("samsungPpgPermissionGranted", "false")
                 + ";additionalHealthPermission="
                 + payload.getOrDefault("additionalHealthPermission", "false")
                 + ";advancedSensorsExpected="
@@ -418,6 +450,9 @@ public final class MainActivity extends Activity {
         private static final long MEASURE_HEART_TIMEOUT_MS = 25_000L;
         private static final long HEART_RELEASE_SETTLE_MS = 2_000L;
         private static final long STANDARD_HEART_PROBE_TIMEOUT_MS = 12_000L;
+        private static final long SAMSUNG_MOTION_STALE_MS = 3_000L;
+        private static final long STANDARD_MOTION_STALE_MS = 6_000L;
+        private static final long HEART_SOURCE_STALE_MS = 10_000L;
         private final AutoSleepConfig config;
         private final String checkId;
         private final SensorManager sensorManager;
@@ -461,6 +496,8 @@ public final class MainActivity extends Activity {
         private Set<String> samsungTrackerTypes = new HashSet<>();
         private volatile int motionSamples;
         private volatile int currentMotionProbeSamples;
+        private volatile int standardMotionSamples;
+        private volatile int samsungMotionSamples;
         private volatile int standardHeartSamples;
         private volatile int measureHeartSamples;
         private volatile int samsungHeartSamples;
@@ -472,17 +509,38 @@ public final class MainActivity extends Activity {
         private volatile int temperatureSamples;
         private volatile int ppgSamples;
         private volatile double lastHeartBpm = Double.NaN;
+        private volatile double lastStandardHeartBpm = Double.NaN;
+        private volatile double lastMeasureHeartBpm = Double.NaN;
+        private volatile double lastSamsungHeartBpm = Double.NaN;
         private volatile float lastMotionX = Float.NaN;
         private volatile float lastMotionY = Float.NaN;
         private volatile float lastMotionZ = Float.NaN;
         private volatile double lastMotionMagnitude = Double.NaN;
+        private volatile float lastStandardMotionX = Float.NaN;
+        private volatile float lastStandardMotionY = Float.NaN;
+        private volatile float lastStandardMotionZ = Float.NaN;
+        private volatile double lastStandardMotionMagnitude = Double.NaN;
+        private volatile float lastSamsungMotionX = Float.NaN;
+        private volatile float lastSamsungMotionY = Float.NaN;
+        private volatile float lastSamsungMotionZ = Float.NaN;
+        private volatile double lastSamsungMotionMagnitude = Double.NaN;
+        private volatile long lastStandardMotionElapsedMs = -1L;
+        private volatile long lastSamsungMotionElapsedMs = -1L;
+        private volatile long lastStandardHeartElapsedMs = -1L;
+        private volatile long lastMeasureHeartElapsedMs = -1L;
+        private volatile long lastSamsungHeartElapsedMs = -1L;
         private volatile boolean offWrist;
         private volatile boolean offWristKnown;
         private volatile boolean samsungConnected;
+        private volatile String activeMotionSource = "NONE";
+        private volatile String activeHeartSource = "NONE";
+        private volatile String standardMotionProbeState = "waiting";
+        private volatile String samsungMotionState = "waiting";
         private boolean activityPermission;
         private boolean heartPermissionGranted;
         private boolean additionalHealthPermission;
         private boolean motionRegistered;
+        private boolean standardMotionRegistered;
         private boolean motionRetryAttempted;
         private boolean heartRegistered;
         private boolean standardHeartFallbackAttempted;
@@ -528,14 +586,15 @@ public final class MainActivity extends Activity {
             hapticRequested = haptic.requested;
             activityPermission = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION);
             heartPermissionGranted = hasPermission(heartPermission());
-            additionalHealthPermission = hasPermission(READ_ADDITIONAL_HEALTH_DATA);
+            additionalHealthPermission = hasPermission(samsungPpgPermission());
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_STARTED",
                     "checkId=" + checkId + ";durationSeconds=75"
                             + ";activityPermission=" + activityPermission
                             + ";heartPermission=" + heartPermissionGranted
                             + ";hapticAvailable=" + hapticAvailable
                             + ";hapticRequested=" + hapticRequested
-                            + ";additionalHealthPermission="
+                            + ";samsungPpgPermission=" + samsungPpgPermission()
+                            + ";samsungPpgPermissionGranted="
                             + additionalHealthPermission);
             if (!activityPermission || !heartPermissionGranted || sensorManager == null) {
                 if (sensorManager == null) forcedFailure = "Watch sensor service is unavailable.";
@@ -610,14 +669,16 @@ public final class MainActivity extends Activity {
             if (!motionSensors.isEmpty()) {
                 sensorManager.unregisterListener(this, motionSensors.get(0));
             }
+            standardMotionRegistered = false;
             motionSensors = Collections.emptyList();
             motionEventSensor = null;
             currentMotionProbeSamples = 0;
-            motionSamples = 0;
-            lastMotionX = Float.NaN;
-            lastMotionY = Float.NaN;
-            lastMotionZ = Float.NaN;
-            lastMotionMagnitude = Double.NaN;
+            standardMotionSamples = 0;
+            lastStandardMotionX = Float.NaN;
+            lastStandardMotionY = Float.NaN;
+            lastStandardMotionZ = Float.NaN;
+            lastStandardMotionMagnitude = Double.NaN;
+            lastStandardMotionElapsedMs = -1L;
             motionRetryAttempted = motionProbeIndex >= 0;
             while (++motionProbeIndex < availableMotionSensors.size()) {
                 Sensor candidate = availableMotionSensors.get(motionProbeIndex);
@@ -637,16 +698,18 @@ public final class MainActivity extends Activity {
                                 + ";sensor=" + MotionSensorRegistration.describe(candidate)
                                 + ";registered=" + result.registered);
                 if (!result.registered) continue;
-                motionRegistered = true;
+                standardMotionRegistered = true;
                 motionSensors = result.sensors;
-                motionProbeState = "trying " + safeSensorName(candidate);
+                standardMotionProbeState = "trying " + safeSensorName(candidate);
+                refreshActiveMotionSource();
                 requestSensorFlush("motion_probe_" + motionProbeIndex);
                 statusText.postDelayed(motionProbeTimeout, MOTION_PROBE_TIMEOUT_MS);
                 updateProgressText();
                 return;
             }
-            motionRegistered = false;
-            motionProbeState = "blocked: check Sensors Off and Power saving";
+            standardMotionRegistered = false;
+            standardMotionProbeState = "blocked: check Sensors Off and Power saving";
+            refreshActiveMotionSource();
             sensorSilenceDetected = allSensorCallbacks == 0;
             WatchDiagnostics.auto(MainActivity.this, config,
                     "SYSTEM_CHECK_MOTION_PROBES_EXHAUSTED",
@@ -744,16 +807,18 @@ public final class MainActivity extends Activity {
                         Double bpm = point.getValue();
                         if (bpm != null && Double.isFinite(bpm)
                                 && bpm >= 30.0 && bpm <= 220.0) {
-                            lastHeartBpm = bpm;
+                            lastMeasureHeartBpm = bpm;
+                            lastMeasureHeartElapsedMs = SystemClock.elapsedRealtime();
                             measureHeartSamples++;
                             accepted++;
                         }
                     }
+                    if (accepted > 0) refreshActiveHeartSource();
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MEASURE_HEART_DATA",
                             "received=" + points.size() + ";accepted=" + accepted
                                     + ";total=" + measureHeartSamples
-                                    + ";lastBpm=" + lastHeartBpm
+                                    + ";lastBpm=" + lastMeasureHeartBpm
                                     + ";elapsedSinceCheckMs="
                                     + Math.max(0L, SystemClock.elapsedRealtime()
                                     - startedElapsedMs)
@@ -764,7 +829,7 @@ public final class MainActivity extends Activity {
                         if (firstAcceptedReading) {
                             WatchDiagnostics.auto(MainActivity.this, config,
                                     "SYSTEM_CHECK_HEART_READING_CONFIRMED",
-                                    "source=HEALTH_SERVICES;bpm=" + lastHeartBpm);
+                                    "source=HEALTH_SERVICES;bpm=" + lastMeasureHeartBpm);
                         }
                     }
                     updateProgressText();
@@ -914,6 +979,40 @@ public final class MainActivity extends Activity {
                                     "SYSTEM_CHECK_SAMSUNG_CAPABILITIES",
                                     "connected=" + connected + ";trackers="
                                             + samsungTrackerTypes + ";detail=" + samsungDetail);
+                            runOnUiThread(() -> {
+                                refreshActiveMotionSource();
+                                refreshActiveHeartSource();
+                                updateProgressText();
+                            });
+                        }
+
+                        @Override public void onAccelerometer(
+                                long timestampMs, double xMs2, double yMs2, double zMs2) {
+                            if (finished || !Double.isFinite(xMs2)
+                                    || !Double.isFinite(yMs2) || !Double.isFinite(zMs2)) {
+                                return;
+                            }
+                            boolean firstReading = samsungMotionSamples == 0;
+                            samsungMotionSamples++;
+                            lastSamsungMotionX = (float) xMs2;
+                            lastSamsungMotionY = (float) yMs2;
+                            lastSamsungMotionZ = (float) zMs2;
+                            lastSamsungMotionMagnitude = Math.sqrt(
+                                    xMs2 * xMs2 + yMs2 * yMs2 + zMs2 * zMs2);
+                            lastSamsungMotionElapsedMs = SystemClock.elapsedRealtime();
+                            samsungMotionState = samsungMotionSamples
+                                    >= SystemCheckEvaluator.MIN_MOTION_SAMPLES
+                                    ? "reading Samsung Health Sensor SDK"
+                                    : "verifying Samsung motion " + samsungMotionSamples + "/"
+                                    + SystemCheckEvaluator.MIN_MOTION_SAMPLES;
+                            refreshActiveMotionSource();
+                            if (firstReading || samsungMotionSamples % 100 == 0) {
+                                WatchDiagnostics.auto(MainActivity.this, config,
+                                        "SYSTEM_CHECK_SAMSUNG_MOTION_DATA",
+                                        "count=" + samsungMotionSamples + ";x=" + xMs2
+                                                + ";y=" + yMs2 + ";z=" + zMs2
+                                                + ";timestampMs=" + timestampMs);
+                            }
                             runOnUiThread(LiveSystemCheck.this::updateProgressText);
                         }
 
@@ -924,8 +1023,10 @@ public final class MainActivity extends Activity {
                             offWristKnown = true;
                             boolean firstAcceptedReading = samsungHeartSamples == 0;
                             if (Double.isFinite(bpm) && bpm >= 30.0 && bpm <= 220.0) {
-                                lastHeartBpm = bpm;
+                                lastSamsungHeartBpm = bpm;
+                                lastSamsungHeartElapsedMs = SystemClock.elapsedRealtime();
                                 samsungHeartSamples++;
+                                refreshActiveHeartSource();
                                 if (firstAcceptedReading) {
                                     WatchDiagnostics.auto(MainActivity.this, config,
                                             "SYSTEM_CHECK_HEART_READING_CONFIRMED",
@@ -981,30 +1082,32 @@ public final class MainActivity extends Activity {
                     && Float.isFinite(event.values[2])) {
                 if (motionEventSensor == null) {
                     motionEventSensor = event.sensor;
-                    motionProbeState = "receiving " + safeSensorName(event.sensor);
+                    standardMotionProbeState = "receiving " + safeSensorName(event.sensor);
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MOTION_SOURCE_CONFIRMED",
                             MotionSensorRegistration.describe(motionEventSensor));
                 }
                 if (!MotionSensorRegistration.accepts(
                         Collections.singletonList(motionEventSensor), event.sensor)) return;
-                motionSamples++;
+                standardMotionSamples++;
                 currentMotionProbeSamples++;
-                lastMotionX = event.values[0];
-                lastMotionY = event.values[1];
-                lastMotionZ = event.values[2];
-                lastMotionMagnitude = Math.sqrt(
-                        lastMotionX * lastMotionX
-                                + lastMotionY * lastMotionY
-                                + lastMotionZ * lastMotionZ);
+                lastStandardMotionX = event.values[0];
+                lastStandardMotionY = event.values[1];
+                lastStandardMotionZ = event.values[2];
+                lastStandardMotionMagnitude = Math.sqrt(
+                        lastStandardMotionX * lastStandardMotionX
+                                + lastStandardMotionY * lastStandardMotionY
+                                + lastStandardMotionZ * lastStandardMotionZ);
+                lastStandardMotionElapsedMs = SystemClock.elapsedRealtime();
                 if (currentMotionProbeSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES) {
                     statusText.removeCallbacks(motionProbeTimeout);
-                    motionProbeState = "reading " + safeSensorName(event.sensor);
+                    standardMotionProbeState = "reading " + safeSensorName(event.sensor);
                 }
-                if (motionSamples == 1 || motionSamples % 100 == 0) {
+                refreshActiveMotionSource();
+                if (standardMotionSamples == 1 || standardMotionSamples % 100 == 0) {
                     WatchDiagnostics.auto(MainActivity.this, config,
-                            "SYSTEM_CHECK_MOTION_DATA",
-                            "count=" + motionSamples + ";sensorType="
+                            "SYSTEM_CHECK_STANDARD_MOTION_DATA",
+                            "count=" + standardMotionSamples + ";sensorType="
                                     + event.sensor.getType() + ";accuracy=" + event.accuracy
                                     + ";x=" + event.values[0] + ";y=" + event.values[1]
                                     + ";z=" + event.values[2]);
@@ -1029,10 +1132,12 @@ public final class MainActivity extends Activity {
                 if (!HeartRateSensorRegistration.accepts(
                         Collections.singletonList(activeHeartRateSensor), event.sensor)) return;
                 standardHeartSamples++;
-                lastHeartBpm = event.values[0];
+                lastStandardHeartBpm = event.values[0];
+                lastStandardHeartElapsedMs = SystemClock.elapsedRealtime();
+                refreshActiveHeartSource();
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_STANDARD_HEART_DATA",
-                        "count=" + standardHeartSamples + ";bpm=" + lastHeartBpm
+                        "count=" + standardHeartSamples + ";bpm=" + lastStandardHeartBpm
                                 + ";accuracy=" + event.accuracy);
             } else if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER
                     || event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION
@@ -1077,17 +1182,110 @@ public final class MainActivity extends Activity {
                             + ";flushCompletions=" + flushCompletions);
         }
 
+        private void refreshActiveMotionSource() {
+            long now = SystemClock.elapsedRealtime();
+            long samsungAgeMs = sourceAgeMs(now, lastSamsungMotionElapsedMs);
+            long standardAgeMs = sourceAgeMs(now, lastStandardMotionElapsedMs);
+            boolean samsungStable = samsungMotionSamples
+                    >= SystemCheckEvaluator.MIN_MOTION_SAMPLES;
+            boolean samsungFresh = samsungConnected && samsungStable
+                    && samsungAgeMs >= 0L && samsungAgeMs <= SAMSUNG_MOTION_STALE_MS;
+            boolean standardFresh = standardMotionSamples > 0
+                    && standardAgeMs >= 0L && standardAgeMs <= STANDARD_MOTION_STALE_MS;
+            String nextSource = samsungFresh ? "SAMSUNG_HEALTH_SENSOR_SDK"
+                    : standardFresh ? "STANDARD_SENSOR_MANAGER" : "NONE";
+            if (!nextSource.equals(activeMotionSource)) {
+                String reason = samsungFresh ? "Samsung stream is stable and fresh"
+                        : standardFresh ? "Samsung stream unavailable or stale; using standard"
+                        : "no fresh motion stream";
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_MOTION_SOURCE_SWITCHED",
+                        "from=" + activeMotionSource + ";to=" + nextSource
+                                + ";reason=" + reason
+                                + ";standardSamples=" + standardMotionSamples
+                                + ";standardAgeMs=" + standardAgeMs
+                                + ";samsungSamples=" + samsungMotionSamples
+                                + ";samsungAgeMs=" + samsungAgeMs
+                                + ";standardProbeKept=" + standardMotionRegistered);
+                activeMotionSource = nextSource;
+            }
+            motionRegistered = standardMotionRegistered || samsungMotionSamples > 0;
+            if (samsungFresh || (!standardFresh && samsungMotionSamples > 0
+                    && lastSamsungMotionElapsedMs >= lastStandardMotionElapsedMs)) {
+                motionSamples = samsungMotionSamples;
+                lastMotionX = lastSamsungMotionX;
+                lastMotionY = lastSamsungMotionY;
+                lastMotionZ = lastSamsungMotionZ;
+                lastMotionMagnitude = lastSamsungMotionMagnitude;
+                motionProbeState = samsungFresh ? samsungMotionState
+                        : "waiting for fresh Samsung motion";
+            } else if (standardMotionSamples > 0) {
+                motionSamples = standardMotionSamples;
+                lastMotionX = lastStandardMotionX;
+                lastMotionY = lastStandardMotionY;
+                lastMotionZ = lastStandardMotionZ;
+                lastMotionMagnitude = lastStandardMotionMagnitude;
+                motionProbeState = standardFresh ? standardMotionProbeState
+                        : "waiting for fresh standard motion";
+            } else {
+                motionSamples = 0;
+                motionProbeState = standardMotionProbeState;
+            }
+        }
+
+        private void refreshActiveHeartSource() {
+            long now = SystemClock.elapsedRealtime();
+            long samsungAgeMs = sourceAgeMs(now, lastSamsungHeartElapsedMs);
+            long measureAgeMs = sourceAgeMs(now, lastMeasureHeartElapsedMs);
+            long standardAgeMs = sourceAgeMs(now, lastStandardHeartElapsedMs);
+            boolean samsungFresh = samsungConnected && samsungHeartSamples > 0
+                    && samsungAgeMs >= 0L && samsungAgeMs <= HEART_SOURCE_STALE_MS;
+            boolean measureFresh = measureHeartSamples > 0
+                    && measureAgeMs >= 0L && measureAgeMs <= HEART_SOURCE_STALE_MS;
+            boolean standardFresh = standardHeartSamples > 0
+                    && standardAgeMs >= 0L && standardAgeMs <= HEART_SOURCE_STALE_MS;
+            String nextSource = samsungFresh ? "SAMSUNG_HEALTH_SENSOR_SDK"
+                    : measureFresh ? "HEALTH_SERVICES"
+                    : standardFresh ? "STANDARD_SENSOR_MANAGER" : "NONE";
+            if (!nextSource.equals(activeHeartSource)) {
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_HEART_SOURCE_SWITCHED",
+                        "from=" + activeHeartSource + ";to=" + nextSource
+                                + ";standardSamples=" + standardHeartSamples
+                                + ";standardAgeMs=" + standardAgeMs
+                                + ";measureSamples=" + measureHeartSamples
+                                + ";measureAgeMs=" + measureAgeMs
+                                + ";samsungSamples=" + samsungHeartSamples
+                                + ";samsungAgeMs=" + samsungAgeMs);
+                activeHeartSource = nextSource;
+            }
+            if (samsungFresh) lastHeartBpm = lastSamsungHeartBpm;
+            else if (measureFresh) lastHeartBpm = lastMeasureHeartBpm;
+            else if (standardFresh) lastHeartBpm = lastStandardHeartBpm;
+        }
+
+        private long sourceAgeMs(long nowElapsedMs, long sampleElapsedMs) {
+            return sampleElapsedMs < 0L ? -1L : Math.max(0L, nowElapsedMs - sampleElapsedMs);
+        }
+
+        private int usableMotionSamples() {
+            return Math.max(standardMotionSamples, samsungMotionSamples);
+        }
+
         private void updateProgressText() {
             if (Looper.myLooper() != Looper.getMainLooper()) {
                 statusText.post(this::updateProgressText);
                 return;
             }
             if (finished) return;
+            refreshActiveMotionSource();
+            refreshActiveHeartSource();
             int totalHeart = standardHeartSamples + measureHeartSamples + samsungHeartSamples;
             String audio = watchAudioResult == null
                     ? watchAudioStarted ? "playing" : "waiting"
                     : watchAudioResult.success ? "passed" : "failed";
-            String heartState = totalHeart > 0 ? "reading" : heartProbeState;
+            String heartState = totalHeart > 0 && !"NONE".equals(activeHeartSource)
+                    ? "reading " + activeHeartSource : heartProbeState;
             statusText.setText(SystemCheckProgress.format(
                     SystemClock.elapsedRealtime() - startedElapsedMs,
                     SYSTEM_CHECK_DURATION_MS,
@@ -1110,7 +1308,18 @@ public final class MainActivity extends Activity {
                     "checkpoint=" + checkpoint
                             + ";motionRegistered=" + motionRegistered
                             + ";motionProbeState=" + motionProbeState
+                            + ";activeMotionSource=" + activeMotionSource
                             + ";motionSamples=" + motionSamples
+                            + ";usableMotionSamples=" + usableMotionSamples()
+                            + ";standardMotionRegistered=" + standardMotionRegistered
+                            + ";standardMotionProbeState=" + standardMotionProbeState
+                            + ";standardMotionSamples=" + standardMotionSamples
+                            + ";standardMotionAgeMs=" + sourceAgeMs(
+                            SystemClock.elapsedRealtime(), lastStandardMotionElapsedMs)
+                            + ";samsungMotionSamples=" + samsungMotionSamples
+                            + ";samsungMotionState=" + samsungMotionState
+                            + ";samsungMotionAgeMs=" + sourceAgeMs(
+                            SystemClock.elapsedRealtime(), lastSamsungMotionElapsedMs)
                             + ";motionX=" + lastMotionX
                             + ";motionY=" + lastMotionY
                             + ";motionZ=" + lastMotionZ
@@ -1119,17 +1328,21 @@ public final class MainActivity extends Activity {
                             + ";rejectedMotionCallbacks=" + rejectedMotionCallbacks
                             + ";standardHeartRegistered=" + heartRegistered
                             + ";standardHeartSamples=" + standardHeartSamples
+                            + ";lastStandardHeartBpm=" + lastStandardHeartBpm
                             + ";heartProbeState=" + heartProbeState
+                            + ";activeHeartSource=" + activeHeartSource
                             + ";lastHeartBpm=" + lastHeartBpm
                             + ";measureSupported=" + measureSupported
                             + ";measureRegistered=" + measureRegistered
                             + ";measureAvailability=" + measureAvailability
                             + ";measureHeartSamples=" + measureHeartSamples
+                            + ";lastMeasureHeartBpm=" + lastMeasureHeartBpm
                             + ";rejectedHeartCallbacks=" + rejectedHeartCallbacks
                             + ";passivePauseCompleted=" + passivePauseCompleted
                             + ";passivePauseSucceeded=" + passivePauseSucceeded
                             + ";samsungConnected=" + samsungConnected
                             + ";samsungHeartSamples=" + samsungHeartSamples
+                            + ";lastSamsungHeartBpm=" + lastSamsungHeartBpm
                             + ";watchAudioStarted=" + watchAudioStarted
                             + ";watchAudioFinished=" + (watchAudioResult != null)
                             + ";flushRequests=" + flushRequests
@@ -1192,7 +1405,10 @@ public final class MainActivity extends Activity {
 
             int totalHeartSamples = standardHeartSamples
                     + measureHeartSamples + samsungHeartSamples;
-            sensorSilenceDetected = allSensorCallbacks == 0
+            int usableMotionSamples = usableMotionSamples();
+            boolean usableMotionRegistration = standardMotionRegistered
+                    || samsungMotionSamples > 0;
+            sensorSilenceDetected = allSensorCallbacks == 0 && usableMotionSamples == 0
                     && measureHeartSamples == 0 && samsungHeartSamples == 0;
             boolean usableHeartRegistration = heartRegistered
                     || measureRegistered
@@ -1201,9 +1417,9 @@ public final class MainActivity extends Activity {
             SystemCheckEvaluator.Result evaluation = new SystemCheckEvaluator().evaluate(
                     activityPermission,
                     heartPermissionGranted,
-                    motionRegistered,
+                    usableMotionRegistration,
                     usableHeartRegistration,
-                    motionSamples,
+                    usableMotionSamples,
                     totalHeartSamples,
                     offWrist);
             boolean passed = evaluation.passed && forcedFailure.isEmpty();
@@ -1241,7 +1457,7 @@ public final class MainActivity extends Activity {
                         + advanced.reason;
             }
             SensorCapabilitySnapshot capability = new SensorCapabilitySnapshot(
-                    motionSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES,
+                    usableMotionSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES,
                     totalHeartSamples >= SystemCheckEvaluator.MIN_HEART_SAMPLES,
                     SamsungHealthSensorBridge.isPackaged(),
                     samsungConnected,
@@ -1254,8 +1470,9 @@ public final class MainActivity extends Activity {
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("status", passed ? "PASS" : "FAIL");
             payload.put("reason", reason);
-            payload.put("motionSamples", Integer.toString(motionSamples));
+            payload.put("motionSamples", Integer.toString(usableMotionSamples));
             payload.put("motionProbeState", motionProbeState);
+            payload.put("activeMotionSource", activeMotionSource);
             payload.put("motionX", Float.toString(lastMotionX));
             payload.put("motionY", Float.toString(lastMotionY));
             payload.put("motionZ", Float.toString(lastMotionZ));
@@ -1268,15 +1485,25 @@ public final class MainActivity extends Activity {
             payload.put("heartSamples", Integer.toString(totalHeartSamples));
             payload.put("lastHeartBpm", Double.isFinite(lastHeartBpm)
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
-            payload.put("motionRegistered", Boolean.toString(motionRegistered));
+            payload.put("motionRegistered", Boolean.toString(usableMotionRegistration));
+            payload.put("standardMotionRegistered",
+                    Boolean.toString(standardMotionRegistered));
             payload.put("motionRetryAttempted", Boolean.toString(motionRetryAttempted));
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
-            payload.put("motionSensor", MotionSensorRegistration.describe(
+            payload.put("motionSensor", "SAMSUNG_HEALTH_SENSOR_SDK".equals(
+                    activeMotionSource)
+                    ? "Samsung Health Sensor SDK ACCELEROMETER_CONTINUOUS"
+                    : MotionSensorRegistration.describe(
                     motionEventSensor == null ? accelerometer : motionEventSensor));
             payload.put("motionRegistrationDetails", motionRegistrationDetails);
+            payload.put("standardMotionSamples", Integer.toString(standardMotionSamples));
+            payload.put("standardMotionProbeState", standardMotionProbeState);
+            payload.put("samsungMotionSamples", Integer.toString(samsungMotionSamples));
+            payload.put("samsungMotionState", samsungMotionState);
             payload.put("sensorInventory", sensorInventory);
             payload.put("standardHeartRegistered", Boolean.toString(heartRegistered));
             payload.put("standardHeartSamples", Integer.toString(standardHeartSamples));
+            payload.put("lastStandardHeartBpm", Double.toString(lastStandardHeartBpm));
             payload.put("rejectedHeartCallbacks",
                     Integer.toString(rejectedHeartCallbacks));
             payload.put("standardHeartSensor", MotionSensorRegistration.describe(
@@ -1287,11 +1514,14 @@ public final class MainActivity extends Activity {
             payload.put("measureRegistered", Boolean.toString(measureRegistered));
             payload.put("measureAvailability", measureAvailability);
             payload.put("measureHeartSamples", Integer.toString(measureHeartSamples));
+            payload.put("lastMeasureHeartBpm", Double.toString(lastMeasureHeartBpm));
             payload.put("passiveWasRegistered", Boolean.toString(passiveWasRegistered));
             payload.put("passivePauseCompleted", Boolean.toString(passivePauseCompleted));
             payload.put("passivePauseSucceeded", Boolean.toString(passivePauseSucceeded));
             payload.put("passivePauseDetail", passivePauseDetail);
             payload.put("samsungHeartSamples", Integer.toString(samsungHeartSamples));
+            payload.put("lastSamsungHeartBpm", Double.toString(lastSamsungHeartBpm));
+            payload.put("activeHeartSource", activeHeartSource);
             payload.put("watchAudioStarted", Boolean.toString(watchAudioStarted));
             payload.put("watchAudioCompleted", Boolean.toString(
                     watchAudioResult != null && watchAudioResult.success));
@@ -1313,6 +1543,9 @@ public final class MainActivity extends Activity {
             payload.put("activityPermission", Boolean.toString(activityPermission));
             payload.put("heartPermission", Boolean.toString(heartPermissionGranted));
             payload.put("additionalHealthPermission",
+                    Boolean.toString(additionalHealthPermission));
+            payload.put("samsungPpgPermission", samsungPpgPermission());
+            payload.put("samsungPpgPermissionGranted",
                     Boolean.toString(additionalHealthPermission));
             payload.put("offWrist", Boolean.toString(offWrist));
             payload.put("offWristKnown", Boolean.toString(offWristKnown));
@@ -1559,6 +1792,11 @@ public final class MainActivity extends Activity {
         return Build.VERSION.SDK_INT >= 36 ? READ_HEART_RATE : Manifest.permission.BODY_SENSORS;
     }
 
+    private String samsungPpgPermission() {
+        return Build.VERSION.SDK_INT >= 36
+                ? READ_ADDITIONAL_HEALTH_DATA : Manifest.permission.BODY_SENSORS;
+    }
+
     private String backgroundHeartPermission() {
         if (Build.VERSION.SDK_INT >= 36) return READ_HEALTH_DATA_IN_BACKGROUND;
         if (Build.VERSION.SDK_INT >= 33) return Manifest.permission.BODY_SENSORS_BACKGROUND;
@@ -1570,7 +1808,9 @@ public final class MainActivity extends Activity {
     }
 
     private void addIfMissing(List<String> permissions, String permission) {
-        if (!hasPermission(permission)) permissions.add(permission);
+        if (!hasPermission(permission) && !permissions.contains(permission)) {
+            permissions.add(permission);
+        }
     }
 
     @Override public void onRequestPermissionsResult(
@@ -1586,7 +1826,10 @@ public final class MainActivity extends Activity {
                 publishImmediateSystemCheckFailure(config, checkId,
                         "Activity and heart-rate permissions are required on the watch.");
             } else {
-                startSystemCheckWhenPermissionsReady(config, checkId);
+                // Advanced Samsung permissions are optional. If the user denies one,
+                // run the core motion/heart check once and report that capability as
+                // unavailable instead of reopening the same permission request loop.
+                startLiveSystemCheck(config, checkId);
             }
             return;
         }

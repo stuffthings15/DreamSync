@@ -77,6 +77,9 @@ public final class MainActivity extends Activity {
     private boolean audioPreviewInProgress;
     private boolean systemCheckReportShowing;
     private AlertDialog systemCheckReportDialog;
+    private boolean morningSurveyShowing;
+    private AlertDialog morningSurveyDialog;
+    private String morningSurveySessionId = "";
     private String startingState = "";
     private int watchInstallPollAttempt;
     private String pendingExportJson = "";
@@ -180,12 +183,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.systemCheckButton).setOnClickListener(v -> runSystemCheck());
         powerButton.setOnClickListener(v -> toggleAutomaticMode());
         modeGroup.setOnCheckedChangeListener((group, checkedId) -> syncAutoSettingsIfEnabled());
-        findViewById(R.id.morningButton).setOnClickListener(v -> {
-            String sessionId = getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .getString("last_summary_session", "");
-            if (sessionId.isEmpty()) statusText.setText("No completed session is ready for a survey.");
-            else showMorningSurvey(sessionId);
-        });
+        findViewById(R.id.morningButton).setOnClickListener(v -> openMorningCheckIn());
         findViewById(R.id.historyButton).setOnClickListener(v -> showHistory());
         findViewById(R.id.exportButton).setOnClickListener(v -> prepareExport());
         findViewById(R.id.exportDebugButton).setOnClickListener(v -> prepareDebugExport());
@@ -753,7 +751,19 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openMorningCheckIn() {
+        if (morningSurveyShowing) return;
+        String sessionId = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_summary_session", "");
+        boolean manual = sessionId.isEmpty();
+        if (manual) sessionId = "manual-" + UUID.randomUUID();
+        DebugLog.append(this, "MORNING_CHECKIN_TAPPED",
+                manual ? "opening manual check-in; no completed watch night" : "opening completed night");
+        showMorningSurvey(sessionId);
+    }
+
     private void showMorningSurvey(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty() || morningSurveyShowing) return;
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(18);
@@ -767,11 +777,20 @@ public final class MainActivity extends Activity {
         EditText adverse = field(form, "Headache, nightmare, anxiety, sleepiness, or none", false);
         EditText notes = field(form, "Dream journal and notes", false);
 
-        new AlertDialog.Builder(this)
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(form, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        morningSurveyShowing = true;
+        morningSurveySessionId = sessionId;
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Morning check-in")
-                .setMessage("Save how the night felt and any dream notes.")
-                .setView(form)
-                .setPositiveButton("Save", (dialog, which) -> {
+                .setMessage(sessionId.startsWith("manual-")
+                        ? "No completed watch night was found. Save a manual morning record instead."
+                        : "Save how the night felt and any dream notes.")
+                .setView(scroll)
+                .setPositiveButton("Save", (ignored, which) -> {
                     MorningSurveyEntity survey = new MorningSurveyEntity();
                     survey.sessionId = sessionId;
                     survey.sleepQuality = boundedInt(sleep.getText().toString(), 1, 10, 0);
@@ -788,20 +807,68 @@ public final class MainActivity extends Activity {
                     survey.submittedUtcMs = System.currentTimeMillis();
                     applyDisturbanceGain(survey.disturbanceRating, sessionId);
                     databaseExecutor.execute(() -> {
-                        dao.upsertSurvey(survey);
-                        SessionEntity session = dao.session(sessionId);
-                        if (session != null) {
+                        try {
+                            dao.upsertSurvey(survey);
+                            SessionEntity session = dao.session(sessionId);
+                            if (session == null) {
+                                session = new SessionEntity();
+                                session.sessionId = sessionId;
+                                session.mode = ProtectionMode.PROTECT_ONLY.name();
+                                session.state = com.remote.DreamSync.shared.SessionState.COMPLETE.name();
+                                session.startUtcMs = survey.submittedUtcMs;
+                                session.endUtcMs = survey.submittedUtcMs;
+                                session.summaryJson = new JSONObject()
+                                        .put("manualCheckIn", true)
+                                        .put("minutes", 0)
+                                        .put("terminalState", "manual check-in")
+                                        .toString();
+                            }
                             updateSafeCueNightStreak(session, survey);
                             dao.upsertSession(session);
+                            if (sessionId.startsWith("manual-")) {
+                                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                        .putString("last_summary_session", sessionId).apply();
+                            }
                             runOnUiThread(() -> {
-                                showFriendlySummary(session.summaryJson);
                                 statusText.setText("Morning check-in saved.");
+                                DebugLog.append(this, "MORNING_CHECKIN_SAVED",
+                                        "saved locally; manual=" + sessionId.startsWith("manual-"));
+                            });
+                        } catch (Exception error) {
+                            runOnUiThread(() -> {
+                                statusText.setText("Morning check-in could not be saved: "
+                                        + safeMessage(error));
+                                DebugLog.append(this, "MORNING_CHECKIN_SAVE_FAILED",
+                                        safeMessage(error));
                             });
                         }
                     });
                 })
                 .setNegativeButton("Later", null)
-                .show();
+                .create();
+        dialog.setOnDismissListener(ignored -> {
+            morningSurveyShowing = false;
+            morningSurveySessionId = "";
+            morningSurveyDialog = null;
+        });
+        morningSurveyDialog = dialog;
+        dialog.show();
+        DebugLog.append(this, "MORNING_CHECKIN_DISPLAYED",
+                "manual=" + sessionId.startsWith("manual-"));
+    }
+
+    boolean isMorningSurveyShowingForTest() {
+        return morningSurveyShowing && morningSurveyDialog != null
+                && morningSurveyDialog.isShowing();
+    }
+
+    String morningSurveySessionIdForTest() {
+        return morningSurveySessionId;
+    }
+
+    void dismissMorningSurveyForTest() {
+        AlertDialog dialog = morningSurveyDialog;
+        if (dialog != null) dialog.dismiss();
     }
 
     private EditText field(LinearLayout form, String hint, boolean numeric) {

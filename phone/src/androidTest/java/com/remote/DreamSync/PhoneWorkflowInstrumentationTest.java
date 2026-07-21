@@ -92,6 +92,23 @@ public final class PhoneWorkflowInstrumentationTest {
         assertFalse(debug.contains("sensitive-node-value"));
     }
 
+    @Test public void morningCheckInAlwaysOpensEvenWithoutCompletedNight() {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit().remove("last_summary_session").apply();
+
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                activity.findViewById(R.id.morningButton).performClick();
+                assertTrue(activity.isMorningSurveyShowingForTest());
+                assertTrue(activity.morningSurveySessionIdForTest().startsWith("manual-"));
+                activity.dismissMorningSurveyForTest();
+                assertFalse(activity.isMorningSurveyShowingForTest());
+            });
+        }
+    }
+
     @Test public void dataExportPreservesSessionWhenStoredJsonIsMalformed() throws Exception {
         android.content.Context context = InstrumentationRegistry.getInstrumentation()
                 .getTargetContext();

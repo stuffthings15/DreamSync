@@ -69,6 +69,14 @@
 - Wear OS version code 60 (`1.3.13-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
 - Version 1.3.13 serializes motion and heart-rate sensor ownership, displays live sensor values, rejects registration-only false passes, forwards fresh passive heart readings, and exports expanded callback diagnostics.
 
+## Prepared 1.3.14 internal build
+
+- Phone version code 61 and Wear OS version code 62 (`1.3.14-test`) are built and signed for internal testing.
+- The Wear bundle packages the official Samsung Health Sensor SDK v1.4.1 AAR downloaded from Samsung Developer. The licensed AAR is stored locally and ignored by Git.
+- Samsung accelerometer, heart-rate/IBI, skin temperature, off-wrist, and bounded PPG adapter paths are packaged with standard Wear OS fallbacks.
+- 97 unit tests, both release lints, both debug builds, both signed release bundles, and both signature checks passed.
+- Google Play upload is pending. Samsung partner approval and physical Galaxy Watch Ultra verification remain required.
+
 ## Version 1.3.13 published to internal testing
 
 - Phone version code 59 and Wear OS version code 60 were published on 2026-07-21 and are available to internal testers.

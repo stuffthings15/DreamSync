@@ -4,6 +4,15 @@ Date: 21 July 2026
 
 ## Verified locally
 
+### Prepared 1.3.14 official Samsung SDK build
+
+- Phone version code 61 and Wear OS version code 62 (`1.3.14-test`) were built and signed for internal testing.
+- The official Samsung Health Sensor SDK v1.4.1 AAR was downloaded from the signed-in Samsung Developer site, installed locally under `wear/libs/`, verified by Gradle, and packaged into the Wear APK. The licensed AAR remains ignored by Git.
+- Samsung continuous accelerometer, heart-rate/IBI, skin-temperature, off-wrist, and explicit Green/IR/Red PPG adapter paths compile and package. Standard Wear OS motion and heart-rate paths remain available as fallback.
+- Samsung motion must deliver five fresh samples before becoming primary. Standard motion remains available and is restored if Samsung data stalls. Samsung heart data is accepted only when Samsung reports successful status.
+- 97 unit tests passed with zero failures. Phone and Wear release lint, debug APK builds, signed AAB builds, and both AAB signature checks passed.
+- This is package evidence, not physical sensor proof. Health Platform developer mode and a new Galaxy Watch Ultra check are required before the Samsung tracker paths are called working on hardware.
+
 ### Published 1.3.13 sensor-recovery build
 
 - Phone version code 59 and Wear OS version code 60 (`1.3.13-test`) were published to their Google Play internal tracks on 2026-07-21. Both releases are available to internal testers; the phone track is Active and Play labels the Wear OS track Inactive.
@@ -125,8 +134,7 @@ Date: 21 July 2026
 
 ## External gates still required
 
-- Add the official Samsung Health Sensor SDK AAR after Samsung sign-in. `:wear:verifySamsungSensorSdk` deliberately fails while the official AAR is absent.
-- Obtain Samsung Partner Program approval and register `com.remote.DreamSync` plus the upload signing certificate.
+- Obtain Samsung Partner Program approval and register `com.remote.DreamSync` plus the Google Play app-signing certificate.
 - Run the live Samsung self-test on Galaxy Watch Ultra 2024 and 2025.
 - Physical Galaxy, Pixel Watch, and third-party Wear OS sensor, audio, route, battery, permission, disconnect, off-wrist, reboot-night, and process-death validation.
 - Seven-night hardware baseline plus sensor-only, no-cue comparison, active-cue, and recovery tests.

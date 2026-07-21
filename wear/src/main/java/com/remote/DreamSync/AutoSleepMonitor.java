@@ -28,6 +28,59 @@ final class AutoSleepMonitor {
     private static final Executor DIRECT = Runnable::run;
     private static final String FEEDBACK_PREFS = "dreamsync_watch_feedback";
 
+    interface SensorAccessCallback {
+        void onReady(boolean passivePaused, String detail);
+    }
+
+    static void pauseForSensorAccess(
+            Context input,
+            AutoSleepConfig config,
+            String reason,
+            SensorAccessCallback callback
+    ) {
+        Context context = input.getApplicationContext();
+        if (!config.passiveRegistered) {
+            WatchDiagnostics.auto(context, config, "PASSIVE_SENSOR_ACCESS_NOT_REQUIRED",
+                    "reason=" + reason + ";passiveRegistered=false");
+            callback.onReady(true, "passive listener was not registered");
+            return;
+        }
+        WatchDiagnostics.auto(context, config, "PASSIVE_SENSOR_ACCESS_PAUSE_REQUESTED",
+                "reason=" + reason);
+        PassiveMonitoringClient client = HealthServices.getClient(context)
+                .getPassiveMonitoringClient();
+        ListenableFuture<Void> clear = client.clearPassiveListenerServiceAsync();
+        clear.addListener(() -> {
+            boolean paused = false;
+            String detail = "success=true";
+            try {
+                clear.get();
+                paused = true;
+                config.passiveRegistered = false;
+                config.save(context);
+            } catch (Exception error) {
+                detail = "success=false;error=" + safeMessage(error);
+            }
+            WatchDiagnostics.auto(context, config,
+                    paused ? "PASSIVE_SENSOR_ACCESS_PAUSED"
+                            : "PASSIVE_SENSOR_ACCESS_PAUSE_FAILED",
+                    "reason=" + reason + ";" + detail);
+            callback.onReady(paused, detail);
+        }, DIRECT);
+    }
+
+    static void resumeAfterSensorAccess(
+            Context input,
+            AutoSleepConfig config,
+            String reason
+    ) {
+        Context context = input.getApplicationContext();
+        if (!config.enabled) return;
+        WatchDiagnostics.auto(context, config, "PASSIVE_SENSOR_ACCESS_RESUME_REQUESTED",
+                "reason=" + reason);
+        enable(context, config);
+    }
+
     static void enable(Context input, AutoSleepConfig config) {
         Context context = input.getApplicationContext();
         config.enabled = true;

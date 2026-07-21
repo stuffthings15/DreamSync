@@ -434,6 +434,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
         String details = "status=" + status
                 + ";reason=" + reason
                 + ";motionSamples=" + envelope.payload.getOrDefault("motionSamples", "")
+                + ";allSensorCallbacks="
+                + envelope.payload.getOrDefault("allSensorCallbacks", "")
+                + ";rejectedMotionCallbacks="
+                + envelope.payload.getOrDefault("rejectedMotionCallbacks", "")
                 + ";heartSamples=" + envelope.payload.getOrDefault("heartSamples", "")
                 + ";lastHeartBpm=" + envelope.payload.getOrDefault("lastHeartBpm", "")
                 + ";motionRegistered=" + envelope.payload.getOrDefault("motionRegistered", "")
@@ -450,6 +454,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + envelope.payload.getOrDefault("standardHeartRegistered", "")
                 + ";standardHeartSamples="
                 + envelope.payload.getOrDefault("standardHeartSamples", "")
+                + ";rejectedHeartCallbacks="
+                + envelope.payload.getOrDefault("rejectedHeartCallbacks", "")
                 + ";standardHeartSensor=" + cleanDetails(
                 envelope.payload.getOrDefault("standardHeartSensor", ""))
                 + ";heartRegistrationDetails=" + cleanDetails(
@@ -462,6 +468,14 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 envelope.payload.getOrDefault("measureAvailability", ""))
                 + ";measureHeartSamples="
                 + envelope.payload.getOrDefault("measureHeartSamples", "")
+                + ";passiveWasRegistered="
+                + envelope.payload.getOrDefault("passiveWasRegistered", "")
+                + ";passivePauseCompleted="
+                + envelope.payload.getOrDefault("passivePauseCompleted", "")
+                + ";passivePauseSucceeded="
+                + envelope.payload.getOrDefault("passivePauseSucceeded", "")
+                + ";passivePauseDetail=" + cleanDetails(
+                envelope.payload.getOrDefault("passivePauseDetail", ""))
                 + ";samsungHeartSamples="
                 + envelope.payload.getOrDefault("samsungHeartSamples", "")
                 + ";watchAudioStarted="

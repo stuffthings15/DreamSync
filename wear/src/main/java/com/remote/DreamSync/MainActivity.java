@@ -449,6 +449,9 @@ public final class MainActivity extends Activity {
         private volatile int standardHeartSamples;
         private volatile int measureHeartSamples;
         private volatile int samsungHeartSamples;
+        private volatile int allSensorCallbacks;
+        private volatile int rejectedMotionCallbacks;
+        private volatile int rejectedHeartCallbacks;
         private volatile int ibiSamples;
         private volatile int temperatureSamples;
         private volatile int ppgSamples;
@@ -463,6 +466,11 @@ public final class MainActivity extends Activity {
         private boolean heartRegistered;
         private boolean standardHeartFallbackAttempted;
         private boolean standardHeartRegistrationStarted;
+        private boolean passiveWasRegistered;
+        private boolean passiveResumeRequested;
+        private volatile boolean passivePauseCompleted;
+        private volatile boolean passivePauseSucceeded;
+        private String passivePauseDetail = "not_attempted";
         private volatile boolean measureSupported;
         private volatile boolean measureRegistered;
         private boolean hapticAvailable;
@@ -508,6 +516,23 @@ public final class MainActivity extends Activity {
                 finish();
                 return;
             }
+            passiveWasRegistered = config.passiveRegistered;
+            statusText.setText("Preparing exclusive sensor access for the live check...");
+            AutoSleepMonitor.pauseForSensorAccess(MainActivity.this, config,
+                    "live_system_check", (paused, detail) -> runOnUiThread(() -> {
+                        if (finished) return;
+                        passivePauseCompleted = true;
+                        passivePauseSucceeded = paused;
+                        passivePauseDetail = detail;
+                        if (finished) {
+                            resumePassiveIfNeeded();
+                        } else {
+                            beginSensorCheck();
+                        }
+                    }));
+        }
+
+        private void beginSensorCheck() {
             sensorInventory = MotionSensorRegistration.inventory(sensorManager);
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_SENSOR_INVENTORY",
                     sensorInventory);
@@ -537,7 +562,7 @@ public final class MainActivity extends Activity {
                         "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;list=empty");
             }
             startHealthMeasureCheck();
-            statusText.postDelayed(standardHeartFallback, 10_000L);
+            statusText.postDelayed(standardHeartFallback, 15_000L);
             startSamsungCheck();
             startWatchAudioCheck();
             statusText.setText((hapticRequested
@@ -689,27 +714,10 @@ public final class MainActivity extends Activity {
             standardHeartFallbackAttempted = true;
             if (availableHeartRateSensors.isEmpty()) return;
             if (measureClient != null && measureCallback != null && measureRegistered) {
-                ListenableFuture<Void> unregister = measureClient.unregisterMeasureCallbackAsync(
-                        DataType.HEART_RATE_BPM, measureCallback);
-                measureRegistered = false;
                 WatchDiagnostics.auto(MainActivity.this, config,
-                        "SYSTEM_CHECK_MEASURE_HEART_YIELDED_TO_FALLBACK",
-                        "no usable samples;availability=" + measureAvailability);
-                statusText.postDelayed(standardHeartRegistrationWatchdog, 2_000L);
-                unregister.addListener(() -> {
-                    try {
-                        unregister.get();
-                        WatchDiagnostics.auto(MainActivity.this, config,
-                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTERED_FOR_FALLBACK",
-                                "success=true");
-                    } catch (Exception error) {
-                        WatchDiagnostics.auto(MainActivity.this, config,
-                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTER_FOR_FALLBACK_FAILED",
-                                safeMessage(error));
-                    }
-                    registerStandardHeartSensors();
-                }, ContextCompat.getMainExecutor(MainActivity.this));
-                return;
+                        "SYSTEM_CHECK_MEASURE_HEART_RETAINED_DURING_FALLBACK",
+                        "availability=" + measureAvailability
+                                + ";reason=allow Health Services full check duration");
             }
             registerStandardHeartSensors();
         }
@@ -720,7 +728,7 @@ public final class MainActivity extends Activity {
             standardHeartRegistrationStarted = true;
             statusText.removeCallbacks(standardHeartRegistrationWatchdog);
             HeartRateSensorRegistration.Result result = HeartRateSensorRegistration.register(
-                    sensorManager, this, 200_000, 0, sensorHandler);
+                    sensorManager, this, 200_000, 0, null);
             heartRate = result.primary;
             registeredHeartRateSensors = result.sensors;
             heartRegistered = result.registered;
@@ -787,6 +795,7 @@ public final class MainActivity extends Activity {
 
         @Override public void onSensorChanged(SensorEvent event) {
             if (finished || event == null || event.sensor == null) return;
+            allSensorCallbacks++;
             if (MotionSensorRegistration.accepts(motionSensors, event.sensor)
                     && event.values != null && event.values.length >= 3
                     && Float.isFinite(event.values[0])
@@ -829,6 +838,30 @@ public final class MainActivity extends Activity {
                         "SYSTEM_CHECK_STANDARD_HEART_DATA",
                         "count=" + standardHeartSamples + ";bpm=" + lastHeartBpm
                                 + ";accuracy=" + event.accuracy);
+            } else if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER
+                    || event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION
+                    || event.sensor.getType() == Sensor.TYPE_GRAVITY) {
+                rejectedMotionCallbacks++;
+                if (rejectedMotionCallbacks == 1) {
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MOTION_CALLBACK_REJECTED",
+                            "sensor=" + MotionSensorRegistration.describe(event.sensor)
+                                    + ";valueCount="
+                                    + (event.values == null ? -1 : event.values.length)
+                                    + ";accuracy=" + event.accuracy);
+                }
+            } else if (event.sensor.getType() == Sensor.TYPE_HEART_RATE) {
+                rejectedHeartCallbacks++;
+                if (rejectedHeartCallbacks == 1) {
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_HEART_CALLBACK_REJECTED",
+                            "sensor=" + MotionSensorRegistration.describe(event.sensor)
+                                    + ";valueCount="
+                                    + (event.values == null ? -1 : event.values.length)
+                                    + ";accuracy=" + event.accuracy
+                                    + ";value=" + (event.values == null
+                                    || event.values.length == 0 ? "missing" : event.values[0]));
+                }
             }
             updateProgressText();
         }
@@ -871,12 +904,17 @@ public final class MainActivity extends Activity {
                     "checkpoint=" + checkpoint
                             + ";motionRegistered=" + motionRegistered
                             + ";motionSamples=" + motionSamples
+                            + ";allSensorCallbacks=" + allSensorCallbacks
+                            + ";rejectedMotionCallbacks=" + rejectedMotionCallbacks
                             + ";standardHeartRegistered=" + heartRegistered
                             + ";standardHeartSamples=" + standardHeartSamples
                             + ";measureSupported=" + measureSupported
                             + ";measureRegistered=" + measureRegistered
                             + ";measureAvailability=" + measureAvailability
                             + ";measureHeartSamples=" + measureHeartSamples
+                            + ";rejectedHeartCallbacks=" + rejectedHeartCallbacks
+                            + ";passivePauseCompleted=" + passivePauseCompleted
+                            + ";passivePauseSucceeded=" + passivePauseSucceeded
                             + ";samsungConnected=" + samsungConnected
                             + ";samsungHeartSamples=" + samsungHeartSamples
                             + ";watchAudioStarted=" + watchAudioStarted
@@ -921,6 +959,7 @@ public final class MainActivity extends Activity {
                 }, ContextCompat.getMainExecutor(MainActivity.this));
             }
             if (samsungBridge != null) samsungBridge.stop();
+            resumePassiveIfNeeded();
 
             int totalHeartSamples = standardHeartSamples
                     + measureHeartSamples + samsungHeartSamples;
@@ -974,6 +1013,9 @@ public final class MainActivity extends Activity {
             payload.put("status", passed ? "PASS" : "FAIL");
             payload.put("reason", reason);
             payload.put("motionSamples", Integer.toString(motionSamples));
+            payload.put("allSensorCallbacks", Integer.toString(allSensorCallbacks));
+            payload.put("rejectedMotionCallbacks",
+                    Integer.toString(rejectedMotionCallbacks));
             payload.put("heartSamples", Integer.toString(totalHeartSamples));
             payload.put("lastHeartBpm", Double.isFinite(lastHeartBpm)
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
@@ -986,6 +1028,8 @@ public final class MainActivity extends Activity {
             payload.put("sensorInventory", sensorInventory);
             payload.put("standardHeartRegistered", Boolean.toString(heartRegistered));
             payload.put("standardHeartSamples", Integer.toString(standardHeartSamples));
+            payload.put("rejectedHeartCallbacks",
+                    Integer.toString(rejectedHeartCallbacks));
             payload.put("standardHeartSensor", MotionSensorRegistration.describe(
                     activeHeartRateSensor == null ? heartRate : activeHeartRateSensor));
             payload.put("heartRegistrationDetails", heartRegistrationDetails);
@@ -993,6 +1037,10 @@ public final class MainActivity extends Activity {
             payload.put("measureRegistered", Boolean.toString(measureRegistered));
             payload.put("measureAvailability", measureAvailability);
             payload.put("measureHeartSamples", Integer.toString(measureHeartSamples));
+            payload.put("passiveWasRegistered", Boolean.toString(passiveWasRegistered));
+            payload.put("passivePauseCompleted", Boolean.toString(passivePauseCompleted));
+            payload.put("passivePauseSucceeded", Boolean.toString(passivePauseSucceeded));
+            payload.put("passivePauseDetail", passivePauseDetail);
             payload.put("samsungHeartSamples", Integer.toString(samsungHeartSamples));
             payload.put("watchAudioStarted", Boolean.toString(watchAudioStarted));
             payload.put("watchAudioCompleted", Boolean.toString(
@@ -1033,6 +1081,14 @@ public final class MainActivity extends Activity {
             payload.put("capabilityJson", capability.toJson());
             publishSystemCheckResult(config, checkId, payload);
             liveSystemCheck = null;
+        }
+
+        private void resumePassiveIfNeeded() {
+            if (!passiveWasRegistered || !passivePauseCompleted
+                    || passiveResumeRequested) return;
+            passiveResumeRequested = true;
+            AutoSleepMonitor.resumeAfterSensorAccess(MainActivity.this, config,
+                    "live_system_check_finished");
         }
 
         private String appendReason(String existing, String additional) {

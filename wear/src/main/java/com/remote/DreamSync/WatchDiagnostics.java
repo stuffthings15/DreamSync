@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Durable, bounded watch-side trace mirrored to the bound phone. */
 final class WatchDiagnostics {
     private static final String FILE_NAME = "dreamsync-watch-debug.log";
-    private static final long MAX_FILE_BYTES = 512L * 1024L;
+    private static final long MAX_FILE_BYTES = 1024L * 1024L;
     private static final Object LOCK = new Object();
     private static final AtomicLong SEQUENCE = new AtomicLong(System.currentTimeMillis());
 
@@ -49,7 +49,7 @@ final class WatchDiagnostics {
     ) {
         Context context = input.getApplicationContext();
         String safeEvent = sanitize(event, 80);
-        String safeDetails = sanitize(details, 2_000);
+        String safeDetails = sanitize(details, 8_000);
         appendLocal(context, safeEvent, safeDetails);
         if (traceId == null || traceId.isEmpty()
                 || watchNodeId == null || watchNodeId.isEmpty()
@@ -85,14 +85,14 @@ final class WatchDiagnostics {
         String line = System.currentTimeMillis()
                 + " | elapsed=" + SystemClock.elapsedRealtime()
                 + " | " + sanitize(event, 80)
-                + " | " + sanitize(details, 2_000) + "\n";
+                + " | " + sanitize(details, 8_000) + "\n";
         synchronized (LOCK) {
             File file = new File(context.getFilesDir(), FILE_NAME);
             boolean append = file.length() < MAX_FILE_BYTES;
             try (FileOutputStream output = new FileOutputStream(file, append)) {
                 if (!append) {
                     output.write((System.currentTimeMillis()
-                            + " | WATCH_LOG_ROTATED | Previous log exceeded 512 KiB\n")
+                            + " | WATCH_LOG_ROTATED | Previous log exceeded 1 MiB\n")
                             .getBytes(StandardCharsets.UTF_8));
                 }
                 output.write(line.getBytes(StandardCharsets.UTF_8));

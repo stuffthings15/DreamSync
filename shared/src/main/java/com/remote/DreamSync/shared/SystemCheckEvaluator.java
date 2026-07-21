@@ -41,10 +41,15 @@ public final class SystemCheckEvaluator {
         if (offWrist) {
             return fail("The watch reported off-wrist. Wear it snugly and retry.");
         }
-        if (Math.max(0, motionSamples) < MIN_MOTION_SAMPLES) {
+        boolean motionMissing = Math.max(0, motionSamples) < MIN_MOTION_SAMPLES;
+        boolean heartMissing = Math.max(0, heartSamples) < MIN_HEART_SAMPLES;
+        if (motionMissing && heartMissing) {
+            return fail("No usable motion stream or heart-rate reading arrived during the check.");
+        }
+        if (motionMissing) {
             return fail("No usable motion stream arrived during the check.");
         }
-        if (Math.max(0, heartSamples) < MIN_HEART_SAMPLES) {
+        if (heartMissing) {
             return fail("No usable heart-rate reading arrived during the check.");
         }
         return new Result(true, "PASS",

@@ -13,7 +13,7 @@ import java.nio.file.Files;
 
 final class DebugLog {
     private static final String FILE_NAME = "dreamsync-debug.log";
-    private static final long MAX_FILE_BYTES = 1024L * 1024L;
+    private static final long MAX_FILE_BYTES = 2L * 1024L * 1024L;
     private static final Object LOCK = new Object();
 
     private DebugLog() {}
@@ -21,7 +21,7 @@ final class DebugLog {
     static void append(Context context, String event, String details) {
         if (context == null) return;
         String safeEvent = sanitize(event, 80);
-        String safeDetails = sanitize(details, 4_000);
+        String safeDetails = sanitize(details, 12_000);
         String line = System.currentTimeMillis()
                 + " | elapsed=" + SystemClock.elapsedRealtime()
                 + " | " + safeEvent
@@ -102,7 +102,7 @@ final class DebugLog {
                                         "last_watch_haptic_felt", false))
                                 : "not_confirmed").append('\n')
                 .append("lastSystemCheckDetails=").append(sanitize(
-                        prefs.getString("last_system_check_details", ""), 8_000)).append('\n')
+                        prefs.getString("last_system_check_details", ""), 24_000)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
                 .append("awakeSetupHaptic=ONE_SHORT_CONFIRMATION_AFTER_WATCH_MONITORING_STARTS\n")
                 .append("hapticsDuringSleep=OFF_BY_DESIGN\n")

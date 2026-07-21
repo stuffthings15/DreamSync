@@ -22,6 +22,14 @@ public final class SystemCheckEvaluatorTest {
         assertTrue(result.reason.contains("heart-rate reading"));
     }
 
+    @Test public void missingBothStreamsReportsBothFailures() {
+        SystemCheckEvaluator.Result result = evaluator.evaluate(
+                true, true, true, true, 0, 0, false);
+        assertFalse(result.passed);
+        assertTrue(result.reason.contains("motion stream"));
+        assertTrue(result.reason.contains("heart-rate reading"));
+    }
+
     @Test public void offWristAlwaysFailsClosed() {
         SystemCheckEvaluator.Result result = evaluator.evaluate(
                 true, true, true, true, 30, 2, true);

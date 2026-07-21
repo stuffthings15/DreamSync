@@ -55,14 +55,17 @@
 - Wear OS version code 42 (`1.3.4-test`) published on 2026-07-20.
 - Phone version code 55 (`1.3.11-test`) published on 2026-07-20.
 - Wear OS version code 56 (`1.3.11-test`) published on 2026-07-20.
+- Phone version code 57 (`1.3.12-test`) published on 2026-07-20.
+- Wear OS version code 58 (`1.3.12-test`) published on 2026-07-20.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 55 (`1.3.11-test`) is available to internal testers and its track is Active.
-- Wear OS version code 56 (`1.3.11-test`) is available to internal testers.
+- Phone version code 57 (`1.3.12-test`) is available to internal testers and its track is Active.
+- Wear OS version code 58 (`1.3.12-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
+- Version 1.3.12 pauses passive Health Services monitoring during the live sensor check, restores it afterward, keeps live heart acquisition active for the full test, and exports expanded callback diagnostics.
 - Version 1.3.11 centralizes the research-based sleep-protection contract across phone and watch: conservative sound limits, fresh-sensor gating, automatic onset stability, post-cue observation, arousal quiet time, and no sleep haptics.
 - Shared, phone, and Wear unit tests passed. Both release lints, signed bundle builds, and bundle signature checks passed before publishing.
 - Seventy-four unit tests and eight phone instrumentation tests passed. Nine Wear workflow instrumentation tests passed on the Android phone emulator but still require a physical Wear OS watch for sensor, speaker, vibration, battery, reboot, and display proof. Phone and watch lint, signed-bundle, signature, and release-integrity checks also passed before publishing.
@@ -70,7 +73,7 @@
 - The phone sound check uses a local WAV player with streaming PCM fallback and requires the user to confirm that the cue was audible. A saved calibration without that confirmation is rejected.
 - **Run phone + watch check** confirms phone audio, then runs a 75-second watch check with three clear awake-only tones, all standard motion streams, Health Services heart rate, and a sequential standard heart-rate fallback. The result stays visible until acknowledged and the exact pass, fail, or two-minute timeout is stored in Export Debug Log.
 - The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, user-run system check, no-haptics policy, and terminal summary.
-- Release bundle SHA-256: phone `90618D079218700A065CBF6069CB4F510303FBF8DA2BDDC5EBBB1C6800F74A95`; Wear OS `C82285D7FE9ABA6BA83865F8C806603C88DA592F27EB31928550B6A78934FE5E`.
+- Release bundle SHA-256: phone `97EA746FA6CF44FA4A8FE95C9BE77D0363707B7B456FC50475D1618958EDA402`; Wear OS `DDADD97D8EC9F66EB5529DC3DA6B0EF32D465423A1DEB42EC8744AA0B0D1C9DC`.
 - Experimental watch sound no longer waits for seven baseline nights. After a successful watch sound check, the first eligible night allows one cue pair. The rolling seven-night baseline remains for personalization.
 - This build resets passive elapsed-time markers after reboot, ties watch calibration to the exact media-volume setup, preserves the bounded five-minute post-playback raw-PPG window, and fails release builds closed when upload signing is unavailable.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.

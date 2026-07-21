@@ -39,6 +39,7 @@ import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.PersonalBaseline;
 import com.remote.DreamSync.shared.NightState;
 import com.remote.DreamSync.shared.NightSummary;
+import com.remote.DreamSync.shared.MotionVectorFilter;
 import com.remote.DreamSync.shared.ProgressiveCuePolicy;
 import com.remote.DreamSync.shared.ProtectionConfig;
 import com.remote.DreamSync.shared.ProtectionMode;
@@ -111,6 +112,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private final Deque<SleepFeatureEngine.Sample> motionSamples = new ArrayDeque<>();
     private final Deque<SleepFeatureEngine.Sample> ibiSamples = new ArrayDeque<>();
     private final Deque<SleepFeatureEngine.Sample> skinTemperatureSamples = new ArrayDeque<>();
+    private final MotionVectorFilter motionVectorFilter = new MotionVectorFilter();
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
@@ -142,11 +144,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private long estimatedSleepOnsetMs;
     private double baselineHeartRate = Double.NaN;
     private double currentGain;
-    private double gravityX;
-    private double gravityY;
-    private double gravityZ;
-    private boolean gravityInitialized;
     private boolean accelerometerRegistered;
+    private boolean motionRetryAttempted;
     private boolean heartRateRegistered;
     private String heartRegistrationDetails = "";
     private volatile boolean offWrist;
@@ -562,6 +561,28 @@ public final class SleepSessionService extends Service implements SensorEventLis
         heartRegistrationDetails = heart.details;
     }
 
+    private void retryMotionOnMainThread() {
+        if (motionRetryAttempted || lastMotionSampleMs > 0L || sensorManager == null) return;
+        motionRetryAttempted = true;
+        for (Sensor sensor : registeredMotionSensors) {
+            sensorManager.unregisterListener(this, sensor);
+        }
+        MotionSensorRegistration.Result retry = MotionSensorRegistration.register(
+                sensorManager, this, 200_000, 0, null);
+        accelerometer = retry.sensor;
+        activeMotionSensor = null;
+        motionVectorFilter.reset();
+        registeredMotionSensors = retry.sensors;
+        accelerometerRegistered = retry.registered;
+        motionRegistrationDetails = motionRegistrationDetails
+                + " || MAIN_THREAD_RETRY: " + retry.details;
+        WatchDiagnostics.session(this, config,
+                accelerometerRegistered ? "MOTION_MAIN_THREAD_RETRY_STARTED"
+                        : "MOTION_MAIN_THREAD_RETRY_FAILED",
+                "reason=no events after 10 seconds;registered="
+                        + registeredMotionSensors.size() + ";attempts=" + retry.details);
+    }
+
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.sensor == null || event.values == null) return;
@@ -581,22 +602,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             double x = event.values[0];
             double y = event.values[1];
             double z = event.values[2];
-            if (!gravityInitialized) {
-                gravityX = x;
-                gravityY = y;
-                gravityZ = z;
-                gravityInitialized = true;
-            }
-            double alpha = 0.90;
-            gravityX = alpha * gravityX + (1.0 - alpha) * x;
-            gravityY = alpha * gravityY + (1.0 - alpha) * y;
-            gravityZ = alpha * gravityZ + (1.0 - alpha) * z;
-            double linearX = x - gravityX;
-            double linearY = y - gravityY;
-            double linearZ = z - gravityZ;
-            double dynamicAcceleration = Math.sqrt(
-                    linearX * linearX + linearY * linearY + linearZ * linearZ
-            );
+            double dynamicAcceleration = motionVectorFilter.observe(
+                    event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION, x, y, z);
             synchronized (sampleLock) {
                 motionSamples.addLast(new SleepFeatureEngine.Sample(now, dynamicAcceleration));
                 prune(motionSamples, now - 10L * 60L * 1000L);
@@ -653,6 +660,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void evaluateAndAct() {
         long now = timeProvider.elapsedRealtimeMs();
         double armedElapsedMin = (now - sessionStartMs) / 60_000.0;
+        if (!motionRetryAttempted && lastMotionSampleMs == 0L
+                && now - sessionStartMs >= 10_000L) {
+            retryMotionOnMainThread();
+        }
         if (!enforceRequiredSensorPermissions()) {
             stopSelf();
             return;

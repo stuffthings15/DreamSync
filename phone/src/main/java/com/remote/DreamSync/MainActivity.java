@@ -1534,6 +1534,7 @@ public final class MainActivity extends Activity {
         float lastHeartBpm = prefs.getFloat("last_system_check_heart_bpm", Float.NaN);
         boolean motionRegistered = prefs.getBoolean(
                 "last_system_check_motion_registered", false);
+        boolean motionRetry = prefs.getBoolean("last_system_check_motion_retry", false);
         boolean heartRegistered = prefs.getBoolean(
                 "last_system_check_heart_registered", false);
         boolean watchAudioStarted = prefs.getBoolean(
@@ -1559,7 +1560,7 @@ public final class MainActivity extends Activity {
                 + "Watch media volume: " + watchMediaVolume + "/"
                 + watchMediaVolumeMax + "\n"
                 + "Motion: " + motionSamples + " samples; registered="
-                + motionRegistered + "\n"
+                + motionRegistered + (motionRetry ? "; fallback used" : "") + "\n"
                 + "Heart rate: " + heartSamples + " samples; registered="
                 + heartRegistered
                 + (Float.isFinite(lastHeartBpm)

@@ -423,6 +423,7 @@ public final class MainActivity extends Activity {
         private final Runnable standardHeartFallback = this::startStandardHeartFallback;
         private final Runnable standardHeartRegistrationWatchdog =
                 this::registerStandardHeartSensors;
+        private final Runnable motionMainThreadRetry = this::retryMotionOnMainThread;
         private Sensor accelerometer;
         private Sensor motionEventSensor;
         private List<Sensor> motionSensors = Collections.emptyList();
@@ -451,6 +452,7 @@ public final class MainActivity extends Activity {
         private boolean heartPermissionGranted;
         private boolean additionalHealthPermission;
         private boolean motionRegistered;
+        private boolean motionRetryAttempted;
         private boolean heartRegistered;
         private boolean standardHeartFallbackAttempted;
         private boolean standardHeartRegistrationStarted;
@@ -534,11 +536,34 @@ public final class MainActivity extends Activity {
             statusText.setText((hapticRequested
                     ? "Test vibration sent. " : "Watch vibration unavailable. ")
                     + "Playing watch sound. Checking motion 0, heart 0.");
+            statusText.postDelayed(motionMainThreadRetry, 8_000L);
             statusText.postDelayed(progressFiveSeconds, 5_000L);
             statusText.postDelayed(progressFifteenSeconds, 15_000L);
             statusText.postDelayed(progressThirtySeconds, 30_000L);
             statusText.postDelayed(progressSixtySeconds, 60_000L);
             statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
+        }
+
+        private void retryMotionOnMainThread() {
+            if (finished || motionRetryAttempted || motionSamples > 0) return;
+            motionRetryAttempted = true;
+            for (Sensor sensor : motionSensors) {
+                sensorManager.unregisterListener(this, sensor);
+            }
+            MotionSensorRegistration.Result retry = MotionSensorRegistration.register(
+                    sensorManager, this, 50_000, 0, null);
+            accelerometer = retry.sensor;
+            motionEventSensor = null;
+            motionSensors = retry.sensors;
+            motionRegistered = retry.registered;
+            motionRegistrationDetails = motionRegistrationDetails
+                    + " || MAIN_THREAD_RETRY: " + retry.details;
+            WatchDiagnostics.auto(MainActivity.this, config,
+                    motionRegistered ? "SYSTEM_CHECK_MOTION_MAIN_THREAD_RETRY_STARTED"
+                            : "SYSTEM_CHECK_MOTION_MAIN_THREAD_RETRY_FAILED",
+                    "reason=no events after 8 seconds;registered="
+                            + motionSensors.size() + ";attempts=" + retry.details);
+            updateProgressText();
         }
 
         private void startWatchAudioCheck() {
@@ -858,6 +883,7 @@ public final class MainActivity extends Activity {
             statusText.removeCallbacks(progressSixtySeconds);
             statusText.removeCallbacks(standardHeartFallback);
             statusText.removeCallbacks(standardHeartRegistrationWatchdog);
+            statusText.removeCallbacks(motionMainThreadRetry);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (sensorManager != null) sensorManager.unregisterListener(this);
             if (sensorThread != null) sensorThread.quitSafely();
@@ -934,6 +960,7 @@ public final class MainActivity extends Activity {
             payload.put("lastHeartBpm", Double.isFinite(lastHeartBpm)
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
             payload.put("motionRegistered", Boolean.toString(motionRegistered));
+            payload.put("motionRetryAttempted", Boolean.toString(motionRetryAttempted));
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
             payload.put("motionSensor", MotionSensorRegistration.describe(
                     motionEventSensor == null ? accelerometer : motionEventSensor));

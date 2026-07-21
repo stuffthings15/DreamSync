@@ -12,7 +12,7 @@ Date: 2026-07-20
 - Experimental audio plays from the built-in watch speaker. Phone fallback is Off unless the user explicitly enables it. The phone shows clear `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 - The watch has no settings. Manual launch refers the user to the phone. One short awake-only vibration confirms passive monitoring registration; no haptics are used during sleep.
 - Setup check, full-chain debug export, local history/export/deletion, watchdogs, and fail-closed protocol checks are included.
-- The 75-second awake watch check requests missing activity/heart permissions, plays three clear watch-speaker tones, sends a test vibration, tries every standard motion path, uses Wear Health Services first, then registers every standard heart-rate sensor candidate and keeps the first source that emits valid BPM data. It records the selected source, all registration attempts, and the last BPM on the phone report.
+- The 75-second awake watch check requests missing activity/heart permissions, plays three clear watch-speaker tones, sends a test vibration, tries every standard motion path, and retries motion delivery on the main sensor loop when a vendor reports registration but sends no events. It uses Wear Health Services first, then registers every standard heart-rate sensor candidate and keeps the first source that emits valid BPM data. It records the selected sources, retry use, all registration attempts, last motion value, and last BPM on the phone report.
 - Durable watch results tolerate reasonable phone/watch clock drift. Time-sensitive cue messages keep the strict five-second future-time limit.
 
 ## High-end Samsung path
@@ -21,8 +21,8 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.3.6-test`, version code 45.
-- Wear OS `1.3.6-test`, version code 46.
+- Phone `1.3.7-test`, version code 47.
+- Wear OS `1.3.7-test`, version code 48.
 - Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
 - Nine phone and ten Wear OS workflow instrumentation tests passed on Android emulators. Real watch sensors, speaker, vibration, battery, reboot, and display behavior still require physical Wear OS hardware.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.

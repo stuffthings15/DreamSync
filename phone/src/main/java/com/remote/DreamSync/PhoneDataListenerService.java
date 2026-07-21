@@ -448,6 +448,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + envelope.payload.getOrDefault("standardHeartRegistered", "")
                 + ";standardHeartSamples="
                 + envelope.payload.getOrDefault("standardHeartSamples", "")
+                + ";standardHeartSensor=" + cleanDetails(
+                envelope.payload.getOrDefault("standardHeartSensor", ""))
+                + ";heartRegistrationDetails=" + cleanDetails(
+                envelope.payload.getOrDefault("heartRegistrationDetails", ""))
                 + ";measureSupported="
                 + envelope.payload.getOrDefault("measureSupported", "")
                 + ";measureRegistered="
@@ -504,6 +508,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                         envelope.payload.getOrDefault("motionSamples", "0")))
                 .putInt("last_system_check_heart_samples", integer(
                         envelope.payload.getOrDefault("heartSamples", "0")))
+                .putFloat("last_system_check_heart_bpm", floating(
+                        envelope.payload.getOrDefault("lastHeartBpm", "NaN"), Float.NaN))
                 .putBoolean("last_system_check_motion_registered", Boolean.parseBoolean(
                         envelope.payload.getOrDefault("motionRegistered", "false")))
                 .putBoolean("last_system_check_heart_registered", Boolean.parseBoolean(

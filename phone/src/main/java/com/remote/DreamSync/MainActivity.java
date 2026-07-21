@@ -1531,6 +1531,7 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         int motionSamples = prefs.getInt("last_system_check_motion_samples", 0);
         int heartSamples = prefs.getInt("last_system_check_heart_samples", 0);
+        float lastHeartBpm = prefs.getFloat("last_system_check_heart_bpm", Float.NaN);
         boolean motionRegistered = prefs.getBoolean(
                 "last_system_check_motion_registered", false);
         boolean heartRegistered = prefs.getBoolean(
@@ -1560,7 +1561,9 @@ public final class MainActivity extends Activity {
                 + "Motion: " + motionSamples + " samples; registered="
                 + motionRegistered + "\n"
                 + "Heart rate: " + heartSamples + " samples; registered="
-                + heartRegistered + "\n"
+                + heartRegistered
+                + (Float.isFinite(lastHeartBpm)
+                ? "; last=" + Math.round(lastHeartBpm) + " BPM" : "") + "\n"
                 + "Health Services heart state: " + measureAvailability + "\n\n"
                 + "Export Debug Log contains the sensor inventory, every registration attempt, "
                 + "5/15/30/60-second progress, audio route, and the final payload.";

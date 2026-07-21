@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.3.5-test with unique phone and Wear OS version codes built and ready for internal testing.
+- Version 1.3.6-test with unique phone and Wear OS version codes prepared for internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -74,11 +74,12 @@
 - Samsung watches remain in Core protection or Monitoring only until the official SDK AAR, partnership approval, package/signature registration, and live advanced self-test are complete. The build provides a fail-closed verification task for the missing AAR.
 - The 1.2.7 sound path explicitly prefers the built-in phone speaker, uses AudioTrack on Android 8, and no longer treats an available Bluetooth watch route as active headphones. The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 
-## Prepared 1.3.5 build
+## Prepared 1.3.6 build
 
-- Phone version code 43 and Wear OS version code 44 (`1.3.5-test`) are signed locally and not yet uploaded.
+- Phone version code 45 and Wear OS version code 46 (`1.3.6-test`) are not yet uploaded.
 - Compatibility now reports `DETECTED, NOT VERIFIED` when hardware registration succeeds but samples do not arrive. It no longer calls that hardware unavailable.
 - The screen shows why advanced Samsung features are disabled: the official Samsung sensor package and approval remain missing.
+- Heart-rate checks now use Wear Health Services first, then try every standard watch heart-rate sensor after ten seconds. The overnight service also uses all standard heart-rate candidates instead of one default sensor.
 - Nine phone and ten Wear OS instrumentation tests, unit tests, phone/watch lint, debug builds, and signed release builds passed.
 
 ## Version 1.2.7 fixes

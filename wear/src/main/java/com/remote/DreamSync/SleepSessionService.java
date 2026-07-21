@@ -117,6 +117,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private Sensor activeMotionSensor;
     private List<Sensor> registeredMotionSensors = Collections.emptyList();
     private Sensor heartRate;
+    private Sensor activeHeartRateSensor;
+    private List<Sensor> registeredHeartRateSensors = Collections.emptyList();
     private HandlerThread sensorThread;
     private Handler sensorHandler;
     private Handler evaluatorHandler;
@@ -146,6 +148,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private boolean gravityInitialized;
     private boolean accelerometerRegistered;
     private boolean heartRateRegistered;
+    private String heartRegistrationDetails = "";
     private volatile boolean offWrist;
     private volatile boolean samsungSdkConnected;
     private volatile Set<String> samsungTrackerTypes = Collections.emptySet();
@@ -266,8 +269,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
     public void onCreate() {
         super.onCreate();
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
-
         sensorThread = new HandlerThread("DreamSyncSensors");
         sensorThread.start();
         sensorHandler = new Handler(sensorThread.getLooper());
@@ -372,6 +373,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         + ";accelerometerRegistered=" + accelerometerRegistered
                         + ";heartRatePresent=" + (heartRate != null)
                         + ";heartRateRegistered=" + heartRateRegistered
+                        + ";heartRateCandidates=" + registeredHeartRateSensors.size()
+                        + ";heartRegistrationDetails=" + heartRegistrationDetails
                         + ";motionRegistrationDetails=" + motionRegistrationDetails
                         + ";hapticsDuringSleep=OFF"
                         + ";audioOutput=WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK"
@@ -551,23 +554,12 @@ public final class SleepSessionService extends Service implements SensorEventLis
         registeredMotionSensors = motion.sensors;
         accelerometerRegistered = motion.registered;
         motionRegistrationDetails = motion.details;
-        if (heartRate != null) {
-            try {
-                heartRateRegistered = sensorManager.registerListener(
-                        this,
-                        heartRate,
-                        1_000_000,
-                        5_000_000,
-                        sensorHandler
-                );
-            } catch (SecurityException error) {
-                logEvent("HEART_RATE_PERMISSION_ERROR", error.getMessage());
-                WatchDiagnostics.session(this, config, "HEART_RATE_PERMISSION_ERROR",
-                        error.getMessage());
-                heartRate = null;
-                heartRateRegistered = false;
-            }
-        }
+        HeartRateSensorRegistration.Result heart = HeartRateSensorRegistration.register(
+                sensorManager, this, 1_000_000, 0, sensorHandler);
+        heartRate = heart.primary;
+        registeredHeartRateSensors = heart.sensors;
+        heartRateRegistered = heart.registered;
+        heartRegistrationDetails = heart.details;
     }
 
     @Override
@@ -609,11 +601,20 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 motionSamples.addLast(new SleepFeatureEngine.Sample(now, dynamicAcceleration));
                 prune(motionSamples, now - 10L * 60L * 1000L);
             }
-        } else if (event.sensor.getType() == Sensor.TYPE_HEART_RATE
+        } else if (HeartRateSensorRegistration.accepts(
+                registeredHeartRateSensors, event.sensor)
                 && event.values.length > 0
                 && event.accuracy != SensorManager.SENSOR_STATUS_UNRELIABLE) {
             double bpm = event.values[0];
             if (bpm >= 30.0 && bpm <= 220.0) {
+                if (activeHeartRateSensor == null) {
+                    activeHeartRateSensor = event.sensor;
+                    heartRate = activeHeartRateSensor;
+                    WatchDiagnostics.session(this, config, "HEART_RATE_SOURCE_CONFIRMED",
+                            MotionSensorRegistration.describe(activeHeartRateSensor));
+                }
+                if (!HeartRateSensorRegistration.accepts(
+                        Collections.singletonList(activeHeartRateSensor), event.sensor)) return;
                 lastHeartSampleMs = now;
                 synchronized (sampleLock) {
                     heartSamples.addLast(new SleepFeatureEngine.Sample(now, bpm));
@@ -1782,6 +1783,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
             JSONObject sensorQuality = new JSONObject();
             sensorQuality.put("motionRegistered", accelerometerRegistered);
             sensorQuality.put("heartRateRegistered", heartRateRegistered);
+            sensorQuality.put("heartRateCandidates", registeredHeartRateSensors.size());
+            sensorQuality.put("heartRateSource", MotionSensorRegistration.describe(
+                    activeHeartRateSensor == null ? heartRate : activeHeartRateSensor));
+            sensorQuality.put("heartRegistrationDetails", heartRegistrationDetails);
             sensorQuality.put("offWrist", offWrist);
             sensorQuality.put("motionSamples30s", finalFeatures.motionSampleCount30);
             sensorQuality.put("observedMotionSampleRateHz",

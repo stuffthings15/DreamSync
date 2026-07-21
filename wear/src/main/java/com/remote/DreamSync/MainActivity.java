@@ -421,10 +421,15 @@ public final class MainActivity extends Activity {
         private final Runnable progressThirtySeconds = () -> logProgress("30s");
         private final Runnable progressSixtySeconds = () -> logProgress("60s");
         private final Runnable standardHeartFallback = this::startStandardHeartFallback;
+        private final Runnable standardHeartRegistrationWatchdog =
+                this::registerStandardHeartSensors;
         private Sensor accelerometer;
         private Sensor motionEventSensor;
         private List<Sensor> motionSensors = Collections.emptyList();
         private Sensor heartRate;
+        private Sensor activeHeartRateSensor;
+        private List<Sensor> availableHeartRateSensors = Collections.emptyList();
+        private List<Sensor> registeredHeartRateSensors = Collections.emptyList();
         private HandlerThread sensorThread;
         private Handler sensorHandler;
         private MeasureClient measureClient;
@@ -448,6 +453,7 @@ public final class MainActivity extends Activity {
         private boolean motionRegistered;
         private boolean heartRegistered;
         private boolean standardHeartFallbackAttempted;
+        private boolean standardHeartRegistrationStarted;
         private volatile boolean measureSupported;
         private volatile boolean measureRegistered;
         private boolean hapticAvailable;
@@ -457,6 +463,7 @@ public final class MainActivity extends Activity {
         private boolean finished;
         private String sensorInventory = "";
         private String motionRegistrationDetails = "";
+        private String heartRegistrationDetails = "";
         private String measureAvailability = "not_checked";
         private String samsungDetail = "";
         private String forcedFailure = "";
@@ -509,17 +516,19 @@ public final class MainActivity extends Activity {
                             : "SYSTEM_CHECK_MOTION_REGISTRATION_FAILED",
                     "selected=" + MotionSensorRegistration.describe(accelerometer)
                             + ";attempts=" + motionRegistrationDetails);
-            heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
-            if (heartRate != null) {
+            availableHeartRateSensors = sensorManager.getSensorList(Sensor.TYPE_HEART_RATE);
+            heartRate = availableHeartRateSensors.isEmpty()
+                    ? null : availableHeartRateSensors.get(0);
+            if (!availableHeartRateSensors.isEmpty()) {
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_READY",
-                        MotionSensorRegistration.describe(heartRate));
+                        "candidates=" + availableHeartRateSensors.size());
             } else {
                 WatchDiagnostics.auto(MainActivity.this, config,
-                        "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;default=null");
+                        "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;list=empty");
             }
             startHealthMeasureCheck();
-            statusText.postDelayed(standardHeartFallback, 20_000L);
+            statusText.postDelayed(standardHeartFallback, 10_000L);
             startSamsungCheck();
             startWatchAudioCheck();
             statusText.setText((hapticRequested
@@ -645,7 +654,7 @@ public final class MainActivity extends Activity {
         private void startStandardHeartFallback() {
             if (finished || standardHeartFallbackAttempted || measureHeartSamples > 0) return;
             standardHeartFallbackAttempted = true;
-            if (heartRate == null) return;
+            if (availableHeartRateSensors.isEmpty()) return;
             if (measureClient != null && measureCallback != null && measureRegistered) {
                 ListenableFuture<Void> unregister = measureClient.unregisterMeasureCallbackAsync(
                         DataType.HEART_RATE_BPM, measureCallback);
@@ -653,6 +662,7 @@ public final class MainActivity extends Activity {
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_MEASURE_HEART_YIELDED_TO_FALLBACK",
                         "no usable samples;availability=" + measureAvailability);
+                statusText.postDelayed(standardHeartRegistrationWatchdog, 2_000L);
                 unregister.addListener(() -> {
                     try {
                         unregister.get();
@@ -664,30 +674,30 @@ public final class MainActivity extends Activity {
                                 "SYSTEM_CHECK_MEASURE_HEART_UNREGISTER_FOR_FALLBACK_FAILED",
                                 safeMessage(error));
                     }
-                    registerStandardHeartSensor();
+                    registerStandardHeartSensors();
                 }, ContextCompat.getMainExecutor(MainActivity.this));
                 return;
             }
-            registerStandardHeartSensor();
+            registerStandardHeartSensors();
         }
 
-        private void registerStandardHeartSensor() {
-            if (finished || heartRate == null) return;
-            try {
-                heartRegistered = sensorHandler != null && sensorManager.registerListener(
-                        this, heartRate, 200_000, 0, sensorHandler);
-                WatchDiagnostics.auto(MainActivity.this, config,
-                        heartRegistered ? "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_STARTED"
-                                : "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_FAILED",
-                        MotionSensorRegistration.describe(heartRate)
-                                + ";measureAvailability=" + measureAvailability);
-            } catch (RuntimeException error) {
-                heartRegistered = false;
-                WatchDiagnostics.auto(MainActivity.this, config,
-                        "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_EXCEPTION",
-                        MotionSensorRegistration.describe(heartRate) + ";error="
-                                + safeMessage(error));
-            }
+        private void registerStandardHeartSensors() {
+            if (finished || standardHeartRegistrationStarted
+                    || availableHeartRateSensors.isEmpty()) return;
+            standardHeartRegistrationStarted = true;
+            statusText.removeCallbacks(standardHeartRegistrationWatchdog);
+            HeartRateSensorRegistration.Result result = HeartRateSensorRegistration.register(
+                    sensorManager, this, 200_000, 0, sensorHandler);
+            heartRate = result.primary;
+            registeredHeartRateSensors = result.sensors;
+            heartRegistered = result.registered;
+            heartRegistrationDetails = result.details;
+            WatchDiagnostics.auto(MainActivity.this, config,
+                    heartRegistered ? "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_STARTED"
+                            : "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_FAILED",
+                    "registered=" + registeredHeartRateSensors.size()
+                            + ";measureAvailability=" + measureAvailability
+                            + ";attempts=" + heartRegistrationDetails);
             updateProgressText();
         }
 
@@ -766,10 +776,20 @@ public final class MainActivity extends Activity {
                                     + ";x=" + event.values[0] + ";y=" + event.values[1]
                                     + ";z=" + event.values[2]);
                 }
-            } else if (event.sensor.getType() == Sensor.TYPE_HEART_RATE
+            } else if (HeartRateSensorRegistration.accepts(
+                    registeredHeartRateSensors, event.sensor)
                     && event.values != null && event.values.length > 0
+                    && event.accuracy != SensorManager.SENSOR_STATUS_UNRELIABLE
                     && Float.isFinite(event.values[0])
                     && event.values[0] >= 30f && event.values[0] <= 220f) {
+                if (activeHeartRateSensor == null) {
+                    activeHeartRateSensor = event.sensor;
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_STANDARD_HEART_SOURCE_CONFIRMED",
+                            MotionSensorRegistration.describe(activeHeartRateSensor));
+                }
+                if (!HeartRateSensorRegistration.accepts(
+                        Collections.singletonList(activeHeartRateSensor), event.sensor)) return;
                 standardHeartSamples++;
                 lastHeartBpm = event.values[0];
                 WatchDiagnostics.auto(MainActivity.this, config,
@@ -837,6 +857,7 @@ public final class MainActivity extends Activity {
             statusText.removeCallbacks(progressThirtySeconds);
             statusText.removeCallbacks(progressSixtySeconds);
             statusText.removeCallbacks(standardHeartFallback);
+            statusText.removeCallbacks(standardHeartRegistrationWatchdog);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (sensorManager != null) sensorManager.unregisterListener(this);
             if (sensorThread != null) sensorThread.quitSafely();
@@ -920,6 +941,9 @@ public final class MainActivity extends Activity {
             payload.put("sensorInventory", sensorInventory);
             payload.put("standardHeartRegistered", Boolean.toString(heartRegistered));
             payload.put("standardHeartSamples", Integer.toString(standardHeartSamples));
+            payload.put("standardHeartSensor", MotionSensorRegistration.describe(
+                    activeHeartRateSensor == null ? heartRate : activeHeartRateSensor));
+            payload.put("heartRegistrationDetails", heartRegistrationDetails);
             payload.put("measureSupported", Boolean.toString(measureSupported));
             payload.put("measureRegistered", Boolean.toString(measureRegistered));
             payload.put("measureAvailability", measureAvailability);

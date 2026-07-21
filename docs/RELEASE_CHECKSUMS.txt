@@ -12,3 +12,14 @@ Both AAB signatures verified with jarsigner.
 Google Play internal testing published 2026-07-20:
 - Phone versionCode 53 on track 4701743177829341351. Track status: Active.
 - Wear OS versionCode 54 on track 4700051853729851607. Release is available to internal testers; Play still labels the Wear OS track Inactive.
+
+DreamSync 1.3.11-test internal-test artifacts
+Built, signed, and published: 2026-07-20 America/Los_Angeles
+
+90618D079218700A065CBF6069CB4F510303FBF8DA2BDDC5EBBB1C6800F74A95  phone/build/outputs/bundle/release/phone-release.aab
+C82285D7FE9ABA6BA83865F8C806603C88DA592F27EB31928550B6A78934FE5E  wear/build/outputs/bundle/release/wear-release.aab
+
+Both AAB signatures verified with jarsigner.
+Google Play internal testing published 2026-07-20:
+- Phone versionCode 55 on track 4701743177829341351. Track status: Active and available to internal testers.
+- Wear OS versionCode 56 on track 4700051853729851607. Release is available to internal testers.

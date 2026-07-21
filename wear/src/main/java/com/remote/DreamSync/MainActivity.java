@@ -424,6 +424,13 @@ public final class MainActivity extends Activity {
         private final Runnable standardHeartRegistrationWatchdog =
                 this::registerStandardHeartSensors;
         private final Runnable motionMainThreadRetry = this::retryMotionOnMainThread;
+        private final Runnable progressTick = new Runnable() {
+            @Override public void run() {
+                if (finished) return;
+                updateProgressText();
+                statusText.postDelayed(this, 1_000L);
+            }
+        };
         private Sensor accelerometer;
         private Sensor motionEventSensor;
         private List<Sensor> motionSensors = Collections.emptyList();
@@ -541,6 +548,7 @@ public final class MainActivity extends Activity {
             statusText.postDelayed(progressFifteenSeconds, 15_000L);
             statusText.postDelayed(progressThirtySeconds, 30_000L);
             statusText.postDelayed(progressSixtySeconds, 60_000L);
+            statusText.post(progressTick);
             statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
         }
 
@@ -843,8 +851,17 @@ public final class MainActivity extends Activity {
             String audio = watchAudioResult == null
                     ? watchAudioStarted ? "playing" : "waiting"
                     : watchAudioResult.success ? "passed" : "failed";
-            statusText.setText("Watch check running. Motion " + motionSamples
-                    + ", heart " + totalHeart + ", sound " + audio + ".");
+            String heartState = totalHeart > 0 ? "reading"
+                    : standardHeartFallbackAttempted ? "fallback"
+                    : measureAvailability;
+            statusText.setText(SystemCheckProgress.format(
+                    SystemClock.elapsedRealtime() - startedElapsedMs,
+                    SYSTEM_CHECK_DURATION_MS,
+                    motionSamples,
+                    motionRetryAttempted,
+                    totalHeart,
+                    heartState,
+                    audio));
         }
 
         private void logProgress(String checkpoint) {
@@ -884,6 +901,7 @@ public final class MainActivity extends Activity {
             statusText.removeCallbacks(standardHeartFallback);
             statusText.removeCallbacks(standardHeartRegistrationWatchdog);
             statusText.removeCallbacks(motionMainThreadRetry);
+            statusText.removeCallbacks(progressTick);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (sensorManager != null) sensorManager.unregisterListener(this);
             if (sensorThread != null) sensorThread.quitSafely();

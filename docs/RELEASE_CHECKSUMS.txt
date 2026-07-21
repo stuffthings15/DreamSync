@@ -9,4 +9,6 @@ F57F963B987C3377A061AC462669A89ABC7FE99F288914EFBD1E1ACA9E7DD777  wear/build/out
 F57F963B987C3377A061AC462669A89ABC7FE99F288914EFBD1E1ACA9E7DD777  artifacts/1.3.10-test/DreamSync-WearOS-1.3.10-test.aab
 
 Both AAB signatures verified with jarsigner.
-Google Play upload pending.
+Google Play internal testing published 2026-07-20:
+- Phone versionCode 53 on track 4701743177829341351. Track status: Active.
+- Wear OS versionCode 54 on track 4700051853729851607. Release is available to internal testers; Play still labels the Wear OS track Inactive.

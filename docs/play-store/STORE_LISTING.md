@@ -26,7 +26,7 @@ Turn DreamSync On once. After one-time watch permission prompts, low-power Wear 
 
 Install DreamSync on the Android phone first. The phone finds a paired Wear OS watch and, when needed, opens DreamSync's official watch Play Store page for one-tap install approval. All DreamSync controls stay on the phone; the watch only shows required first-time health permission prompts.
 
-Protect only is the default and plays no sleep sound. Experimental watch sound stays locked until seven valid baseline nights are recorded. If heart data is unreliable, DreamSync logs only and stays quiet. If sleep is not estimated within three hours, the session ends without sound. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops sound for the night and lowers the next gain by 30%.
+Protect only is the default and plays no sleep sound. Experimental watch sound can begin on the first eligible night after the watch sound check passes, with a one-pair first-night limit. If heart data is unreliable, DreamSync logs only and stays quiet. If sleep is not estimated within three hours, the session ends without sound. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops sound for the night and lowers the next gain by 30%.
 
 DreamSync builds a rolling seven-night baseline while using conservative defaults on earlier nights. After three valid nights, passive candidate detection uses the learned resting heart rate plus 5 BPM, capped at the conservative 75 BPM fallback. It reports estimated awakenings, wake after sleep onset, longest uninterrupted sleep bout, cue-linked arousal rate, and a user-entered morning disturbance rating. These wrist-based values are not clinical sleep-stage measurements.
 
@@ -61,4 +61,4 @@ Advanced Samsung signals require the approved Samsung Health Sensor SDK package 
 
 ## Release notes
 
-DreamSync 1.3 test adds protect-only default behavior, a seven-night experimental-sound gate, progressive 1-to-2-to-4 cue limits, five-minute observation, 20-minute arousal recovery, capability-by-capability watch reporting, and durable reboot recovery.
+DreamSync 1.3 test adds protect-only default behavior, first-eligible-night experimental sound after a successful watch check, progressive 1-to-2-to-4 cue limits, five-minute observation, 20-minute arousal recovery, capability-by-capability watch reporting, and durable reboot recovery.

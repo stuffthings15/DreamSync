@@ -1031,7 +1031,6 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void handleDeepCueing(long now, double elapsedMin, Stage stage) {
         int maximumDeepCues = progressiveCuePolicy.allowedPairs(
                 ProtectionMode.fromStored(config.mode),
-                personalBaseline.nights,
                 config.safeCueNights);
         if (maximumDeepCues != lastProgressiveAllowance) {
             lastProgressiveAllowance = maximumDeepCues;

@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.3.2-test with unique phone and Wear OS version codes published to internal testing.
+- Version 1.3.3-test with unique phone and Wear OS version codes published to internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -49,19 +49,22 @@
 - Wear OS version code 36 (`1.3.1-test`) published on 2026-07-20.
 - Phone version code 37 (`1.3.2-test`) published on 2026-07-20.
 - Wear OS version code 38 (`1.3.2-test`) published on 2026-07-20.
+- Phone version code 39 (`1.3.3-test`) published on 2026-07-20.
+- Wear OS version code 40 (`1.3.3-test`) published on 2026-07-20.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 37 (`1.3.2-test`) is available to internal testers and its track is Active.
-- Wear OS version code 38 (`1.3.2-test`) is available to internal testers. Play still labels the Wear OS track Inactive pending completion of the Wear form-factor setup.
+- Phone version code 39 (`1.3.3-test`) is available to internal testers and its track is Active.
+- Wear OS version code 40 (`1.3.3-test`) is available to internal testers. Play still labels the Wear OS track Inactive pending completion of the Wear form-factor setup.
 - Seventy-four unit tests and seven phone instrumentation tests passed. Nine Wear workflow instrumentation tests passed on the Android phone emulator but still require a physical Wear OS watch for sensor, speaker, vibration, battery, reboot, and display proof. Phone and watch lint, signed-bundle, signature, and release-integrity checks also passed before publishing.
 - The phone sound check uses a local WAV player with streaming PCM fallback and requires the user to confirm that the cue was audible. A saved calibration without that confirmation is rejected.
 - **Run phone + watch check** confirms phone audio, then runs a 75-second watch check with three clear awake-only tones, all standard motion streams, Health Services heart rate, and a sequential standard heart-rate fallback. The result stays visible until acknowledged and the exact pass, fail, or two-minute timeout is stored in Export Debug Log.
 - The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, user-run system check, no-haptics policy, and terminal summary.
-- Release bundle SHA-256: phone `0C26D9FD463061B9B1E95C7207F4B41D003501D02B0B8F618023E9A1705B782B`; Wear OS `2BAF9C973AF7902299B33C472B27CAACC0CB383AC6FA2A679242FBCE9028D194`.
+- Release bundle SHA-256: phone `096AD5B433F48F8B6F9720BC87DD18AA9EE5D668A12A7E521807D97BCBDCC4B1`; Wear OS `2954D10942DAEC51D6B416EBC01EC4D0B786D53CCDF0085DFB0EE44F5EE26F0B`.
+- Experimental watch sound no longer waits for seven baseline nights. After a successful watch sound check, the first eligible night allows one cue pair. The rolling seven-night baseline remains for personalization.
 - This build resets passive elapsed-time markers after reboot, ties watch calibration to the exact media-volume setup, preserves the bounded five-minute post-playback raw-PPG window, and fails release builds closed when upload signing is unavailable.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.
 - The watch has no product settings or power controls. Manual launch sends the user to phone controls; only required first-time watch health-permission prompts remain on the watch.

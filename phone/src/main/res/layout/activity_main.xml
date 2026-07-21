@@ -182,7 +182,7 @@
                     android:buttonTint="@color/ds_indigo"
                     android:paddingStart="8dp"
                     android:paddingVertical="8dp"
-                    android:text="Experimental watch sound (requires 7 baseline nights)"
+                    android:text="Experimental watch sound (available after watch sound check)"
                     android:textColor="@color/ds_text"
                     android:textSize="15sp" />
 

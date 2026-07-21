@@ -31,7 +31,7 @@ Charge the watch several hours before normal sleep time. After three completed r
 ## Research basis
 
 - Protect only is the default and plays no sleep sound.
-- Experimental sound remains locked until seven valid baseline nights are recorded.
+- Experimental sound can begin on the first eligible night after the watch sound check passes. Night one is limited to one cue pair; the rolling seven-night baseline only personalizes later decisions.
 - The experimental waveform uses two 50 ms pink-noise bursts separated by 1.075 seconds, matching the acoustic pattern in Besedovsky et al. (2017).
 - The watch waits for estimated sleep onset, sustained stillness, usable sensor coverage, and an early-night NREM-eligible window.
 - After the passive asleep signal, DreamSync allows 30 minutes for sustained signal confirmation. If confirmation fails, the session ends without cues and persistent On mode remains ready for the next sleep period.
@@ -69,7 +69,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 - Package: `com.remote.DreamSync`
 - Publisher: Remote
 - Product name: DreamSync
-- Test version: phone 37 / Wear OS 38 (`1.3.2-test`)
+- Test version: phone 39 / Wear OS 40 (`1.3.3-test`)
 - Privacy policy and store copy are in `docs/play-store/`.
 
 Copyright 2026 Remote. All rights reserved.

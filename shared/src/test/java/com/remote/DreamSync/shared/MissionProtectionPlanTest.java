@@ -19,13 +19,12 @@ public final class MissionProtectionPlanTest {
                 ProtectionMode.fromHistoricalRecord("LUCID"));
     }
 
-    @Test public void experimentalSoundRequiresSevenNightsAndProgressesSlowly() {
+    @Test public void experimentalSoundStartsOnNightOneAndProgressesSlowly() {
         ProgressiveCuePolicy policy = new ProgressiveCuePolicy();
-        assertEquals(0, policy.allowedPairs(ProtectionMode.PROTECT_ONLY, 20, 20));
-        assertEquals(0, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 6, 20));
-        assertEquals(1, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 7, 0));
-        assertEquals(2, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 7, 2));
-        assertEquals(4, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 7, 4));
+        assertEquals(0, policy.allowedPairs(ProtectionMode.PROTECT_ONLY, 20));
+        assertEquals(1, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 0));
+        assertEquals(2, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 2));
+        assertEquals(4, policy.allowedPairs(ProtectionMode.EXPERIMENTAL_AUDIO, 4));
         assertEquals(0, policy.nextSafeNightStreak(4, 1, 0));
         assertEquals(0, policy.nextSafeNightStreak(4, 0, 3));
     }

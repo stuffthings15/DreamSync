@@ -1,16 +1,12 @@
 package com.remote.DreamSync.shared;
 
-/** Baseline and disturbance gates for the optional experimental sound path. */
+/** Night-one and disturbance gates for the optional experimental sound path. */
 public final class ProgressiveCuePolicy {
     public int allowedPairs(
             ProtectionMode mode,
-            int validBaselineNights,
             int consecutiveSafeCueNights
     ) {
-        if (mode != ProtectionMode.EXPERIMENTAL_AUDIO
-                || validBaselineNights < ProtectionConfig.REQUIRED_BASELINE_NIGHTS) {
-            return 0;
-        }
+        if (mode != ProtectionMode.EXPERIMENTAL_AUDIO) return 0;
         if (consecutiveSafeCueNights >= 4) return 4;
         if (consecutiveSafeCueNights >= 2) return 2;
         return 1;

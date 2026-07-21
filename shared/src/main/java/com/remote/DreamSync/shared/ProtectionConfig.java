@@ -2,7 +2,6 @@ package com.remote.DreamSync.shared;
 
 /** Deterministic, research-conservative protection configuration. */
 public final class ProtectionConfig {
-    public static final int REQUIRED_BASELINE_NIGHTS = 7;
     public static final long POST_CUE_OBSERVATION_MS = 5L * 60_000L;
     public static final long AROUSAL_QUIET_MS = 20L * 60_000L;
 

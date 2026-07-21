@@ -8,7 +8,7 @@ Date: 2026-07-20
 - Watch: Samsung or other Wear OS 3+ watch delivered through Google Play and passing DreamSync's capability check.
 - One persistent On/Off control on the phone. While On, the watch waits for likely sleep and starts a fresh nightly monitoring session automatically.
 - Core sensing uses watch motion and heart rate. Missing, stale, off-wrist, low-battery, or low-confidence data blocks cues.
-- Protect only is the default and plays no sleep sound. Experimental watch sound stays locked until seven valid baseline nights, then begins at one pair and can rise to two and four only after low-disturbance nights.
+- Protect only is the default and plays no sleep sound. Experimental watch sound can begin on the first eligible night after the watch sound check passes. It begins at one pair and can rise to two and four only after low-disturbance nights.
 - Experimental audio plays from the built-in watch speaker. Phone fallback is Off unless the user explicitly enables it. The phone shows clear `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 - The watch has no settings. Manual launch refers the user to the phone. One short awake-only vibration confirms passive monitoring registration; no haptics are used during sleep.
 - Setup check, full-chain debug export, local history/export/deletion, watchdogs, and fail-closed protocol checks are included.
@@ -21,8 +21,8 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.3.2-test`, version code 37.
-- Wear OS `1.3.2-test`, version code 38.
+- Phone `1.3.3-test`, version code 39.
+- Wear OS `1.3.3-test`, version code 40.
 - Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
 - Seven phone and nine Wear OS workflow instrumentation tests passed on the Android 16 phone emulator. Real watch sensors, speaker, vibration, battery, reboot, and display behavior still require physical Wear OS hardware.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.

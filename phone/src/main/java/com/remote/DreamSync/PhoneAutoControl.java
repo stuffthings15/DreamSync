@@ -89,6 +89,10 @@ final class PhoneAutoControl {
                 prefs.getFloat("auto_gain", 0.04f),
                 prefs.getInt("safe_cue_night_streak", 0))
                 .initialOvernightGain();
+        boolean watchAudioCalibrated = prefs.getBoolean(
+                "watch_audio_calibrated", false);
+        float watchAudibleThreshold = prefs.getFloat(
+                "watch_audible_threshold", 0f);
         try {
             return new JSONObject()
                     .put("sessionId", sessionId)
@@ -98,6 +102,8 @@ final class PhoneAutoControl {
                     .put("createdUtcMs", createdUtcMs)
                     .put("expiresUtcMs", createdUtcMs + 10L * 60L * 1000L)
                     .put("cueGain", gain)
+                    .put("watchAudioCalibrated", watchAudioCalibrated)
+                    .put("watchAudibleThreshold", watchAudibleThreshold)
                     .put("armTimeoutMin", 30)
                     .put("deepStartMin", 25)
                     .put("deepEndMin", 145)

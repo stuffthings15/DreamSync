@@ -25,7 +25,7 @@ public final class PhoneDatabaseMigrationTest {
             PhoneDatabase.class.getCanonicalName(),
             new FrameworkSQLiteOpenHelperFactory());
 
-    @Test public void migration2To3PreservesSessionAndAddsSafetyFields()
+    @Test public void migration2To4PreservesSessionAndLabelsLegacyDeepAudio()
             throws IOException {
         SupportSQLiteDatabase database = helper.createDatabase(TEST_DB, 2);
         database.execSQL("INSERT INTO sessions (sessionId, mode, state, startUtcMs, "
@@ -35,12 +35,14 @@ public final class PhoneDatabaseMigrationTest {
         database.close();
 
         database = helper.runMigrationsAndValidate(
-                TEST_DB, 3, true, PhoneDatabase.MIGRATION_2_3);
+                TEST_DB, 4, true,
+                PhoneDatabase.MIGRATION_2_3, PhoneDatabase.MIGRATION_3_4);
         try (Cursor cursor = database.query(
-                "SELECT sessionId, watchCapabilityJson FROM sessions WHERE sessionId='s1'")) {
+                "SELECT sessionId, watchCapabilityJson, mode FROM sessions WHERE sessionId='s1'")) {
             cursor.moveToFirst();
             assertEquals("s1", cursor.getString(0));
             assertEquals(null, cursor.getString(1));
+            assertEquals("EXPERIMENTAL_AUDIO", cursor.getString(2));
         }
         try (Cursor cursor = database.query(
                 "SELECT disturbanceRating FROM morning_surveys LIMIT 1")) {

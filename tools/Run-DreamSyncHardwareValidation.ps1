@@ -6,6 +6,11 @@ param(
     [switch]$InstallDebugApks,
     [switch]$RunInstrumentation,
     [switch]$RunProcessDeathTest,
+    [switch]$RunRebootTest,
+    [ValidateSet('Galaxy','Pixel','ThirdPartyWearOS','Other')]
+    [string]$DeviceGroup = 'Other',
+    [ValidateRange(0,20)]
+    [int]$NightIndex = 0,
     [switch]$ListOnly
 )
 
@@ -120,6 +125,9 @@ $results = [ordered]@{
     installDebugApks = [bool]$InstallDebugApks
     runInstrumentation = [bool]$RunInstrumentation
     runProcessDeathTest = [bool]$RunProcessDeathTest
+    runRebootTest = [bool]$RunRebootTest
+    deviceGroup = $DeviceGroup
+    nightIndex = $NightIndex
     steps = [ordered]@{}
 }
 
@@ -148,6 +156,18 @@ if ($RunProcessDeathTest) {
     $results.steps.watchRelaunch = Invoke-Adb $WatchSerial @('shell', 'am', 'start', '-W', '-n', 'com.remote.DreamSync/.MainActivity')
 }
 
+if ($RunRebootTest) {
+    $results.steps.phoneRebootRequested = Invoke-Adb $PhoneSerial @('reboot')
+    $results.steps.watchRebootRequested = Invoke-Adb $WatchSerial @('reboot')
+    & $adb -s $PhoneSerial wait-for-device | Out-Null
+    & $adb -s $WatchSerial wait-for-device | Out-Null
+    Start-Sleep -Seconds 10
+    $results.steps.phoneAfterReboot = Invoke-Adb $PhoneSerial @(
+        'shell', 'dumpsys', 'package', 'com.remote.DreamSync') -AllowFailure
+    $results.steps.watchAfterReboot = Invoke-Adb $WatchSerial @(
+        'shell', 'dumpsys', 'package', 'com.remote.DreamSync') -AllowFailure
+}
+
 $phone = Get-DeviceRecord 'phone' $PhoneSerial
 $watch = Get-DeviceRecord 'watch' $WatchSerial
 $results.phone = $phone
@@ -160,6 +180,10 @@ Save-Text 'watch-battery.txt' $watch.battery
 Save-Text 'phone-audio.txt' (Invoke-Adb $PhoneSerial @('shell', 'dumpsys', 'audio') -AllowFailure)
 Save-Text 'watch-audio.txt' (Invoke-Adb $WatchSerial @('shell', 'dumpsys', 'audio') -AllowFailure)
 Save-Text 'watch-sensors.txt' (Invoke-Adb $WatchSerial @('shell', 'dumpsys', 'sensorservice') -AllowFailure)
+Save-Text 'phone-batterystats.txt' (Invoke-Adb $PhoneSerial @('shell', 'dumpsys', 'batterystats', 'com.remote.DreamSync') -AllowFailure)
+Save-Text 'watch-batterystats.txt' (Invoke-Adb $WatchSerial @('shell', 'dumpsys', 'batterystats', 'com.remote.DreamSync') -AllowFailure)
+Save-Text 'phone-jobs.txt' (Invoke-Adb $PhoneSerial @('shell', 'dumpsys', 'jobscheduler', 'com.remote.DreamSync') -AllowFailure)
+Save-Text 'watch-jobs.txt' (Invoke-Adb $WatchSerial @('shell', 'dumpsys', 'jobscheduler', 'com.remote.DreamSync') -AllowFailure)
 Save-Text 'phone-logcat.txt' (Invoke-Adb $PhoneSerial @('logcat', '-d', '-v', 'threadtime') -AllowFailure)
 Save-Text 'watch-logcat.txt' (Invoke-Adb $WatchSerial @('logcat', '-d', '-v', 'threadtime') -AllowFailure)
 
@@ -169,6 +193,8 @@ $manual = @"
 Generated: $([DateTime]::UtcNow.ToString('u'))
 Phone: $($phone.manufacturer) $($phone.model) ($PhoneSerial)
 Watch: $($watch.manufacturer) $($watch.model) ($WatchSerial)
+Group: $DeviceGroup
+Night: $NightIndex
 
 - [ ] Permissions deny/grant/revoke behavior recorded
 - [ ] 30-minute motion/heart-rate coverage export attached
@@ -178,7 +204,10 @@ Watch: $($watch.manufacturer) $($watch.model) ($WatchSerial)
 - [ ] Disconnect and stale-phone watchdog result recorded
 - [ ] Off-wrist and low-battery result recorded
 - [ ] Process-death fresh-handshake behavior recorded
+- [ ] Reboot-night restores On monitoring but never resumes cueing without a fresh handshake
+- [ ] Battery start/end, elapsed hours, and app-attributed drain recorded
 - [ ] Three sensor-only nights exported
+- [ ] Seven consecutive baseline nights exported and learned threshold confirmed
 - [ ] Baseline, cue, and recovery nights exported
 - [ ] Morning disturbance and adverse-effect records attached
 

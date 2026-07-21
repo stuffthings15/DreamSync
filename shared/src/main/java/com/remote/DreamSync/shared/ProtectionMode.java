@@ -9,4 +9,10 @@ public enum ProtectionMode {
         return EXPERIMENTAL_AUDIO.name().equals(value)
                 ? EXPERIMENTAL_AUDIO : PROTECT_ONLY;
     }
+
+    /** Historical DEEP rows described experimental audio; this never changes live settings. */
+    public static ProtectionMode fromHistoricalRecord(String value) {
+        return EXPERIMENTAL_AUDIO.name().equals(value) || "DEEP".equals(value)
+                ? EXPERIMENTAL_AUDIO : PROTECT_ONLY;
+    }
 }

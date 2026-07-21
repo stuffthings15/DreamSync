@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
 
 @Database(
         entities = {SessionEntity.class, EventEntity.class, MorningSurveyEntity.class},
-        version = 3,
+        version = 4,
         exportSchema = true
 )
 public abstract class PhoneDatabase extends RoomDatabase {
@@ -18,6 +18,11 @@ public abstract class PhoneDatabase extends RoomDatabase {
         @Override public void migrate(SupportSQLiteDatabase db) {
             db.execSQL("ALTER TABLE sessions ADD COLUMN watchCapabilityJson TEXT");
             db.execSQL("ALTER TABLE morning_surveys ADD COLUMN disturbanceRating INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+    static final Migration MIGRATION_3_4 = new Migration(3, 4) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("UPDATE sessions SET mode='EXPERIMENTAL_AUDIO' WHERE mode='DEEP'");
         }
     };
     public abstract PhoneDao dao();
@@ -29,7 +34,7 @@ public abstract class PhoneDatabase extends RoomDatabase {
                     instance = Room.databaseBuilder(
                             context.getApplicationContext(), PhoneDatabase.class,
                             "dreamsync-phone.db")
-                            .addMigrations(MIGRATION_2_3)
+                            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                             .build();
                 }
             }

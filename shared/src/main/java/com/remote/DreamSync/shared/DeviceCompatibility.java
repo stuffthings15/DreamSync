@@ -2,11 +2,8 @@ package com.remote.DreamSync.shared;
 
 /** Capability-based watch support classification; model names alone never unlock cueing. */
 public final class DeviceCompatibility {
-    public enum Status {
-        FULLY_SUPPORTED,
-        BASIC_MONITORING_ONLY,
-        NOT_SUPPORTED
-    }
+    public enum Status { ENHANCED_PROTECTION, CORE_PROTECTION, MONITORING_ONLY,
+        PHONE_PROTECTION_ONLY, NEEDS_ATTENTION }
 
     public static final class Capabilities {
         public final String manufacturer;
@@ -20,6 +17,8 @@ public final class DeviceCompatibility {
         public final boolean rawPpg;
         public final boolean offWrist;
         public final boolean liveSelfTestPassed;
+        public final boolean watchSpeaker;
+        public final boolean permissionsReady;
 
         public Capabilities(
                 String manufacturer,
@@ -34,6 +33,26 @@ public final class DeviceCompatibility {
                 boolean offWrist,
                 boolean liveSelfTestPassed
         ) {
+            this(manufacturer, model, wearOs, motion, heartRate, samsungSdk, ibi,
+                    skinTemperature, rawPpg, offWrist, liveSelfTestPassed,
+                    true, true);
+        }
+
+        public Capabilities(
+                String manufacturer,
+                String model,
+                boolean wearOs,
+                boolean motion,
+                boolean heartRate,
+                boolean samsungSdk,
+                boolean ibi,
+                boolean skinTemperature,
+                boolean rawPpg,
+                boolean offWrist,
+                boolean liveSelfTestPassed,
+                boolean watchSpeaker,
+                boolean permissionsReady
+        ) {
             this.manufacturer = manufacturer == null ? "" : manufacturer;
             this.model = model == null ? "" : model;
             this.wearOs = wearOs;
@@ -45,43 +64,34 @@ public final class DeviceCompatibility {
             this.rawPpg = rawPpg;
             this.offWrist = offWrist;
             this.liveSelfTestPassed = liveSelfTestPassed;
+            this.watchSpeaker = watchSpeaker;
+            this.permissionsReady = permissionsReady;
         }
     }
 
     public Status classify(Capabilities capabilities) {
-        if (capabilities == null || !capabilities.wearOs
-                || !capabilities.motion || !capabilities.heartRate) {
-            return Status.NOT_SUPPORTED;
-        }
-        if (capabilities.ibi
-                && capabilities.skinTemperature && capabilities.offWrist
-                && capabilities.liveSelfTestPassed) {
-            return Status.FULLY_SUPPORTED;
-        }
-        return Status.BASIC_MONITORING_ONLY;
+        if (capabilities == null) return Status.NEEDS_ATTENTION;
+        return Status.valueOf(report(capabilities).profile().name());
     }
 
     public String reason(Capabilities capabilities) {
-        Status status = classify(capabilities);
-        if (status == Status.FULLY_SUPPORTED) {
-            return "Enhanced protection: motion, heart rate, IBI, skin temperature, and off-wrist checks passed.";
-        }
-        if (status == Status.NOT_SUPPORTED) {
-            return "Wear OS motion and heart-rate sensors are required.";
-        }
-        return "Core protection is available. Advanced features remain visible and enable independently when their live checks pass.";
+        return capabilities == null ? "No watch capability report." : report(capabilities).reason();
     }
 
     /** Features are selected from live capability checks, never a model allow-list. */
     public String featureProfile(Capabilities capabilities) {
         Status status = classify(capabilities);
-        if (status == Status.FULLY_SUPPORTED) return "FULL_SENSOR_SUITE";
-        if (status == Status.BASIC_MONITORING_ONLY) return "CORE_WEAR_OS";
-        return "UNSUPPORTED";
+        return status.name();
     }
 
     public boolean shouldUseRawPpg(Capabilities capabilities) {
-        return classify(capabilities) == Status.FULLY_SUPPORTED
+        return classify(capabilities) == Status.ENHANCED_PROTECTION
                 && capabilities.rawPpg;
+    }
+
+    private CapabilityReport report(Capabilities c) {
+        return new CapabilityReport(c.wearOs, c.motion, c.heartRate,
+                c.watchSpeaker, c.ibi, c.skinTemperature, c.offWrist, c.rawPpg,
+                c.permissionsReady, c.liveSelfTestPassed);
     }
 }

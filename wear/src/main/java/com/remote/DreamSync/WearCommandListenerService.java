@@ -163,6 +163,8 @@ public final class WearCommandListenerService extends WearableListenerService {
         if (current.enrollmentId.equals(config.enrollmentId)) {
             config.lastSessionUtcMs = current.lastSessionUtcMs;
         }
+        config.baselineNights = current.baselineNights;
+        config.learnedRestingHeartRateBpm = current.learnedRestingHeartRateBpm;
         config.save(this);
         WatchDiagnostics.auto(this, config, "AUTO_CONFIG_RECEIVED",
                 "mode=" + config.mode

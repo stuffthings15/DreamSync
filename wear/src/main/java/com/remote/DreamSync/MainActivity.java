@@ -537,7 +537,7 @@ public final class MainActivity extends Activity {
                     "reason=" + preflight.reason + ";" + preflight.diagnostics);
             remoteExecutor.execute(() -> {
                 WatchAudioOutput.Result result = watchAudioOutput.play(
-                        "DEEP", Math.max(0.08f, config.cueGain), () -> {
+                        "DEEP", config.cueGain, () -> {
                             watchAudioStarted = true;
                             WatchDiagnostics.auto(MainActivity.this, config,
                                     "SYSTEM_CHECK_WATCH_AUDIO_STARTED",
@@ -828,7 +828,10 @@ public final class MainActivity extends Activity {
                     SamsungHealthSensorBridge.isPackaged(),
                     samsungConnected,
                     samsungTrackerTypes,
-                    passed && advanced.passed,
+                    passed,
+                    advanced.passed,
+                    watchAudioResult != null && watchAudioResult.success,
+                    activityPermission && heartPermissionGranted,
                     samsungDetail + "; " + advanced.reason);
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("status", passed ? "PASS" : "FAIL");
@@ -854,6 +857,8 @@ public final class MainActivity extends Activity {
                     watchAudioResult != null && watchAudioResult.success));
             payload.put("watchAudioReason", watchAudioResult == null
                     ? "not_finished" : watchAudioResult.reason);
+            payload.put("watchAudioGain", String.format(
+                    java.util.Locale.US, "%.4f", config.cueGain));
             payload.put("watchAudioDiagnostics", watchAudioResult == null
                     ? watchAudioOutput == null ? "not_started" : watchAudioOutput.diagnostics()
                     : watchAudioResult.diagnostics);

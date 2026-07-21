@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 
 import com.remote.DreamSync.shared.SleepSessionClock;
 import com.remote.DreamSync.shared.ProtectionMode;
+import com.remote.DreamSync.shared.WatchAudioCalibration;
 
 import org.json.JSONObject;
 
@@ -33,6 +34,8 @@ final class SessionConfig {
     int maxLucidCues = 2;
     int safeCueNights;
     boolean enableRawPpg;
+    boolean watchAudioCalibrated;
+    float watchAudibleThreshold;
 
     static SessionConfig fromJson(String json) {
         SessionConfig config = new SessionConfig();
@@ -59,6 +62,10 @@ final class SessionConfig {
             config.maxLucidCues = object.optInt("maxLucidCues", config.maxLucidCues);
             config.safeCueNights = object.optInt("safeCueNights", 0);
             config.enableRawPpg = object.optBoolean("enableRawPpg", false);
+            config.watchAudioCalibrated = object.optBoolean(
+                    "watchAudioCalibrated", false);
+            config.watchAudibleThreshold = (float) object.optDouble(
+                    "watchAudibleThreshold", 0.0);
         } catch (Exception ignored) {
             // Invalid fields retain conservative defaults.
         }
@@ -88,6 +95,12 @@ final class SessionConfig {
         lucidCueIntervalSec = clampInt(lucidCueIntervalSec, 45, 600);
         maxLucidCues = clampInt(maxLucidCues, 0, 10);
         safeCueNights = clampInt(safeCueNights, 0, 30);
+        watchAudibleThreshold = clampFloat(watchAudibleThreshold, 0f, 0.10f);
+        if (!new WatchAudioCalibration().valid(
+                watchAudioCalibrated, watchAudibleThreshold)) {
+            watchAudioCalibrated = false;
+            watchAudibleThreshold = 0f;
+        }
         if (deepEndMin <= deepStartMin) {
             deepEndMin = deepStartMin + 60;
         }
@@ -121,6 +134,8 @@ final class SessionConfig {
         c.maxLucidCues = p.getInt("maxLucidCues", c.maxLucidCues);
         c.safeCueNights = p.getInt("safeCueNights", 0);
         c.enableRawPpg = p.getBoolean("enableRawPpg", false);
+        c.watchAudioCalibrated = p.getBoolean("watchAudioCalibrated", false);
+        c.watchAudibleThreshold = p.getFloat("watchAudibleThreshold", 0f);
         c.clamp();
         return c;
     }
@@ -151,6 +166,8 @@ final class SessionConfig {
                 .putInt("maxLucidCues", maxLucidCues)
                 .putInt("safeCueNights", safeCueNights)
                 .putBoolean("enableRawPpg", enableRawPpg)
+                .putBoolean("watchAudioCalibrated", watchAudioCalibrated)
+                .putFloat("watchAudibleThreshold", watchAudibleThreshold)
                 .apply();
     }
 
@@ -181,7 +198,8 @@ final class SessionConfig {
     }
 
     boolean usesDeepCues() {
-        return ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(mode);
+        return ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(mode)
+                && watchAudioCalibrated;
     }
 
     boolean usesLucidCues() {

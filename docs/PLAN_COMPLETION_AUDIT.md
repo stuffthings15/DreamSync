@@ -10,9 +10,9 @@ Date: 2026-07-20
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Fifty-three deterministic shared tests and nine phone unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
-- Phone instrumentation passes 5/5 on an Android 16 emulator; Wear instrumentation passes 6/6 when installed on the same Android 16 emulator, including both Room 2-to-3 migrations, privacy-safe debug export verification, visible power state, awake-only confirmation feedback, and an unbound live-check request that fails closed.
-- Google Play internal testing serves phone 27 and Wear 28 (`1.2.6-test`).
+- Seventy-three deterministic unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Phone instrumentation passes 6/6 on an Android 16 phone emulator; Wear workflow instrumentation passes 8/8 when installed on that same phone emulator. This is Android behavior evidence, not physical Wear OS hardware evidence.
+- Google Play internal testing serves phone 33 and Wear 34 (`1.3.0-test`).
 - The one-time sound check waits for real playback, uses local PCM WAV playback with streaming fallback, requires human confirmation that the cue was audible, shows the exact backend error, and provides a bounded Export Debug Log without raw node identifiers.
 - A phone-controlled 45-second live check records actual watch motion and heart-rate samples, permissions, sensor registration, off-wrist state, and available advanced-sensor counts. It rejects stale, duplicate, wrong-watch, wrong-enrollment, and wrong-check results, and logs a failure after a two-minute timeout.
 - Phone and watch diagnostics now trace configuration, passive monitoring and inputs, automatic-session handshake, sensor registration and readings, quality and eligibility decisions, cue delivery and phone audio acknowledgement, the user-run live system check, no-haptics policy, failures, and terminal summaries.
@@ -21,16 +21,24 @@ Date: 2026-07-20
 - Reproducible S23+/Watch Ultra validation protocol and evidence-collection runner.
 - Persistent user On/Off, Wear Health Services asleep-state plus conservative passive-HR fallback, automatic fresh-session handshake, phone connected-device standby service, reboot recovery, and three-record learned charge reminder.
 - Broad Android 8.0+/Wear OS 3+ packaging, manufacturer-neutral capability profiles, and automatic preservation of every approved advanced sensor on full-sensor watches.
+- Passive candidate detection uses the learned resting-heart-rate baseline after three valid nights, with a conservative 75 BPM fallback before enough history exists.
+- Capability, provider, night-state, decision-snapshot, and summary contracts are connected to live session persistence and debug output.
+- Compatibility uses all five profiles: Enhanced, Core, Monitoring only, Phone protection only, and Needs attention.
+- Watch-speaker calibration stores the exact user-confirmed gain. Experimental sound stays blocked until a real audible check is confirmed.
+- Raw PPG is restricted to a 30-second pre-cue quality window and a bounded post-cue observation window instead of running all night.
+- Room schema 4 migrates historical `DEEP` session records to `EXPERIMENTAL_AUDIO`; old settings still fail closed to Protect.
+- The hardware runner now records Galaxy, Pixel Watch, and third-party Wear OS groups, battery use, reboot-night evidence, and seven-night progress.
 
 ## Compiled but not physically device-executed
 
-- Samsung adapter path when the official SDK AAR is supplied.
+- Samsung adapter path when the official SDK AAR is supplied. The `:wear:verifySamsungSensorSdk` task fails closed until that AAR is present.
 - Hardware evidence runner is syntax-checked and can enumerate Android devices; no physical phone or watch was attached for execution.
 
 ## External gates
 
 - Official Samsung Health Sensor SDK AAR, Samsung partner approval, and package/signing-certificate registration.
-- Physical S23+ and Galaxy Watch Ultra sensor, audio, route, disconnect, permission, process-death, off-wrist, and battery validation.
+- Physical Galaxy, Pixel Watch, and third-party Wear OS sensor, audio, route, disconnect, permission, process-death, off-wrist, reboot-night, seven-night, and battery validation.
+- The earlier zero-reading and missing-watch-audio failures are not claimed fixed on physical hardware until build 34 is exercised on a real watch and its exported log is reviewed.
 - PSG comparison before sleep-stage accuracy claims.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Owner-signed prototype/source/asset declaration and its supporting attachments before public production release.

@@ -40,7 +40,7 @@ The user should charge the watch several hours before normal sleep. After at lea
 
 ### 3. Samsung signals add useful context, not EEG
 
-The Samsung Health Sensor SDK supports Galaxy Watch4 and later watches running Wear OS Powered by Samsung, subject to model, software, sensor, and permission availability. Continuous tracker documentation includes accelerometer, heart rate with IBI, skin temperature, and raw PPG. Skin temperature begins with Watch5-class hardware. DreamSync enables every supported approved tracker on a full-sensor watch. Battery and live-signal tests remain release gates because added sensing must not undermine sleep continuity.
+The Samsung Health Sensor SDK supports Galaxy Watch4 and later watches running Wear OS Powered by Samsung, subject to model, software, sensor, and permission availability. Continuous tracker documentation includes accelerometer, heart rate with IBI, skin temperature, and raw PPG. Skin temperature begins with Watch5-class hardware. DreamSync keeps supported approved signals available but limits raw PPG to short pre/post-cue quality windows to reduce needless overnight sensor load. Battery and live-signal tests remain release gates because added sensing must not undermine sleep continuity.
 
 Public distribution of an app using the SDK requires Samsung partnership approval plus registration of the package name and signing certificate. Until the official AAR and approval are supplied, DreamSync uses standard Wear OS accelerometer and heart-rate sensors and classifies the watch as basic monitoring only.
 
@@ -74,9 +74,11 @@ Compatibility is based on live capability checks, not the phrase â€œor better.â€
 
 | Status | Meaning |
 |---|---|
-| Fully supported | Motion, HR, IBI, skin temperature, off-wrist checks, permissions, advanced provider connection, and live self-test pass; every reported approved feature is enabled. |
-| Basic monitoring only | Standard Wear OS motion and heart rate work, but advanced signals or validation are incomplete. |
-| Not supported | Required Wear OS motion or heart-rate capability is absent. |
+| Enhanced protection | Motion, HR, watch speaker, IBI, skin temperature, off-wrist checks, permissions, advanced provider connection, and live self-test pass. |
+| Core protection | Motion, HR, watch speaker, permissions, and the core live self-test pass; premium signals remain visible and can enable later. |
+| Monitoring only | The watch can log useful signals, but heart rate, speaker calibration, or the live self-test is not cue-ready. |
+| Phone protection only | No compatible Wear OS watch report is available; phone-side protection and guidance remain accessible. |
+| Needs attention | A required permission or motion capability is missing. |
 
 Validation order:
 

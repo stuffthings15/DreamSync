@@ -40,4 +40,14 @@ public final class PassiveSleepGateTest {
         assertTrue(result.firstLowHeartRateElapsedMs == 0L);
         assertTrue(result.lowHeartRateSamples == 0);
     }
+
+    @Test public void learnedBaselineReplacesFixedThresholdAfterThreeNights() {
+        PassiveSleepGate gate = new PassiveSleepGate();
+        assertTrue(gate.candidateThresholdBpm(60.0, 2) == 75.0);
+        assertTrue(gate.candidateThresholdBpm(60.0, 3) == 65.0);
+        PassiveSleepGate.Result result = gate.observe(
+                true, 70.0, 65.0, 601_000L, 1_000L, 2);
+        assertFalse(result.candidateReady);
+        assertTrue(result.lowHeartRateSamples == 0);
+    }
 }

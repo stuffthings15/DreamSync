@@ -53,10 +53,30 @@ public final class CapabilityReport {
         if (!wearOs) return Profile.PHONE_PROTECTION_ONLY;
         if (!motion) return Profile.NEEDS_ATTENTION;
         if (!heartRate) return Profile.MONITORING_ONLY;
+        if (!watchSpeaker || !liveSelfTestPassed) return Profile.MONITORING_ONLY;
         if (watchSpeaker && liveSelfTestPassed && ibi && skinTemperature && offWrist) {
             return Profile.ENHANCED_PROTECTION;
         }
         return Profile.CORE_PROTECTION;
+    }
+
+    public String reason() {
+        switch (profile()) {
+            case ENHANCED_PROTECTION:
+                return "Enhanced protection: core sensors, watch speaker, IBI, temperature, and off-wrist checks passed.";
+            case CORE_PROTECTION:
+                return "Core protection: motion, heart rate, watch speaker, permissions, and live check passed.";
+            case MONITORING_ONLY:
+                return heartRate
+                        ? "Monitoring only: watch audio or the live self-test is not ready."
+                        : "Monitoring only: motion is available but heart rate is not ready.";
+            case PHONE_PROTECTION_ONLY:
+                return "Phone protection only: no compatible Wear OS watch is connected.";
+            default:
+                return permissionsReady
+                        ? "Needs attention: required motion hardware is unavailable."
+                        : "Needs attention: required permissions are missing.";
+        }
     }
 
     public boolean experimentalAudioEligible() {

@@ -11,8 +11,10 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -37,10 +39,12 @@ final class SamsungHealthSensorBridge {
 
     private final Context context;
     private final Listener listener;
-    private final List<Object> trackers = new ArrayList<>();
-    private final List<Object> trackerListeners = new ArrayList<>();
+    private final Map<String, Object> trackers = new LinkedHashMap<>();
+    private final Map<String, Object> trackerListeners = new LinkedHashMap<>();
+    private Set<String> supportedTrackerTypes = Collections.emptySet();
     private Object service;
     private boolean connected;
+    private boolean rawPpgRequested;
 
     SamsungHealthSensorBridge(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -62,6 +66,7 @@ final class SamsungHealthSensorBridge {
     }
 
     void start(boolean enableRawPpg) {
+        rawPpgRequested = enableRawPpg;
         if (!isSamsungWatch()) {
             listener.onCapabilities(Collections.emptySet(), false,
                     "Not a Samsung watch; standard Wear OS sensors active");
@@ -120,6 +125,7 @@ final class SamsungHealthSensorBridge {
             if (result instanceof Iterable) {
                 for (Object tracker : (Iterable<?>) result) supported.add(tracker.toString());
             }
+            supportedTrackerTypes = Collections.unmodifiableSet(new HashSet<>(supported));
             listener.onCapabilities(supported, true, "Samsung Health Sensor SDK connected");
             if (supported.contains("HEART_RATE_CONTINUOUS")) {
                 attach("HEART_RATE_CONTINUOUS", this::handleHeartRate);
@@ -142,6 +148,7 @@ final class SamsungHealthSensorBridge {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private void attach(String trackerName, DataHandler handler) {
+        if (trackers.containsKey(trackerName)) return;
         try {
             Class<?> trackerTypeClass = Class.forName(DATA + "HealthTrackerType");
             Object trackerType = Enum.valueOf((Class<? extends Enum>) trackerTypeClass,
@@ -170,10 +177,33 @@ final class SamsungHealthSensorBridge {
                     });
             tracker.getClass().getMethod("setEventListener", listenerType)
                     .invoke(tracker, trackerListener);
-            trackers.add(tracker);
-            trackerListeners.add(trackerListener);
+            trackers.put(trackerName, tracker);
+            trackerListeners.put(trackerName, trackerListener);
         } catch (Throwable error) {
             listener.onBridgeError(trackerName + "_START_FAILED", safe(error));
+        }
+    }
+
+    /** Raw PPG is power-heavy, so sessions open it only for short quality windows. */
+    synchronized boolean setRawPpgEnabled(boolean enabled) {
+        rawPpgRequested = enabled;
+        if (!connected || !supportedTrackerTypes.contains("PPG_CONTINUOUS")) return false;
+        if (enabled) {
+            attach("PPG_CONTINUOUS", this::handlePpg);
+            return trackers.containsKey("PPG_CONTINUOUS");
+        }
+        detach("PPG_CONTINUOUS");
+        return false;
+    }
+
+    private void detach(String trackerName) {
+        Object tracker = trackers.remove(trackerName);
+        trackerListeners.remove(trackerName);
+        if (tracker == null) return;
+        try {
+            tracker.getClass().getMethod("unsetEventListener").invoke(tracker);
+        } catch (Throwable error) {
+            listener.onBridgeError(trackerName + "_STOP_FAILED", safe(error));
         }
     }
 
@@ -227,7 +257,7 @@ final class SamsungHealthSensorBridge {
     }
 
     void stop() {
-        for (Object tracker : trackers) {
+        for (Object tracker : trackers.values()) {
             try {
                 tracker.getClass().getMethod("unsetEventListener").invoke(tracker);
             } catch (Throwable ignored) {
@@ -236,6 +266,7 @@ final class SamsungHealthSensorBridge {
         }
         trackers.clear();
         trackerListeners.clear();
+        supportedTrackerTypes = Collections.emptySet();
         if (service != null) {
             try {
                 service.getClass().getMethod("disconnectService").invoke(service);

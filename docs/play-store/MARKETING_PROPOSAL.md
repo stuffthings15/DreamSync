@@ -14,7 +14,7 @@ Mission: **Designed to protect sleep continuity.** DreamSync automatically estim
 - Protecting sleep takes priority over delivering a cue.
 - The first cue-linked wake sign stops cueing for the night.
 - A rolling seven-night baseline personalizes estimates; earlier nights use conservative defaults.
-- Core watches use standard Wear OS motion and heart rate. High-end watches automatically keep every available approved advanced signal, including IBI/HRV, skin-temperature trend, off-wrist status, and raw PPG when supported.
+- Core watches use standard Wear OS motion and heart rate. High-end watches keep available approved IBI/HRV, skin-temperature, off-wrist, and raw-PPG features; raw PPG runs only in short cue-quality windows.
 - Users can view estimated awakenings, wake after sleep onset, longest uninterrupted bout, cue-linked arousal rate, and morning disturbance.
 - Pre-sleep coaching is separated from in-sleep monitoring.
 - After three records, a local reminder asks the user to charge the watch three hours before the learned usual sleep time.
@@ -24,7 +24,7 @@ Mission: **Designed to protect sleep continuity.** DreamSync automatically estim
 
 Core compatibility targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches that pass the in-app motion, heart-rate, permission, software, and companion-link checks. Eligible Samsung Galaxy Watch and Google Pixel Watch models can enter the core profile. First physical validation still targets Galaxy Watch Ultra 2024 and 2025.
 
-The app shows Fully supported, Basic monitoring only, or Not supported. Full support depends on live capabilities, not brand: motion, heart rate, IBI, skin temperature, off-wrist status, required permissions, an approved advanced provider, and a passed live self-test. Every reported approved feature remains enabled on the full profile.
+The app shows Enhanced protection, Core protection, Monitoring only, Phone protection only, or Needs attention. Profiles depend on live capabilities, not brand: motion, heart rate, watch speaker, optional IBI and temperature, off-wrist status, required permissions, an approved advanced provider, and live self-tests.
 
 Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in the Android release. Never describe an untested model as physically validated.
 
@@ -68,7 +68,7 @@ Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not
 - Turn On once. Automatic likely-sleep detection every night.
 - Charge reminder learned from your own sleep-start records.
 - A wake sign stops cueing for the night.
-- Live watch status: Full, Basic, or Not supported.
+- Live status: Enhanced, Core, Monitoring only, Phone only, or Needs attention.
 - Seven-night baseline and private continuity history.
 - Science and limitations explained inside the app.
 

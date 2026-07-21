@@ -6,13 +6,16 @@ Date: 20 July 2026
 
 ### Current 1.3.0 test build
 
-- Prepared phone version code 33 and Wear OS version code 34 (`1.3.0-test`). These builds have not been uploaded to Google Play in this verification pass.
-- 70 local unit tests passed with 0 failures, 0 errors, and 0 skipped.
-- Six phone and six Wear OS instrumentation tests compile into test APKs. They were not executed on physical hardware in this pass.
+- Phone version code 33 and Wear OS version code 34 (`1.3.0-test`) are available to internal testers in Google Play Console.
+- 73 local unit tests passed with 0 failures, 0 errors, and 0 skipped.
+- Phone instrumentation passed 6/6 on an Android 16 phone emulator. Wear workflow instrumentation passed 8/8 when installed on that phone emulator; this proves Android behavior only, not physical Wear OS sensors, audio, vibration, battery, or display behavior.
 - Phone and Wear OS lint passed with no blocking errors.
 - Phone and Wear OS debug APKs built successfully.
-- Phone APK SHA-256: `5A4A0EB562A5ACE0947F52D6D13433D94A24CFC8180E2DDEB3447EB108BBD9E3`.
-- Wear OS APK SHA-256: `7F0BDA3644428BCA1054C762212735232676DC359BBFC06E72B5DFB5ED0993EC`.
+- Phone APK SHA-256: `9993F48DBA29B7B034672B09E81322FC983A12276D3CEF4C7BA5C0664BBA4F25`.
+- Wear OS APK SHA-256: `C0F1B1F465987E0C7C363F68BC6A4456C87279CC7FE17482767E58297BCDD59D`.
+- Signed phone AAB SHA-256: `BBF768FDA3EC637EF884F247AC56D2E9B1F6CFD7B518F90441F9EF4D0CFEB2EC`.
+- Signed Wear OS AAB SHA-256: `9800C9FD52CD5F64DEF8882A1172219EB69893B4203C2A7126DB807A289940F5`.
+- Both AAB signatures passed integrity verification. Google Play showed only the expected non-blocking missing-deobfuscation-file warning; R8/ProGuard obfuscation is not enabled.
 - Protect only is the default. Experimental watch sound requires seven valid baseline nights, starts at one pair, can progress to two and four after low-disturbance nights, observes for five minutes after each pair, pauses 20 minutes after arousal signs, and reduces the next gain by 30% after a cue-linked arousal.
 - Passive watch monitoring is restored after reboot through WorkManager. A fresh phone-watch handshake is still required before any sound.
 - The compatibility screen reports motion, standard heart rate, IBI/HRV, skin temperature, off-wrist protection, and raw PPG independently; higher-end features remain enabled whenever the live provider reports them.
@@ -20,10 +23,8 @@ Date: 20 July 2026
 - Public name: DreamSync.
 - Publisher: Remote.
 - Package: `com.remote.DreamSync`.
-- Published phone internal-test code: 27 (`1.2.6-test`).
-- Published Wear OS internal-test code: 28 (`1.2.6-test`).
-- Prepared phone internal-test code: 29 (`1.2.7-test`).
-- Prepared Wear OS internal-test code: 30 (`1.2.7-test`).
+- Published phone internal-test code: 33 (`1.3.0-test`).
+- Published Wear OS internal-test code: 34 (`1.3.0-test`).
 - Both 1.2.6-test releases were available to internal testers in Google Play Console on 2026-07-20. Google notes that delivery can take up to one hour or occasionally longer.
 - Play showed the expected non-blocking missing-deobfuscation-file warning; code obfuscation is not enabled.
 - Clean shared tests: 55 checks, 0 failures, 0 errors, and 0 skipped, including durable clock-skew handling while keeping cue messages time-strict.
@@ -72,7 +73,7 @@ Date: 20 July 2026
 - The manufacturer-neutral feature classifier keeps all approved reported sensors enabled on full-sensor watches; unsupported trackers are ignored at runtime.
 - Standard Wear OS accelerometer, passive HR, and active heart-rate sensing remain the broad core fallback.
 - Phone minimum is Android 8.0/API 26; watch minimum is Wear OS 3/API 30. Play and live capability checks may narrow delivery further.
-- Live compatibility states are Fully supported, Basic monitoring only, or Not supported.
+- Live compatibility states are Enhanced, Core, Monitoring only, Phone protection only, or Needs attention.
 - The watch sends durable capability data to the phone and export.
 - The build conditionally packages `wear/libs/samsung-health-sensor-api.aar` when supplied.
 
@@ -103,13 +104,13 @@ Date: 20 July 2026
 
 ## External gates still required
 
-- Add the official Samsung Health Sensor SDK AAR after Samsung sign-in.
+- Add the official Samsung Health Sensor SDK AAR after Samsung sign-in. `:wear:verifySamsungSensorSdk` deliberately fails while the official AAR is absent.
 - Obtain Samsung Partner Program approval and register `com.remote.DreamSync` plus the upload signing certificate.
 - Run the live Samsung self-test on Galaxy Watch Ultra 2024 and 2025.
-- Physical S23+ and Watch Ultra sensor, audio, route, battery, permission, disconnect, off-wrist, and process-death validation.
-- Three sensor-only nights, baseline/no-cue comparison, active-cue night, and recovery tests.
+- Physical Galaxy, Pixel Watch, and third-party Wear OS sensor, audio, route, battery, permission, disconnect, off-wrist, reboot-night, and process-death validation.
+- Seven-night hardware baseline plus sensor-only, no-cue comparison, active-cue, and recovery tests.
 - Concurrent polysomnography before any sleep-stage accuracy claim.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
-- Google Play closed-release gate and all production-policy tasks remain external to local code.
+- Google Play 1.3.0 internal releases are complete. The closed-release gate and all production-policy tasks remain external to local code.
 - The hardware runner parsed successfully and its list-only preflight found zero attached physical Android devices on 2026-07-19; physical execution therefore remains pending.

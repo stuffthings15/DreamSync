@@ -1,0 +1,268 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "297ffb7cf8d00f8e31799f4cd9eaddb0",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `mode` TEXT, `state` TEXT, `startUtcMs` INTEGER NOT NULL, `startElapsedMs` INTEGER NOT NULL, `endUtcMs` INTEGER NOT NULL, `deepCues` INTEGER NOT NULL, `lucidCues` INTEGER NOT NULL, `cueLinkedArousals` INTEGER NOT NULL, `awakeningCount` INTEGER NOT NULL, `wakeAfterSleepOnsetMs` INTEGER NOT NULL, `longestUninterruptedBoutMs` INTEGER NOT NULL, `gain` REAL NOT NULL, `sleepPhase` TEXT, `estimatedSleepOnsetElapsedMs` INTEGER NOT NULL, `baselineNights` INTEGER NOT NULL, `sensorSource` TEXT, `capabilityJson` TEXT, `terminationReason` TEXT, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startUtcMs",
+            "columnName": "startUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startElapsedMs",
+            "columnName": "startElapsedMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endUtcMs",
+            "columnName": "endUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deepCues",
+            "columnName": "deepCues",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lucidCues",
+            "columnName": "lucidCues",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cueLinkedArousals",
+            "columnName": "cueLinkedArousals",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "awakeningCount",
+            "columnName": "awakeningCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wakeAfterSleepOnsetMs",
+            "columnName": "wakeAfterSleepOnsetMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longestUninterruptedBoutMs",
+            "columnName": "longestUninterruptedBoutMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gain",
+            "columnName": "gain",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sleepPhase",
+            "columnName": "sleepPhase",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "estimatedSleepOnsetElapsedMs",
+            "columnName": "estimatedSleepOnsetElapsedMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baselineNights",
+            "columnName": "baselineNights",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sensorSource",
+            "columnName": "sensorSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "capabilityJson",
+            "columnName": "capabilityJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "terminationReason",
+            "columnName": "terminationReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
+      },
+      {
+        "tableName": "events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT, `cueId` TEXT, `type` TEXT, `elapsedMs` INTEGER NOT NULL, `utcMs` INTEGER NOT NULL, `details` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cueId",
+            "columnName": "cueId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "elapsedMs",
+            "columnName": "elapsedMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "utcMs",
+            "columnName": "utcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "details",
+            "columnName": "details",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_events_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_events_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_events_cueId",
+            "unique": false,
+            "columnNames": [
+              "cueId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_events_cueId` ON `${TABLE_NAME}` (`cueId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "night_baselines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT, `completedUtcMs` INTEGER NOT NULL, `restingHeartRate` REAL NOT NULL, `medianIbiMs` REAL NOT NULL, `ibiRmssdMs` REAL NOT NULL, `skinTemperatureC` REAL NOT NULL, `sleepOnsetMinutes` REAL NOT NULL, `valid` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "completedUtcMs",
+            "columnName": "completedUtcMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restingHeartRate",
+            "columnName": "restingHeartRate",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medianIbiMs",
+            "columnName": "medianIbiMs",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ibiRmssdMs",
+            "columnName": "ibiRmssdMs",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skinTemperatureC",
+            "columnName": "skinTemperatureC",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sleepOnsetMinutes",
+            "columnName": "sleepOnsetMinutes",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "valid",
+            "columnName": "valid",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '297ffb7cf8d00f8e31799f4cd9eaddb0')"
+    ]
+  }
+}

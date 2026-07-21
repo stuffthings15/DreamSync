@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
 
 @Database(
         entities = {WearSessionEntity.class, WearEventEntity.class, NightBaselineEntity.class},
-        version = 3,
+        version = 4,
         exportSchema = true
 )
 public abstract class WearDatabase extends RoomDatabase {
@@ -32,6 +32,11 @@ public abstract class WearDatabase extends RoomDatabase {
                     + "sleepOnsetMinutes REAL NOT NULL, valid INTEGER NOT NULL)");
         }
     };
+    static final Migration MIGRATION_3_4 = new Migration(3, 4) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("UPDATE sessions SET mode='EXPERIMENTAL_AUDIO' WHERE mode='DEEP'");
+        }
+    };
     public abstract WearDao dao();
 
     public static WearDatabase get(Context context) {
@@ -41,7 +46,7 @@ public abstract class WearDatabase extends RoomDatabase {
                     instance = Room.databaseBuilder(
                             context.getApplicationContext(), WearDatabase.class,
                             "dreamsync-wear.db")
-                            .addMigrations(MIGRATION_2_3)
+                            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                             .build();
                 }
             }

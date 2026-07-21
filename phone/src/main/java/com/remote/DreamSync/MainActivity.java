@@ -159,6 +159,10 @@ public final class MainActivity extends Activity {
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putBoolean("watch_audio_calibrated", false)
+                        .remove("watch_audible_threshold")
+                        .apply();
                 syncAutoSettingsIfEnabled();
             }
         });
@@ -1090,7 +1094,7 @@ public final class MainActivity extends Activity {
                 .getString("last_calibration", "");
         boolean calibrationHeard = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("last_calibration_audible_confirmed", false);
-        String compatibility = "not checked";
+        String compatibility = "phone protection only";
         String capabilityJson = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("watch_capabilities", "");
         try {
@@ -1106,10 +1110,14 @@ public final class MainActivity extends Activity {
                 .getString("last_system_check_status", "not run");
         boolean watchAudioCompleted = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getBoolean("last_system_check_watch_audio_completed", false);
+        boolean watchAudioCalibrated = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("watch_audio_calibrated", false);
+        float watchThreshold = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getFloat("watch_audible_threshold", 0f);
         String watchAudioState = watchAudioCompleted
-                ? getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getBoolean("last_watch_audio_audible", false)
-                ? "heard" : "OS playback passed; hearing not confirmed"
+                ? watchAudioCalibrated
+                ? "calibrated " + Math.round(watchThreshold * 100f) + "%"
+                : "OS playback passed; hearing not confirmed"
                 : "not checked";
         readinessText.setText((autoEnabled() ? "ON" : "OFF")
                 + " | watch sound primary " + watchAudioState
@@ -1261,23 +1269,27 @@ public final class MainActivity extends Activity {
                 .getString("watch_capabilities", "");
         String live;
         if (json.isEmpty()) {
-            live = "No live sensor check yet. Turn DreamSync On and open the watch once.";
+            live = "PHONE PROTECTION ONLY\nNo live watch report yet. Connect a Wear OS watch and run the watch check. If a watch is expected, this profile needs attention before watch monitoring can start.";
         } else {
             try {
                 JSONObject values = new JSONObject(json);
-                String status = values.optString("status", "BASIC_MONITORING_ONLY")
+                String status = values.optString("profile", "NEEDS_ATTENTION")
                         .replace('_', ' ');
                 live = values.optString("manufacturer", "") + " "
                         + values.optString("model", "") + "\n"
                         + status + "\n" + values.optString("reason", "") + "\n\n"
                         + "Available now:\n"
                         + featureLine("Motion", values.optBoolean("motion"))
-                        + featureLine("Heart rate", values.optBoolean("standardHeartRate"))
-                        + featureLine("IBI / HRV", values.optBoolean("ibi"))
-                        + featureLine("Skin temperature", values.optBoolean("skinTemperature"))
+                        + featureLine("Heart rate", values.optBoolean("standardHeartRate")
+                        || values.optBoolean("ibi"))
+                        + featureLine("Watch speaker", values.optBoolean("watchSpeaker"))
+                        + featureLine("Permissions", values.optBoolean("permissionsReady"))
+                        + featureLine("Live self-test", values.optBoolean("liveSelfTestPassed"))
+                        + featureLine("IBI / HRV verified", values.optBoolean("ibi"))
+                        + featureLine("Skin temperature verified", values.optBoolean("skinTemperature"))
                         + featureLine("Off-wrist protection", values.optBoolean("offWrist"))
-                        + featureLine("Raw PPG", values.optBoolean("rawPpg"))
-                        + "\nHigher-end features turn on independently when the watch reports them.";
+                        + featureLine("Raw PPG available", values.optBoolean("rawPpgAvailable"))
+                        + "\nFive profiles: Enhanced protection, Core protection, Monitoring only, Phone protection only, and Needs attention. Higher-end features turn on independently when verified.";
             } catch (JSONException error) {
                 live = "Live compatibility data could not be read. Run a new automatic session.";
             }
@@ -1287,7 +1299,7 @@ public final class MainActivity extends Activity {
                 .setMessage(live + "\n\nCore support:\n"
                         + "Android 8.0+ phone with Google Play services\n"
                         + "Wear OS 3+ watch with motion and heart rate\n\n"
-                        + "DreamSync checks the actual watch sensors. Core watches use standard motion and heart rate. More capable watches automatically keep every available approved feature, including IBI/HRV, skin temperature, off-wrist checks, and raw PPG when the sensor provider supports them. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.")
+                        + "DreamSync checks the actual watch sensors. Core watches use standard motion and heart rate. More capable watches keep approved IBI/HRV, skin temperature, off-wrist, and raw-PPG features when verified. Raw PPG runs only in short cue-quality windows. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.")
                 .setPositiveButton("Done", null)
                 .show();
     }
@@ -1407,6 +1419,8 @@ public final class MainActivity extends Activity {
                 "last_system_check_watch_audio_completed", false);
         String watchAudioReason = prefs.getString(
                 "last_system_check_watch_audio_reason", "not reported");
+        float watchAudioGain = prefs.getFloat(
+                "last_system_check_watch_audio_gain", 0f);
         String measureAvailability = prefs.getString(
                 "last_system_check_measure_availability", "not reported");
         String message = "Result: " + result + "\n"
@@ -1414,6 +1428,7 @@ public final class MainActivity extends Activity {
                 + "Watch sound: " + (watchAudioCompleted ? "PLAYBACK COMPLETED"
                 : watchAudioStarted ? "STARTED BUT FAILED" : "DID NOT START") + "\n"
                 + "Audio detail: " + watchAudioReason + "\n"
+                + "Test gain: " + Math.round(watchAudioGain * 100f) + "%\n"
                 + "Motion: " + motionSamples + " samples; registered="
                 + motionRegistered + "\n"
                 + "Heart rate: " + heartSamples + " samples; registered="
@@ -1431,15 +1446,22 @@ public final class MainActivity extends Activity {
             builder.setPositiveButton("I heard watch sound", (dialog, which) -> {
                 prefs.edit()
                         .putBoolean("last_watch_audio_audible", true)
+                        .putBoolean("watch_audio_calibrated", watchAudioGain >= 0.005f)
+                        .putFloat("watch_audible_threshold", watchAudioGain)
+                        .putFloat("auto_gain", watchAudioGain)
                         .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
                         .apply();
                 DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_AUDIBLE_CONFIRMED",
-                        "completedUtcMs=" + completedUtcMs);
+                        "completedUtcMs=" + completedUtcMs
+                                + ";audibleThreshold=" + watchAudioGain
+                                + ";overnightGain=" + Math.min(0.04f, watchAudioGain * 0.5f));
             });
             builder.setNegativeButton("No watch sound", (dialog, which) -> {
                 String failure = "Watch reported playback, but the user heard no watch sound.";
                 prefs.edit()
                         .putBoolean("last_watch_audio_audible", false)
+                        .putBoolean("watch_audio_calibrated", false)
+                        .remove("watch_audible_threshold")
                         .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
                         .putString("last_system_check_status", "FAIL")
                         .putString("last_system_check_reason", failure)

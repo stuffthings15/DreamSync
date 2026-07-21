@@ -69,14 +69,14 @@ public final class ResearchPlanCoreTest {
         DeviceCompatibility.Capabilities basic = new DeviceCompatibility.Capabilities(
                 "Samsung", "Galaxy Watch Ultra", true, true, true,
                 true, true, true, true, true, false);
-        assertEquals(DeviceCompatibility.Status.BASIC_MONITORING_ONLY,
+        assertEquals(DeviceCompatibility.Status.MONITORING_ONLY,
                 checker.classify(basic));
         DeviceCompatibility.Capabilities full = new DeviceCompatibility.Capabilities(
                 "Samsung", "Galaxy Watch Ultra", true, true, true,
                 true, true, true, true, true, true);
-        assertEquals(DeviceCompatibility.Status.FULLY_SUPPORTED,
+        assertEquals(DeviceCompatibility.Status.ENHANCED_PROTECTION,
                 checker.classify(full));
-        assertEquals("FULL_SENSOR_SUITE", checker.featureProfile(full));
+        assertEquals("ENHANCED_PROTECTION", checker.featureProfile(full));
         assertTrue(checker.shouldUseRawPpg(full));
     }
 
@@ -85,15 +85,15 @@ public final class ResearchPlanCoreTest {
         DeviceCompatibility.Capabilities capable = new DeviceCompatibility.Capabilities(
                 "Any Wear OS maker", "Future high-end watch", true, true, true,
                 false, true, true, true, true, true);
-        assertEquals(DeviceCompatibility.Status.FULLY_SUPPORTED,
+        assertEquals(DeviceCompatibility.Status.ENHANCED_PROTECTION,
                 checker.classify(capable));
 
         DeviceCompatibility.Capabilities core = new DeviceCompatibility.Capabilities(
                 "Any Wear OS maker", "Core watch", true, true, true,
                 false, false, false, false, false, true);
-        assertEquals(DeviceCompatibility.Status.BASIC_MONITORING_ONLY,
+        assertEquals(DeviceCompatibility.Status.CORE_PROTECTION,
                 checker.classify(core));
-        assertEquals("CORE_WEAR_OS", checker.featureProfile(core));
+        assertEquals("CORE_PROTECTION", checker.featureProfile(core));
         assertFalse(checker.shouldUseRawPpg(core));
     }
 

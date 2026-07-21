@@ -67,3 +67,17 @@ dependencies {
         implementation files(samsungSensorAar)
     }
 }
+
+tasks.register('verifySamsungSensorSdk') {
+    group = 'verification'
+    description = 'Fails unless the official Samsung Health Sensor SDK AAR is present.'
+    doLast {
+        def aar = file('libs/samsung-health-sensor-api.aar')
+        if (!aar.isFile() || aar.length() == 0L) {
+            throw new GradleException(
+                    'Official Samsung AAR missing: wear/libs/samsung-health-sensor-api.aar. ' +
+                    'Download it while signed in at Samsung Developer; never use an unofficial copy.')
+        }
+        println "Samsung sensor AAR ready: ${aar.name} (${aar.length()} bytes)"
+    }
+}

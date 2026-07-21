@@ -464,6 +464,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + envelope.payload.getOrDefault("watchAudioCompleted", "")
                 + ";watchAudioReason=" + cleanDetails(
                 envelope.payload.getOrDefault("watchAudioReason", ""))
+                + ";watchAudioGain="
+                + envelope.payload.getOrDefault("watchAudioGain", "")
                 + ";watchAudioDiagnostics=" + cleanDetails(
                 envelope.payload.getOrDefault("watchAudioDiagnostics", ""))
                 + ";hapticAvailable=" + envelope.payload.getOrDefault("hapticAvailable", "")
@@ -506,6 +508,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                         envelope.payload.getOrDefault("watchAudioCompleted", "false")))
                 .putString("last_system_check_watch_audio_reason", cleanStatus(
                         envelope.payload.getOrDefault("watchAudioReason", "")))
+                .putFloat("last_system_check_watch_audio_gain", floating(
+                        envelope.payload.getOrDefault("watchAudioGain", "0"), 0f))
                 .putString("last_system_check_measure_availability", cleanStatus(
                         envelope.payload.getOrDefault("measureAvailability", "")))
                 .putLong("last_system_check_utc", System.currentTimeMillis());
@@ -519,6 +523,11 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 .putExtra("status", "Watch system check " + status + ": " + reason)
                 .putExtra("state", "SYSTEM_CHECK_" + status)
                 .putExtra("sessionId", envelope.sessionId));
+    }
+
+    private static float floating(String value, float fallback) {
+        try { return Float.parseFloat(value); }
+        catch (RuntimeException ignored) { return fallback; }
     }
 
     private void handleDiagnostic(ProtocolEnvelope envelope) {

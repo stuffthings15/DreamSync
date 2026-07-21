@@ -17,7 +17,7 @@ Date: 2026-07-20
 
 ## High-end Samsung path
 
-DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw PPG, and off-wrist signals. Those features activate only when the official Samsung Health Sensor SDK AAR is packaged, Samsung approves the package/signing certificate, the watch reports the sensors, and the live self-test passes. Without that approval, Galaxy watches use the standard Wear OS motion and heart-rate path.
+DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw PPG, and off-wrist signals. Those features activate only when the official Samsung Health Sensor SDK AAR is packaged, Samsung approves the package/signing certificate, the watch reports the sensors, and the live self-test passes. Raw PPG opens only for a 30-second pre-cue window and up to five minutes after playback starts. Without approval, Galaxy watches use the standard Wear OS motion and heart-rate path.
 
 ## Evidence for this build
 

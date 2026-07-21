@@ -32,17 +32,23 @@ import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import com.remote.DreamSync.shared.AdvancedSensorVerification;
+import com.remote.DreamSync.shared.CapabilityReport;
 import com.remote.DreamSync.shared.CuePolicy;
+import com.remote.DreamSync.shared.DecisionSnapshot;
 import com.remote.DreamSync.shared.EligibilityEstimator;
 import com.remote.DreamSync.shared.PersonalBaseline;
+import com.remote.DreamSync.shared.NightState;
+import com.remote.DreamSync.shared.NightSummary;
 import com.remote.DreamSync.shared.ProgressiveCuePolicy;
 import com.remote.DreamSync.shared.ProtectionConfig;
 import com.remote.DreamSync.shared.ProtectionMode;
+import com.remote.DreamSync.shared.RawPpgWindowPolicy;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SessionCoordinator;
 import com.remote.DreamSync.shared.SessionOutcome;
 import com.remote.DreamSync.shared.SessionState;
 import com.remote.DreamSync.shared.SensorPermissionGate;
+import com.remote.DreamSync.shared.SensorProvider;
 import com.remote.DreamSync.shared.SignalQualityMonitor;
 import com.remote.DreamSync.shared.SleepContinuityTracker;
 import com.remote.DreamSync.shared.SleepFeatureEngine;
@@ -90,6 +96,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
     private static final long CUE_AROUSAL_WINDOW_MS =
             ProtectionConfig.POST_CUE_OBSERVATION_MS;
+    private static final RawPpgWindowPolicy RAW_PPG_POLICY = new RawPpgWindowPolicy();
     private static final String READ_HEART_RATE =
             "android.permission.health.READ_HEART_RATE";
     private static final String READ_ADDITIONAL_HEALTH_DATA =
@@ -141,6 +148,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private volatile Set<String> samsungTrackerTypes = Collections.emptySet();
     private volatile String samsungDetail = "standard Wear OS sensors";
     private int validPpgSamples;
+    private boolean rawPpgWindowActive;
+    private long rawPpgWindowUntilMs;
+    private long rawPpgWindowOpenedMs;
     private int sessionStartBatteryPercent = -1;
     private boolean storageHealthy = true;
     private boolean sessionInitialized;
@@ -161,6 +171,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private String lastPersistedSignalQuality = "";
     private String latestDecision = "BLOCKED: session not evaluated yet";
     private String terminalState = "RUNNING";
+    private String lastDecisionContract = "";
 
     private final SignalQualityMonitor signalQualityMonitor = new SignalQualityMonitor();
     private final SleepOnsetEstimator sleepOnsetEstimator = new SleepOnsetEstimator();
@@ -183,6 +194,28 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private SamsungHealthSensorBridge samsungBridge;
     private WatchAudioOutput watchAudioOutput;
     private String motionRegistrationDetails = "";
+
+    private final SensorProvider liveSensorProvider = new SensorProvider() {
+        @Override public String id() {
+            return samsungSdkConnected
+                    ? "SAMSUNG_HEALTH_SENSOR_SDK" : "STANDARD_WEAR_OS";
+        }
+
+        @Override public CapabilityReport capabilities() {
+            return capabilitySnapshot().report();
+        }
+
+        @Override public Snapshot latest() {
+            synchronized (sampleLock) {
+                return new Snapshot(
+                        Math.max(lastMotionSampleMs, Math.max(lastHeartSampleMs,
+                                Math.max(lastIbiSampleMs, lastTemperatureSampleMs))),
+                        latestValue(motionSamples), latestValue(heartSamples),
+                        latestValue(ibiSamples), latestValue(skinTemperatureSamples),
+                        offWrist);
+            }
+        }
+    };
 
     private FileWriter logWriter;
     private String logFilePath = "";
@@ -366,6 +399,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
             if (result.nights > 0 && Double.isFinite(result.restingHeartRate)) {
                 baselineHeartRate = result.restingHeartRate;
             }
+            AutoSleepConfig automatic = AutoSleepConfig.load(this);
+            automatic.baselineNights = result.nights;
+            automatic.learnedRestingHeartRateBpm = result.restingHeartRate;
+            automatic.save(this);
             persistEvent("PERSONAL_BASELINE_LOADED", "",
                     "nights=" + result.nights + ";confidence="
                             + String.format(Locale.US, "%.2f", result.confidence));
@@ -448,7 +485,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             WatchDiagnostics.session(this, config, "ADVANCED_PERMISSION_MISSING",
                     "raw-PPG permission missing; raw PPG disabled");
         }
-        samsungBridge.start(config.enableRawPpg && rawPpgPermission);
+        // Core Samsung signals stay active. Raw PPG is opened only around a cue.
+        samsungBridge.start(false);
     }
 
     private SensorCapabilitySnapshot capabilitySnapshot() {
@@ -466,8 +504,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
         boolean liveSelfTest = accelerometerRegistered
                 && lastMotionSampleMs > 0L
                 && heartRateRegistered
-                && lastHeartSampleMs > 0L
-                && advanced.passed;
+                && lastHeartSampleMs > 0L;
+        boolean requiredPermissions = requiredSensorPermissionsReady();
+        boolean watchSpeaker = watchAudioOutput != null
+                && watchAudioOutput.preflight().success;
         return new SensorCapabilitySnapshot(
                 accelerometerRegistered,
                 heartRateRegistered,
@@ -475,6 +515,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 samsungSdkConnected,
                 samsungTrackerTypes,
                 liveSelfTest,
+                advanced.passed,
+                watchSpeaker,
+                requiredPermissions,
                 samsungDetail + "; " + advanced.reason);
     }
 
@@ -557,6 +600,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         sessionCoordinator.disableCues(reason);
         latestDecision = "BLOCKED: cues disabled: " + reason;
         WatchDiagnostics.session(this, config, "CUES_DISABLED", reason);
+        closeRawPpgWindow("cueing disabled: " + reason);
     }
 
     private void terminateSession(
@@ -682,6 +726,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
 
         latestDecision = decisionReason(now, sleepElapsedMin, stage, arousal, quality);
+        persistDecisionContract(now, quality);
+        closeRawPpgIfExpired(now);
 
         if (arousal) {
             handleArousal(now);
@@ -745,6 +791,94 @@ public final class SleepSessionService extends Service implements SensorEventLis
         return true;
     }
 
+    private boolean requiredSensorPermissionsReady() {
+        boolean activityPermission = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACTIVITY_RECOGNITION)
+                == PackageManager.PERMISSION_GRANTED;
+        String heartPermission = Build.VERSION.SDK_INT >= 36
+                ? READ_HEART_RATE : Manifest.permission.BODY_SENSORS;
+        return activityPermission && ContextCompat.checkSelfPermission(
+                this, heartPermission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void persistDecisionContract(
+            long now, SignalQualityMonitor.Result quality
+    ) {
+        boolean fresh = quality.motionReady && quality.heartReady;
+        boolean allowed = latestDecision.startsWith("ELIGIBLE:")
+                && !cuesDisabled && sessionCoordinator.canCue();
+        DecisionSnapshot decision = new DecisionSnapshot(
+                now, nightState(), fresh, offWrist, allowed, latestDecision);
+        SensorProvider.Snapshot sensors = liveSensorProvider.latest();
+        String contract = "state=" + decision.state.name()
+                + ";provider=" + liveSensorProvider.id()
+                + ";profile=" + liveSensorProvider.capabilities().profile().name()
+                + ";sensorElapsedMs=" + sensors.elapsedRealtimeMs
+                + ";sensorsFresh=" + decision.sensorsFresh
+                + ";offWrist=" + decision.offWrist
+                + ";cueAllowed=" + decision.cueAllowed
+                + ";reason=" + decision.reason;
+        if (!contract.equals(lastDecisionContract)) {
+            lastDecisionContract = contract;
+            persistEvent("DECISION_SNAPSHOT", "", contract);
+        }
+    }
+
+    private NightState nightState() {
+        if (!"RUNNING".equals(terminalState)) return NightState.COMPLETE;
+        if (estimatedSleepOnsetMs <= 0L) return NightState.CONFIRMING_SLEEP;
+        if (SleepPhaseMachine.Phase.POSSIBLE_AROUSAL.name().equals(latestSleepPhase)) {
+            return NightState.POSSIBLE_AROUSAL;
+        }
+        if (SleepPhaseMachine.Phase.RECOVERED.name().equals(latestSleepPhase)) {
+            return NightState.QUIET_RECOVERY;
+        }
+        if (SleepPhaseMachine.Phase.STABLE_SLEEP.name().equals(latestSleepPhase)) {
+            return NightState.STABLE_SLEEP;
+        }
+        return NightState.LIKELY_ASLEEP;
+    }
+
+    private boolean openRawPpgWindow(long now, long durationMs, String reason) {
+        if (!config.enableRawPpg || samsungBridge == null
+                || !samsungTrackerTypes.contains("PPG_CONTINUOUS")
+                || ContextCompat.checkSelfPermission(this, READ_ADDITIONAL_HEALTH_DATA)
+                != PackageManager.PERMISSION_GRANTED) return false;
+        boolean started = samsungBridge.setRawPpgEnabled(true);
+        if (!started) return false;
+        rawPpgWindowActive = true;
+        rawPpgWindowOpenedMs = now;
+        rawPpgWindowUntilMs = now + durationMs;
+        persistEvent("RAW_PPG_WINDOW_OPENED", "",
+                "reason=" + reason + ";durationMs=" + durationMs);
+        WatchDiagnostics.session(this, config, "RAW_PPG_WINDOW_OPENED",
+                "reason=" + reason + ";durationMs=" + durationMs);
+        return true;
+    }
+
+    private void extendRawPpgPostCue(long now) {
+        if (!rawPpgWindowActive) return;
+        rawPpgWindowUntilMs = RAW_PPG_POLICY.extendAfterAudioStart(
+                rawPpgWindowUntilMs, now);
+        persistEvent("RAW_PPG_WINDOW_EXTENDED", "",
+                "reason=POST_CUE_QUALITY;durationMs=" + RawPpgWindowPolicy.POST_CUE_MS);
+    }
+
+    private void closeRawPpgIfExpired(long now) {
+        if (rawPpgWindowActive && !RAW_PPG_POLICY.active(now, rawPpgWindowUntilMs)) {
+            closeRawPpgWindow("window complete");
+        }
+    }
+
+    private void closeRawPpgWindow(String reason) {
+        if (!rawPpgWindowActive || samsungBridge == null) return;
+        samsungBridge.setRawPpgEnabled(false);
+        rawPpgWindowActive = false;
+        rawPpgWindowUntilMs = 0L;
+        persistEvent("RAW_PPG_WINDOW_CLOSED", "", reason);
+        WatchDiagnostics.session(this, config, "RAW_PPG_WINDOW_CLOSED", reason);
+    }
+
     private String decisionReason(
             long now,
             double sleepElapsedMin,
@@ -757,6 +891,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         if (!quality.deepCueAllowed) return "BLOCKED: signal quality: " + quality.reason;
         if (estimatedSleepOnsetMs <= 0L) return "BLOCKED: sleep onset not confirmed";
+        if (ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(config.mode)
+                && !config.watchAudioCalibrated) {
+            return "BLOCKED: watch speaker needs a user-confirmed volume check";
+        }
         if (arousal) return "BLOCKED: arousal detected; 20 minute pause";
         if (!SleepPhaseMachine.Phase.STABLE_SLEEP.name().equals(latestSleepPhase)) {
             return "BLOCKED: sleep phase=" + latestSleepPhase;
@@ -831,6 +969,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void handleArousal(long now) {
         latestDecision = "BLOCKED: arousal detected; 20 minute pause";
         if (deepBlockActive) endDeepBlock("arousal");
+        closeRawPpgWindow("arousal detected");
         long arousalBackoffMs = 20L * 60L * 1000L;
         backoffUntilMs = Math.max(backoffUntilMs, now + arousalBackoffMs);
         if (lastCueMs > 0L
@@ -915,7 +1054,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
             deepBlocks++;
             deepBlockActive = true;
             deepCuesInCurrentBlock = 0;
-            nextDeepCueMs = now;
+            nextDeepCueMs = openRawPpgWindow(
+                    now, RawPpgWindowPolicy.PRE_CUE_MS, "PRE_CUE")
+                    ? RAW_PPG_POLICY.openPreCue(now) : now;
             logEvent("DEEP_BLOCK_START", "block=" + deepBlocks);
         }
     }
@@ -948,6 +1089,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
         if (!deepBlockActive) return;
         deepBlockActive = false;
         deepCuesInCurrentBlock = 0;
+        if (rawPpgWindowActive && lastCueMs < rawPpgWindowOpenedMs) {
+            closeRawPpgWindow("pre-cue window cancelled: " + reason);
+        }
         logEvent("DEEP_BLOCK_END", reason);
     }
 
@@ -974,6 +1118,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         evaluatorHandler.post(() -> {
                             lastCueMs = timeProvider.elapsedRealtimeMs();
                             continuityTracker.onCueStarted();
+                            extendRawPpgPostCue(timeProvider.elapsedRealtimeMs());
                             onAudioStarted.run();
                             latestDecision = "ACTION: watch audio started for " + cueType;
                             persistEvent("AUDIO_STARTED", cueId,
@@ -1082,6 +1227,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 pending.audioStarted = true;
                 lastCueMs = timeProvider.elapsedRealtimeMs();
                 continuityTracker.onCueStarted();
+                extendRawPpgPostCue(lastCueMs);
                 pending.onAudioStarted.run();
                 latestDecision = "ACTION: phone fallback audio started for " + pending.cueType;
                 persistEvent("AUDIO_STARTED", cueId,
@@ -1386,11 +1532,14 @@ public final class SleepSessionService extends Service implements SensorEventLis
         }
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("state", state);
+        payload.put("nightState", nightState().name());
         payload.put("status", status);
         payload.put("signalQuality", qualityReason);
         payload.put("batteryPercent", Integer.toString(batteryPercent()));
         payload.put("sleepPhase", latestSleepPhase);
         payload.put("capabilities", capabilitySnapshot().toJson());
+        payload.put("capabilityProfile",
+                liveSensorProvider.capabilities().profile().name());
         payload.put("awakeningCount", Integer.toString(continuity.awakeningCount));
         payload.put("wakeAfterSleepOnsetMs", Long.toString(continuity.wakeAfterSleepOnsetMs));
         payload.put("baselineNights", Integer.toString(personalBaseline.nights));
@@ -1417,6 +1566,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         payload.put("deepCues", Integer.toString(deepCues));
         payload.put("lucidCues", Integer.toString(lucidCues));
         payload.put("pendingCues", Integer.toString(pendingCues.size()));
+        payload.put("rawPpgWindowActive", Boolean.toString(rawPpgWindowActive));
         payload.put("hapticsAction", "NONE_DURING_SLEEP");
         payload.put("audioAction", "WATCH_SPEAKER_PRIMARY_PHONE_FALLBACK");
         payload.put("sensorSource", samsungSdkConnected
@@ -1559,6 +1709,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("cueLinkedArousals", cueLinkedArousals);
             SleepContinuityTracker.Snapshot continuity = continuityTracker.snapshot(
                     timeProvider.elapsedRealtimeMs());
+            NightSummary contractSummary = new NightSummary(
+                    config == null ? "" : config.sessionId,
+                    estimatedSleepOnsetMs <= 0L ? 0L
+                            : sessionStartUtcMs + estimatedSleepOnsetMs - sessionStartMs,
+                    continuity.awakeningCount,
+                    continuity.wakeAfterSleepOnsetMs,
+                    continuity.longestUninterruptedBoutMs,
+                    deepCues,
+                    cueLinkedArousals);
+            summary.put("summaryContract", "NightSummary-v1");
+            summary.put("summarySessionId", contractSummary.sessionId);
+            summary.put("nightState", nightState().name());
             summary.put("awakeningCount", continuity.awakeningCount);
             summary.put("wakeAfterSleepOnsetMinutes",
                     continuity.wakeAfterSleepOnsetMs / 60_000.0);
@@ -1578,6 +1740,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
             summary.put("personalBaselineNights", personalBaseline.nights);
             summary.put("personalizedBaselineReady", personalBaseline.personalized());
             summary.put("validPpgSamples", validPpgSamples);
+            summary.put("rawPpgContinuous", false);
+            summary.put("rawPpgWindowActiveAtEnd", rawPpgWindowActive);
             JSONObject sensorQuality = new JSONObject();
             sensorQuality.put("motionRegistered", accelerometerRegistered);
             sensorQuality.put("heartRateRegistered", heartRateRegistered);
@@ -1668,7 +1832,21 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && night.sleepOnsetMinutes > 0.0
                 && !"SENSOR_FAILED".equals(terminalState)
                 && !"INTERNAL_ERROR".equals(terminalState);
-        databaseExecutor.execute(() -> dao.insertBaseline(night));
+        databaseExecutor.execute(() -> {
+            dao.insertBaseline(night);
+            List<NightBaselineEntity> stored = dao.latestBaselines();
+            List<PersonalBaseline.Night> nights = new ArrayList<>();
+            for (NightBaselineEntity item : stored) {
+                nights.add(new PersonalBaseline.Night(
+                        item.restingHeartRate, item.medianIbiMs, item.ibiRmssdMs,
+                        item.skinTemperatureC, item.sleepOnsetMinutes));
+            }
+            PersonalBaseline.Result result = personalBaselineEngine.calculate(nights);
+            AutoSleepConfig automatic = AutoSleepConfig.load(this);
+            automatic.baselineNights = result.nights;
+            automatic.learnedRestingHeartRateBpm = result.restingHeartRate;
+            automatic.save(this);
+        });
     }
 
     @Override
@@ -1730,6 +1908,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
         while (!deque.isEmpty() && deque.peekFirst().timeMs < cutoffMs) {
             deque.removeFirst();
         }
+    }
+
+    private static double latestValue(Deque<SleepFeatureEngine.Sample> samples) {
+        SleepFeatureEngine.Sample sample = samples.peekLast();
+        return sample == null ? Double.NaN : sample.value;
     }
 
     private static double clamp01(double value) {

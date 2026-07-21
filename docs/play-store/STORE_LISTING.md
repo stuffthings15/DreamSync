@@ -22,13 +22,13 @@ DreamSync's mission is to protect sleep continuity. It automatically estimates l
 
 HOW IT WORKS
 
-Turn DreamSync On once. After one-time watch permission prompts, low-power Wear Health Services monitoring watches for an asleep-state signal every night until you turn DreamSync Off. On compatible watches without that optional signal, a conservative passive-heart-rate candidate inside the normal sleep window starts higher-rate confirmation. Passive HR never authorizes a cue by itself. Sustained low motion, fresh heart-rate data, and signal quality must confirm likely sleep first. High-end watches automatically use every available approved advanced signal, including IBI/HRV, skin-temperature trend, off-wrist status, and raw PPG when supported.
+Turn DreamSync On once. After one-time watch permission prompts, low-power Wear Health Services monitoring watches for an asleep-state signal every night until you turn DreamSync Off. On compatible watches without that optional signal, a conservative passive-heart-rate candidate inside the normal sleep window starts higher-rate confirmation. Passive HR never authorizes a cue by itself. Sustained low motion, fresh heart-rate data, and signal quality must confirm likely sleep first. High-end watches keep available approved IBI/HRV, skin-temperature, off-wrist, and raw-PPG features; raw PPG runs only in short cue-quality windows.
 
 Install DreamSync on the Android phone first. The phone finds a paired Wear OS watch and, when needed, opens DreamSync's official watch Play Store page for one-tap install approval. All DreamSync controls stay on the phone; the watch only shows required first-time health permission prompts.
 
 Protect only is the default and plays no sleep sound. Experimental watch sound stays locked until seven valid baseline nights are recorded. If heart data is unreliable, DreamSync logs only and stays quiet. If sleep is not estimated within three hours, the session ends without sound. Any possible arousal starts a 20-minute quiet period. The first cue-linked wake sign stops sound for the night and lowers the next gain by 30%.
 
-DreamSync builds a rolling seven-night baseline while using conservative defaults on earlier nights. It reports estimated awakenings, wake after sleep onset, longest uninterrupted sleep bout, cue-linked arousal rate, and a user-entered morning disturbance rating. These wrist-based values are not clinical sleep-stage measurements.
+DreamSync builds a rolling seven-night baseline while using conservative defaults on earlier nights. After three valid nights, passive candidate detection uses the learned resting heart rate plus 5 BPM, capped at the conservative 75 BPM fallback. It reports estimated awakenings, wake after sleep onset, longest uninterrupted sleep bout, cue-linked arousal rate, and a user-entered morning disturbance rating. These wrist-based values are not clinical sleep-stage measurements.
 
 Pre-sleep guidance covers schedule regularity, daylight, exercise, warm-bath timing, and comfortable paced breathing. Charge the watch several hours before normal sleep. After three recorded nights, DreamSync learns the usual sleep-start time and sends a local charge reminder three hours earlier. Optional, user-approved notification protection is active only during a detected sleep session and restores the prior setting afterward.
 
@@ -55,7 +55,7 @@ DreamSync is intended for adults age 18 and older. It is experimental wellness s
 
 WATCH COMPATIBILITY
 
-DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches that pass its live motion, heart-rate, permission, software, and companion-link checks. This includes eligible Samsung Galaxy Watch and Google Pixel Watch models. Core watches use standard Wear OS motion and heart rate. Full-sensor watches keep all available approved advanced features. Galaxy Watch Ultra 2024 and 2025 are the first physical-validation targets; untested models are not described as validated.
+DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches that pass its live motion, heart-rate, permission, software, companion-link, and watch-speaker checks. This includes eligible Samsung Galaxy Watch, Google Pixel Watch, and third-party Wear OS models. The app reports Enhanced protection, Core protection, Monitoring only, Phone protection only, or Needs attention. Full-sensor watches keep available approved advanced features; raw PPG is limited to short quality windows. No watch model is described as physically validated until its recorded tests pass.
 
 Advanced Samsung signals require the approved Samsung Health Sensor SDK package and signing registration. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this release.
 

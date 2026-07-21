@@ -3,6 +3,7 @@ package com.remote.DreamSync;
 import android.os.Build;
 
 import com.remote.DreamSync.shared.DeviceCompatibility;
+import com.remote.DreamSync.shared.CapabilityReport;
 
 import org.json.JSONObject;
 
@@ -19,6 +20,9 @@ final class SensorCapabilitySnapshot {
     final boolean samsungSdkConnected;
     final Set<String> samsungTrackerTypes;
     final boolean liveSelfTestPassed;
+    final boolean advancedSelfTestPassed;
+    final boolean watchSpeaker;
+    final boolean permissionsReady;
     final String detail;
 
     SensorCapabilitySnapshot(
@@ -28,6 +32,9 @@ final class SensorCapabilitySnapshot {
             boolean samsungSdkConnected,
             Set<String> samsungTrackerTypes,
             boolean liveSelfTestPassed,
+            boolean advancedSelfTestPassed,
+            boolean watchSpeaker,
+            boolean permissionsReady,
             String detail
     ) {
         this.manufacturer = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER;
@@ -40,7 +47,19 @@ final class SensorCapabilitySnapshot {
                 ? Collections.emptySet()
                 : Collections.unmodifiableSet(new HashSet<>(samsungTrackerTypes));
         this.liveSelfTestPassed = liveSelfTestPassed;
+        this.advancedSelfTestPassed = advancedSelfTestPassed;
+        this.watchSpeaker = watchSpeaker;
+        this.permissionsReady = permissionsReady;
         this.detail = detail == null ? "" : detail;
+    }
+
+    CapabilityReport report() {
+        boolean ibi = supports("HEART_RATE_CONTINUOUS") && advancedSelfTestPassed;
+        return new CapabilityReport(true, motion, standardHeartRate || ibi,
+                watchSpeaker, ibi,
+                supports("SKIN_TEMPERATURE_CONTINUOUS") && advancedSelfTestPassed,
+                ibi, supports("PPG_CONTINUOUS"), permissionsReady,
+                liveSelfTestPassed);
     }
 
     DeviceCompatibility.Capabilities compatibility() {
@@ -63,7 +82,7 @@ final class SensorCapabilitySnapshot {
     }
 
     String toJson() {
-        DeviceCompatibility checker = new DeviceCompatibility();
+        CapabilityReport report = report();
         DeviceCompatibility.Capabilities values = compatibility();
         JSONObject object = new JSONObject();
         try {
@@ -78,12 +97,20 @@ final class SensorCapabilitySnapshot {
             object.put("rawPpg", values.rawPpg);
             object.put("offWrist", values.offWrist);
             object.put("liveSelfTestPassed", liveSelfTestPassed);
-            object.put("status", checker.classify(values).name());
-            object.put("featureProfile", checker.featureProfile(values));
+            object.put("advancedSelfTestPassed", advancedSelfTestPassed);
+            object.put("ibiAvailable", supports("HEART_RATE_CONTINUOUS"));
+            object.put("skinTemperatureAvailable",
+                    supports("SKIN_TEMPERATURE_CONTINUOUS"));
+            object.put("rawPpgAvailable", supports("PPG_CONTINUOUS"));
+            object.put("watchSpeaker", watchSpeaker);
+            object.put("permissionsReady", permissionsReady);
+            object.put("status", report.profile().name());
+            object.put("profile", report.profile().name());
+            object.put("featureProfile", report.profile().name());
             object.put("allSupportedFeaturesEnabled",
-                    checker.classify(values)
-                            == DeviceCompatibility.Status.FULLY_SUPPORTED);
-            object.put("reason", checker.reason(values));
+                    report.profile() == CapabilityReport.Profile.ENHANCED_PROTECTION);
+            object.put("experimentalAudioEligible", report.experimentalAudioEligible());
+            object.put("reason", report.reason());
             object.put("detail", detail);
         } catch (Exception ignored) {
             return "{}";

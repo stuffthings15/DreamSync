@@ -25,6 +25,8 @@ final class AutoSleepConfig {
     long firstLowHeartRateElapsedMs;
     long lastPassiveHeartRateElapsedMs;
     int lowHeartRateSamples;
+    int baselineNights;
+    double learnedRestingHeartRateBpm = Double.NaN;
 
     static AutoSleepConfig fromJson(String json) {
         AutoSleepConfig config = new AutoSleepConfig();
@@ -69,6 +71,10 @@ final class AutoSleepConfig {
                 "lastPassiveHeartRateElapsedMs", 0L);
         config.lowHeartRateSamples = Math.max(0,
                 p.getInt("lowHeartRateSamples", 0));
+        config.baselineNights = Math.max(0, p.getInt("baselineNights", 0));
+        long learnedBits = p.getLong("learnedRestingHeartRateBits",
+                Double.doubleToRawLongBits(Double.NaN));
+        config.learnedRestingHeartRateBpm = Double.longBitsToDouble(learnedBits);
         return config;
     }
 
@@ -94,6 +100,9 @@ final class AutoSleepConfig {
                 .putLong("firstLowHeartRateElapsedMs", firstLowHeartRateElapsedMs)
                 .putLong("lastPassiveHeartRateElapsedMs", lastPassiveHeartRateElapsedMs)
                 .putInt("lowHeartRateSamples", lowHeartRateSamples)
+                .putInt("baselineNights", baselineNights)
+                .putLong("learnedRestingHeartRateBits",
+                        Double.doubleToRawLongBits(learnedRestingHeartRateBpm))
                 .apply();
     }
 

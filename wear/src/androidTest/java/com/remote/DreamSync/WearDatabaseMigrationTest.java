@@ -25,7 +25,7 @@ public final class WearDatabaseMigrationTest {
             WearDatabase.class.getCanonicalName(),
             new FrameworkSQLiteOpenHelperFactory());
 
-    @Test public void migration2To3PreservesSessionAndAddsContinuityFields()
+    @Test public void migration2To4PreservesSessionAndLabelsLegacyDeepAudio()
             throws IOException {
         SupportSQLiteDatabase database = helper.createDatabase(TEST_DB, 2);
         database.execSQL("INSERT INTO sessions (sessionId, mode, state, startUtcMs, "
@@ -34,13 +34,15 @@ public final class WearDatabaseMigrationTest {
         database.close();
 
         database = helper.runMigrationsAndValidate(
-                TEST_DB, 3, true, WearDatabase.MIGRATION_2_3);
+                TEST_DB, 4, true,
+                WearDatabase.MIGRATION_2_3, WearDatabase.MIGRATION_3_4);
         try (Cursor cursor = database.query("SELECT sessionId, awakeningCount, "
-                + "wakeAfterSleepOnsetMs FROM sessions WHERE sessionId='s1'")) {
+                + "wakeAfterSleepOnsetMs, mode FROM sessions WHERE sessionId='s1'")) {
             cursor.moveToFirst();
             assertEquals("s1", cursor.getString(0));
             assertEquals(0, cursor.getInt(1));
             assertEquals(0L, cursor.getLong(2));
+            assertEquals("EXPERIMENTAL_AUDIO", cursor.getString(3));
         }
         database.close();
     }

@@ -60,6 +60,8 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
         double lastBpm = Double.NaN;
         boolean lastInWindow = false;
         boolean candidateReady = false;
+        double candidateThresholdBpm = passiveSleepGate.candidateThresholdBpm(
+                config.learnedRestingHeartRateBpm, config.baselineNights);
         for (SampleDataPoint<Double> point : heartRates) {
             long sampleElapsed = point.getTimeDurationFromBoot().toMillis();
             if (sampleElapsed <= config.lastPassiveHeartRateElapsedMs) continue;
@@ -75,6 +77,7 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
             PassiveSleepGate.Result result = passiveSleepGate.observe(
                     inWindow,
                     point.getValue(),
+                    candidateThresholdBpm,
                     sampleElapsed,
                     config.firstLowHeartRateElapsedMs,
                     config.lowHeartRateSamples);
@@ -89,7 +92,9 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
                 WatchDiagnostics.auto(this, config, "PASSIVE_SLEEP_CANDIDATE_READY",
                         "source=heart_rate_fallback;bpm=" + point.getValue()
                                 + ";lowHeartRateSamples=" + result.lowHeartRateSamples
-                                + ";inSleepWindow=" + inWindow);
+                                + ";inSleepWindow=" + inWindow
+                                + ";candidateThresholdBpm=" + candidateThresholdBpm
+                                + ";baselineNights=" + config.baselineNights);
                 startAutomaticSession(
                         "WEAR_HEALTH_SERVICES_PASSIVE_HR_FALLBACK");
                 return;
@@ -101,7 +106,9 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
                         + ";inSleepWindow=" + lastInWindow
                         + ";lowHeartRateSamples=" + config.lowHeartRateSamples
                         + ";candidateReady=" + candidateReady
-                        + ";required=3 samples spanning 10 minutes at <=75 bpm");
+                        + ";candidateThresholdBpm=" + candidateThresholdBpm
+                        + ";baselineNights=" + config.baselineNights
+                        + ";required=3 samples spanning 10 minutes");
     }
 
     private void startAutomaticSession(String source) {

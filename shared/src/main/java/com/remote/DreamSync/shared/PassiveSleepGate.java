@@ -2,7 +2,8 @@ package com.remote.DreamSync.shared;
 
 /** Conservative coarse gate for watches without a passive asleep-state signal. */
 public final class PassiveSleepGate {
-    public static final double MAX_SLEEP_CANDIDATE_BPM = 75.0;
+    public static final double FALLBACK_SLEEP_CANDIDATE_BPM = 75.0;
+    public static final int MIN_PERSONAL_BASELINE_NIGHTS = 3;
     public static final long REQUIRED_SPAN_MS = 10L * 60_000L;
     private static final long MAX_SEQUENCE_GAP_MS = 90L * 60_000L;
 
@@ -37,8 +38,20 @@ public final class PassiveSleepGate {
             long previousFirstElapsedMs,
             int previousSamples
     ) {
+        return observe(inSleepWindow, bpm, FALLBACK_SLEEP_CANDIDATE_BPM,
+                sampleElapsedMs, previousFirstElapsedMs, previousSamples);
+    }
+
+    public Result observe(
+            boolean inSleepWindow,
+            double bpm,
+            double candidateThresholdBpm,
+            long sampleElapsedMs,
+            long previousFirstElapsedMs,
+            int previousSamples
+    ) {
         if (!inSleepWindow || !Double.isFinite(bpm)
-                || bpm < 30.0 || bpm > MAX_SLEEP_CANDIDATE_BPM
+                || bpm < 30.0 || bpm > sanitizeThreshold(candidateThresholdBpm)
                 || sampleElapsedMs <= 0L) {
             return new Result(0L, 0, false);
         }
@@ -53,6 +66,20 @@ public final class PassiveSleepGate {
         }
         boolean ready = count >= 3 && sampleElapsedMs - first >= REQUIRED_SPAN_MS;
         return new Result(first, count, ready);
+    }
+
+    /** Uses a personal resting baseline when at least three valid nights exist. */
+    public double candidateThresholdBpm(double learnedRestingBpm, int baselineNights) {
+        if (baselineNights < MIN_PERSONAL_BASELINE_NIGHTS
+                || !Double.isFinite(learnedRestingBpm)) {
+            return FALLBACK_SLEEP_CANDIDATE_BPM;
+        }
+        return sanitizeThreshold(learnedRestingBpm + 5.0);
+    }
+
+    private static double sanitizeThreshold(double value) {
+        if (!Double.isFinite(value)) return FALLBACK_SLEEP_CANDIDATE_BPM;
+        return Math.max(45.0, Math.min(FALLBACK_SLEEP_CANDIDATE_BPM, value));
     }
 
     private static int normalize(int minute) {

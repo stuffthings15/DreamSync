@@ -13,6 +13,10 @@ public final class MissionProtectionPlanTest {
         assertEquals(ProtectionMode.PROTECT_ONLY, ProtectionMode.fromStored("COMBINED"));
         assertEquals(ProtectionMode.EXPERIMENTAL_AUDIO,
                 ProtectionMode.fromStored("EXPERIMENTAL_AUDIO"));
+        assertEquals(ProtectionMode.EXPERIMENTAL_AUDIO,
+                ProtectionMode.fromHistoricalRecord("DEEP"));
+        assertEquals(ProtectionMode.PROTECT_ONLY,
+                ProtectionMode.fromHistoricalRecord("LUCID"));
     }
 
     @Test public void experimentalSoundRequiresSevenNightsAndProgressesSlowly() {
@@ -48,6 +52,19 @@ public final class MissionProtectionPlanTest {
                 true, true, true, true, true, true);
         assertEquals(CapabilityReport.Profile.ENHANCED_PROTECTION, enhanced.profile());
         assertTrue(enhanced.features().get("rawPpg"));
+
+        CapabilityReport monitoring = new CapabilityReport(
+                true, true, true, false,
+                false, false, false, false, true, true);
+        assertEquals(CapabilityReport.Profile.MONITORING_ONLY, monitoring.profile());
+        CapabilityReport phoneOnly = new CapabilityReport(
+                false, false, false, true,
+                false, false, false, false, true, true);
+        assertEquals(CapabilityReport.Profile.PHONE_PROTECTION_ONLY, phoneOnly.profile());
+        CapabilityReport attention = new CapabilityReport(
+                true, true, true, true,
+                false, false, false, false, false, true);
+        assertEquals(CapabilityReport.Profile.NEEDS_ATTENTION, attention.profile());
     }
 
     @Test public void decisionAlwaysFailsClosedForStaleOrOffWristSignals() {

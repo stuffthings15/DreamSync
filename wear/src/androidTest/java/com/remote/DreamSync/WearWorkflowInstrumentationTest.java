@@ -52,6 +52,29 @@ public final class WearWorkflowInstrumentationTest {
                 context, "session", "handshake"));
     }
 
+    @Test public void experimentalAudioFailsClosedUntilWatchThresholdConfirmed() {
+        SessionConfig config = SessionConfig.fromJson("{"
+                + "\"mode\":\"EXPERIMENTAL_AUDIO\","
+                + "\"watchAudioCalibrated\":false,"
+                + "\"watchAudibleThreshold\":0.04}");
+        assertFalse(config.usesDeepCues());
+        config = SessionConfig.fromJson("{"
+                + "\"mode\":\"EXPERIMENTAL_AUDIO\","
+                + "\"watchAudioCalibrated\":true,"
+                + "\"watchAudibleThreshold\":0.04}");
+        assertTrue(config.usesDeepCues());
+    }
+
+    @Test public void learnedPassiveBaselineSurvivesConfigurationPersistence() {
+        AutoSleepConfig config = new AutoSleepConfig();
+        config.baselineNights = 7;
+        config.learnedRestingHeartRateBpm = 61.5;
+        config.save(context);
+        AutoSleepConfig restored = AutoSleepConfig.load(context);
+        assertEquals(7, restored.baselineNights);
+        assertEquals(61.5, restored.learnedRestingHeartRateBpm, 0.001);
+    }
+
     @Test public void roundScreenWorkflowIsScrollableAndPhoneControlled() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

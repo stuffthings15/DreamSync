@@ -12,7 +12,7 @@ DreamSync's mission is to protect sleep continuity by automatically estimating l
 
 ## Watch compatibility
 
-DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches. The watch must pass live motion, heart-rate, software, permission, and companion-link checks. Core watches use standard Wear OS signals. High-end watches are not downgraded: every approved advanced signal reported by the device is enabled, including IBI/HRV, skin temperature, off-wrist status, and raw PPG when the sensor provider supports them. Galaxy Watch4 and later models can use the optional Samsung sensor layer after its package/signing approval. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this Android release.
+DreamSync targets Android 8.0+ phones with Google Play services and Wear OS 3+ watches. The watch must pass live motion, heart-rate, speaker, software, permission, and companion-link checks. The app reports Enhanced protection, Core protection, Monitoring only, Phone protection only, or Needs attention. High-end watches are not downgraded: approved IBI/HRV, skin temperature, off-wrist, and raw-PPG features remain available when verified; raw PPG runs only in short cue-quality windows. Galaxy Watch4 and later models can use the optional Samsung sensor layer after its package/signing approval. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Samsung Tizen watches are not supported in this Android release.
 
 ## Automatic sleep estimation
 

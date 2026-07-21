@@ -18,8 +18,8 @@ android {
         applicationId 'com.remote.DreamSync'
         minSdk 30
         targetSdk 36
-        versionCode 36
-        versionName '1.3.1-test'
+        versionCode 38
+        versionName '1.3.2-test'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         javaCompileOptions {
             annotationProcessorOptions {

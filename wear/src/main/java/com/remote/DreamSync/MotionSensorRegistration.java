@@ -5,17 +5,21 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Handler;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** Tries the standard motion sensors in order and records every registration attempt. */
 final class MotionSensorRegistration {
     static final class Result {
         final Sensor sensor;
+        final List<Sensor> sensors;
         final boolean registered;
         final String details;
 
-        Result(Sensor sensor, boolean registered, String details) {
+        Result(Sensor sensor, List<Sensor> sensors, boolean registered, String details) {
             this.sensor = sensor;
+            this.sensors = Collections.unmodifiableList(new ArrayList<>(sensors));
             this.registered = registered;
             this.details = details;
         }
@@ -28,13 +32,16 @@ final class MotionSensorRegistration {
             int maximumLatencyUs,
             Handler handler
     ) {
-        if (manager == null) return new Result(null, false, "sensorManager=null");
+        if (manager == null) {
+            return new Result(null, Collections.emptyList(), false, "sensorManager=null");
+        }
         int[] types = new int[]{
                 Sensor.TYPE_ACCELEROMETER,
                 Sensor.TYPE_LINEAR_ACCELERATION,
                 Sensor.TYPE_GRAVITY
         };
         StringBuilder details = new StringBuilder();
+        List<Sensor> registeredSensors = new ArrayList<>();
         for (int type : types) {
             List<Sensor> candidates = manager.getSensorList(type);
             if (candidates == null || candidates.isEmpty()) {
@@ -42,23 +49,58 @@ final class MotionSensorRegistration {
                 continue;
             }
             for (Sensor candidate : candidates) {
-                boolean registered = false;
-                String error = "";
-                try {
-                    registered = handler == null
-                            ? manager.registerListener(listener, candidate, samplingPeriodUs)
-                            : manager.registerListener(listener, candidate, samplingPeriodUs,
-                            maximumLatencyUs, handler);
-                } catch (RuntimeException exception) {
-                    error = exception.getClass().getSimpleName() + ":"
-                            + safe(exception.getMessage());
+                boolean registered = tryRegister(manager, listener, candidate,
+                        samplingPeriodUs, maximumLatencyUs, handler, details);
+                if (!registered && samplingPeriodUs != 200_000) {
+                    registered = tryRegister(manager, listener, candidate,
+                            200_000, maximumLatencyUs, handler, details);
                 }
-                append(details, describe(candidate) + ";registered=" + registered
-                        + (error.isEmpty() ? "" : ";error=" + error));
-                if (registered) return new Result(candidate, true, details.toString());
+                if (registered) registeredSensors.add(candidate);
             }
         }
-        return new Result(null, false, details.toString());
+        Sensor primary = registeredSensors.isEmpty() ? null : registeredSensors.get(0);
+        return new Result(primary, registeredSensors, !registeredSensors.isEmpty(),
+                details.toString());
+    }
+
+    static boolean accepts(List<Sensor> registeredSensors, Sensor eventSensor) {
+        if (eventSensor == null || registeredSensors == null) return false;
+        for (Sensor registered : registeredSensors) {
+            if (registered == eventSensor) return true;
+            if (registered != null
+                    && registered.getType() == eventSensor.getType()
+                    && safe(registered.getName()).equals(safe(eventSensor.getName()))
+                    && safe(registered.getVendor()).equals(safe(eventSensor.getVendor()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean tryRegister(
+            SensorManager manager,
+            SensorEventListener listener,
+            Sensor candidate,
+            int samplingPeriodUs,
+            int maximumLatencyUs,
+            Handler handler,
+            StringBuilder details
+    ) {
+        boolean registered = false;
+        String error = "";
+        try {
+            registered = handler == null
+                    ? manager.registerListener(listener, candidate, samplingPeriodUs)
+                    : manager.registerListener(listener, candidate, samplingPeriodUs,
+                    maximumLatencyUs, handler);
+        } catch (RuntimeException exception) {
+            error = exception.getClass().getSimpleName() + ":"
+                    + safe(exception.getMessage());
+        }
+        append(details, describe(candidate) + ";samplePeriodUs=" + samplingPeriodUs
+                + ";registered=" + registered
+                + (error.isEmpty() ? "" : ";error=" + error));
+        return registered;
     }
 
     static String inventory(SensorManager manager) {

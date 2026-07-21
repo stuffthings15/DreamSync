@@ -13,6 +13,7 @@ import com.remote.DreamSync.shared.CueWaveforms;
 
 /** Built-in watch-speaker playback. Phone playback is used only if this fails before start. */
 final class WatchAudioOutput {
+    static final float SYSTEM_CHECK_GAIN = 0.10f;
     static final class Result {
         final boolean success;
         final boolean started;
@@ -30,6 +31,7 @@ final class WatchAudioOutput {
     private final AudioManager audioManager;
     private final float[] deepWaveform;
     private final float[] lucidWaveform;
+    private final float[] systemCheckWaveform;
     private volatile boolean preferredSpeakerAccepted;
     private volatile int routedDeviceType = -1;
     private volatile String lastBackend = "none";
@@ -39,6 +41,7 @@ final class WatchAudioOutput {
                 .getSystemService(Context.AUDIO_SERVICE);
         deepWaveform = CueWaveforms.deepPinkPair(1.0f, 0x445245414dL);
         lucidWaveform = CueWaveforms.lucidChime(1.0f);
+        systemCheckWaveform = CueWaveforms.audibleSystemCheck(1.0f);
     }
 
     Result preflight() {
@@ -57,9 +60,23 @@ final class WatchAudioOutput {
     }
 
     Result play(String cueType, float gain, Runnable onStarted) {
+        float[] source = "LUCID".equals(cueType) ? lucidWaveform : deepWaveform;
+        return playWaveform(source, gain, "watch_audiotrack_stream", onStarted);
+    }
+
+    Result playSystemCheck(Runnable onStarted) {
+        return playWaveform(systemCheckWaveform, SYSTEM_CHECK_GAIN,
+                "watch_audiotrack_system_check", onStarted);
+    }
+
+    private Result playWaveform(
+            float[] source,
+            float gain,
+            String backend,
+            Runnable onStarted
+    ) {
         Result preflight = preflight();
         if (!preflight.success) return preflight;
-        float[] source = "LUCID".equals(cueType) ? lucidWaveform : deepWaveform;
         short[] samples = pcm16(source, gain);
         AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
@@ -102,7 +119,7 @@ final class WatchAudioOutput {
             track.play();
             started = track.getPlayState() == AudioTrack.PLAYSTATE_PLAYING;
             if (!started) return result(false, false, "watch AudioTrack did not start");
-            lastBackend = "watch_audiotrack_stream";
+            lastBackend = backend;
             if (onStarted != null) onStarted.run();
 
             int offset = 0;

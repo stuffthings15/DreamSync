@@ -10,11 +10,11 @@ Date: 2026-07-20
 - Audio-route, focus, volume, calibration, interruption, sensor-freshness, off-wrist, low-battery, and storage gates.
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
-- Seventy-three deterministic unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
+- Seventy-four deterministic unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
 - Phone instrumentation passes 7/7 on an Android 16 phone emulator; Wear workflow instrumentation passes 9/9 when installed on that same phone emulator. This is Android behavior evidence, not physical Wear OS hardware evidence.
-- Google Play internal testing serves phone 35 and Wear 36 (`1.3.1-test`). The phone track is Active; the Wear OS track summary remains Inactive pending completion of its Play form-factor setup.
+- Google Play internal testing serves phone 37 and Wear 38 (`1.3.2-test`). The phone track is Active; the Wear OS release is available to testers while its track summary remains Inactive pending completion of its Play form-factor setup.
 - The one-time sound check waits for real playback, uses local PCM WAV playback with streaming fallback, requires human confirmation that the cue was audible, shows the exact backend error, and provides a bounded Export Debug Log without raw node identifiers.
-- A phone-controlled 45-second live check records actual watch motion and heart-rate samples, permissions, sensor registration, off-wrist state, and available advanced-sensor counts. It rejects stale, duplicate, wrong-watch, wrong-enrollment, and wrong-check results, and logs a failure after a two-minute timeout.
+- A phone-controlled 75-second live check records actual watch motion and heart-rate samples, permissions, sensor registration, off-wrist state, and available advanced-sensor counts. It tries every registered motion stream, confirms the stream that actually emits data, uses Health Services before a sequential standard heart-rate fallback, and logs a failure after a two-minute timeout.
 - Phone and watch diagnostics now trace configuration, passive monitoring and inputs, automatic-session handshake, sensor registration and readings, quality and eligibility decisions, cue delivery and phone audio acknowledgement, the user-run live system check, no-haptics policy, failures, and terminal summaries.
 - The phone visibly reports `OFF`, `STARTING`, `ON`, and watch-confirmed states; speaker selection no longer mistakes an available Bluetooth watch route for active headphones.
 - Audited source/asset/dependency provenance register, third-party notices, owner sign-off packet, and exact release fingerprints.
@@ -40,7 +40,7 @@ Date: 2026-07-20
 
 - Official Samsung Health Sensor SDK AAR, Samsung partner approval, and package/signing-certificate registration.
 - Physical Galaxy, Pixel Watch, and third-party Wear OS sensor, audio, route, disconnect, permission, process-death, off-wrist, reboot-night, seven-night, and battery validation.
-- The earlier zero-reading and missing-watch-audio failures are not claimed fixed on physical hardware until build 36 is exercised on a real watch and its exported log is reviewed.
+- The build 38 code directly addresses the physical log's zero-reading, inaudible-tone, and disappearing-report paths, but those fixes are not claimed proven until build 38 is exercised on the real watch and its exported log is reviewed.
 - PSG comparison before sleep-stage accuracy claims.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Owner-signed prototype/source/asset declaration and its supporting attachments before public production release.

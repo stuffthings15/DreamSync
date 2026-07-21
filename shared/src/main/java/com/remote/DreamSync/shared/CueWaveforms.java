@@ -7,6 +7,10 @@ public final class CueWaveforms {
     public static final int DEEP_BURST_MS = 50;
     public static final int DEEP_PAIR_INTERVAL_MS = 1_075;
     public static final int DEEP_FADE_MS = 5;
+    public static final int SYSTEM_CHECK_TONE_MS = 300;
+    public static final int SYSTEM_CHECK_GAP_MS = 150;
+    public static final int SYSTEM_CHECK_TONE_COUNT = 3;
+    public static final String SYSTEM_CHECK_VERSION = "awake-880hz-3x300ms-v1";
     public static final String VERSION = "deep-pink-50ms-pair-1075ms-v2_lucid-660-880-v1";
 
     private CueWaveforms() {}
@@ -27,6 +31,20 @@ public final class CueWaveforms {
         float[] output = new float[toneSamples * 2 + gapSamples];
         sine(output, 0, toneSamples, 660.0, gain * 0.75f);
         sine(output, toneSamples + gapSamples, toneSamples, 880.0, gain * 0.75f);
+        return output;
+    }
+
+    /** Clear awake-only calibration tone. This is never used as an overnight cue. */
+    public static float[] audibleSystemCheck(float gain) {
+        int toneSamples = SAMPLE_RATE * SYSTEM_CHECK_TONE_MS / 1_000;
+        int gapSamples = SAMPLE_RATE * SYSTEM_CHECK_GAP_MS / 1_000;
+        int totalSamples = toneSamples * SYSTEM_CHECK_TONE_COUNT
+                + gapSamples * (SYSTEM_CHECK_TONE_COUNT - 1);
+        float[] output = new float[totalSamples];
+        for (int index = 0; index < SYSTEM_CHECK_TONE_COUNT; index++) {
+            int offset = index * (toneSamples + gapSamples);
+            sine(output, offset, toneSamples, 880.0, gain);
+        }
         return output;
     }
 

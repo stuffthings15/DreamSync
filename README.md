@@ -20,7 +20,7 @@ Turn **DreamSync On** once on the phone. Approve the watch health permissions on
 
 Install the phone app first. **Set up watch app** finds a connected Wear OS watch. If DreamSync is missing there, the phone opens DreamSync's official Play Store page on the watch. Tap **Install** once; the phone then detects, binds, and configures the watch automatically. Google Play requires that install confirmation, so Android apps cannot silently install the watch app in the background. The watch has no settings; opening it returns to the phone controls.
 
-Turn On does not depend on phone-speaker calibration. The built-in watch speaker is the primary experimental output. Phone fallback is Off unless the user explicitly enables it. **Run watch system check** plays an awake watch cue, sends a short test vibration, tries accelerometer/linear-acceleration/gravity motion paths, uses Wear Health Services MeasureClient for live heart rate, and checks every available advanced sensor. The phone always opens a result report. A missing result fails after two minutes. **Export debug log** saves sensor inventory, every registration attempt, heart availability and readings, 5/15/30-second progress, audio route and lifecycle, the final payload, and report display. Raw device-node identifiers are excluded.
+Turn On does not depend on phone-speaker calibration. The built-in watch speaker is the primary experimental output. Phone fallback is Off unless the user explicitly enables it. **Run watch system check** plays three clear awake-only tones at the safe test ceiling, sends a short test vibration, listens to every registered accelerometer/linear-acceleration/gravity path on a dedicated sensor thread, and gives Wear Health Services plus a sequential standard-sensor fallback 75 seconds to obtain heart rate. The phone result stays open until the user closes or answers it. A missing result fails after two minutes. **Export debug log** saves sensor inventory, every registration attempt, confirmed event source, heart availability and readings, 5/15/30/60-second progress, audio waveform/route/lifecycle, the final payload, and report acknowledgement. Raw device-node identifiers are excluded.
 
 The pipeline check records configuration delivery, passive sleep monitoring, passive heart-rate or asleep-state inputs, fresh-session handshake, active sensor registration and readings, quality and safety decisions, cue delivery, watch-primary and phone-fallback audio lifecycles, the user-run live system check, phone report display, and terminal summaries. Every blocked action includes its reason. Sleep haptics remain disabled.
 
@@ -69,7 +69,7 @@ $env:JAVA_HOME='C:\Users\stuff\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2'
 - Package: `com.remote.DreamSync`
 - Publisher: Remote
 - Product name: DreamSync
-- Test version: phone 35 / Wear OS 36 (`1.3.1-test`)
+- Test version: phone 37 / Wear OS 38 (`1.3.2-test`)
 - Privacy policy and store copy are in `docs/play-store/`.
 
 Copyright 2026 Remote. All rights reserved.

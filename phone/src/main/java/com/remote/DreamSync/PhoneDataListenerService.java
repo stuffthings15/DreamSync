@@ -466,6 +466,8 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 envelope.payload.getOrDefault("watchAudioReason", ""))
                 + ";watchAudioGain="
                 + envelope.payload.getOrDefault("watchAudioGain", "")
+                + ";watchAudioWaveform=" + cleanDetails(
+                envelope.payload.getOrDefault("watchAudioWaveform", ""))
                 + ";watchMediaVolume="
                 + envelope.payload.getOrDefault("watchMediaVolume", "")
                 + ";watchMediaVolumeMax="

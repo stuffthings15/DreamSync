@@ -15,6 +15,9 @@ import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -47,6 +50,7 @@ import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SystemCheckEvaluator;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,7 +75,7 @@ public final class MainActivity extends Activity {
             "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA";
     private static final String USER_PREFS = "dreamsync_watch_user";
     private static final int CONFIG_SYNC_RETRY_LIMIT = 20;
-    private static final long SYSTEM_CHECK_DURATION_MS = 45_000L;
+    private static final long SYSTEM_CHECK_DURATION_MS = 75_000L;
 
     private TextView statusText;
     private boolean pendingEnable;
@@ -347,9 +351,7 @@ public final class MainActivity extends Activity {
                     WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_RESULT",
                             "status=" + status + ";" + systemCheckDetails(payload));
                     statusText.setText("System check " + status + ": " + reason
-                            + " Returning to phone controls...");
-                    statusText.postDelayed(
-                            () -> launchPhoneControls(config.phoneNodeId), 1_500L);
+                            + " Result sent. Read the full report on the phone.");
                 })
                 .addOnFailureListener(error -> {
                     WatchDiagnostics.auto(this, config, "SYSTEM_CHECK_RESULT_DELIVERY_FAILED",
@@ -417,8 +419,14 @@ public final class MainActivity extends Activity {
         private final Runnable progressFiveSeconds = () -> logProgress("5s");
         private final Runnable progressFifteenSeconds = () -> logProgress("15s");
         private final Runnable progressThirtySeconds = () -> logProgress("30s");
+        private final Runnable progressSixtySeconds = () -> logProgress("60s");
+        private final Runnable standardHeartFallback = this::startStandardHeartFallback;
         private Sensor accelerometer;
+        private Sensor motionEventSensor;
+        private List<Sensor> motionSensors = Collections.emptyList();
         private Sensor heartRate;
+        private HandlerThread sensorThread;
+        private Handler sensorHandler;
         private MeasureClient measureClient;
         private MeasureCallback measureCallback;
         private WatchAudioOutput watchAudioOutput;
@@ -439,6 +447,7 @@ public final class MainActivity extends Activity {
         private boolean additionalHealthPermission;
         private boolean motionRegistered;
         private boolean heartRegistered;
+        private boolean standardHeartFallbackAttempted;
         private volatile boolean measureSupported;
         private volatile boolean measureRegistered;
         private boolean hapticAvailable;
@@ -467,7 +476,7 @@ public final class MainActivity extends Activity {
             heartPermissionGranted = hasPermission(heartPermission());
             additionalHealthPermission = hasPermission(READ_ADDITIONAL_HEALTH_DATA);
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_STARTED",
-                    "checkId=" + checkId + ";durationSeconds=45"
+                    "checkId=" + checkId + ";durationSeconds=75"
                             + ";activityPermission=" + activityPermission
                             + ";heartPermission=" + heartPermissionGranted
                             + ";hapticAvailable=" + hapticAvailable
@@ -486,9 +495,13 @@ public final class MainActivity extends Activity {
             sensorInventory = MotionSensorRegistration.inventory(sensorManager);
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_SENSOR_INVENTORY",
                     sensorInventory);
+            sensorThread = new HandlerThread("dreamsync-live-system-check");
+            sensorThread.start();
+            sensorHandler = new Handler(sensorThread.getLooper());
             MotionSensorRegistration.Result motion = MotionSensorRegistration.register(
-                    sensorManager, this, 20_000, 0, null);
+                    sensorManager, this, 20_000, 0, sensorHandler);
             accelerometer = motion.sensor;
+            motionSensors = motion.sensors;
             motionRegistered = motion.registered;
             motionRegistrationDetails = motion.details;
             WatchDiagnostics.auto(MainActivity.this, config,
@@ -498,25 +511,15 @@ public final class MainActivity extends Activity {
                             + ";attempts=" + motionRegistrationDetails);
             heartRate = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
             if (heartRate != null) {
-                try {
-                    heartRegistered = sensorManager.registerListener(
-                            this, heartRate, SensorManager.SENSOR_DELAY_GAME);
-                    WatchDiagnostics.auto(MainActivity.this, config,
-                            heartRegistered ? "SYSTEM_CHECK_STANDARD_HEART_REGISTERED"
-                                    : "SYSTEM_CHECK_STANDARD_HEART_REGISTRATION_FAILED",
-                            MotionSensorRegistration.describe(heartRate));
-                } catch (RuntimeException error) {
-                    heartRegistered = false;
-                    WatchDiagnostics.auto(MainActivity.this, config,
-                            "SYSTEM_CHECK_STANDARD_HEART_REGISTRATION_EXCEPTION",
-                            MotionSensorRegistration.describe(heartRate) + ";error="
-                                    + safeMessage(error));
-                }
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_READY",
+                        MotionSensorRegistration.describe(heartRate));
             } else {
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;default=null");
             }
             startHealthMeasureCheck();
+            statusText.postDelayed(standardHeartFallback, 20_000L);
             startSamsungCheck();
             startWatchAudioCheck();
             statusText.setText((hapticRequested
@@ -525,6 +528,7 @@ public final class MainActivity extends Activity {
             statusText.postDelayed(progressFiveSeconds, 5_000L);
             statusText.postDelayed(progressFifteenSeconds, 15_000L);
             statusText.postDelayed(progressThirtySeconds, 30_000L);
+            statusText.postDelayed(progressSixtySeconds, 60_000L);
             statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
         }
 
@@ -536,8 +540,7 @@ public final class MainActivity extends Activity {
                             : "SYSTEM_CHECK_WATCH_AUDIO_PREFLIGHT_FAIL",
                     "reason=" + preflight.reason + ";" + preflight.diagnostics);
             remoteExecutor.execute(() -> {
-                WatchAudioOutput.Result result = watchAudioOutput.play(
-                        "DEEP", config.cueGain, () -> {
+                WatchAudioOutput.Result result = watchAudioOutput.playSystemCheck(() -> {
                             watchAudioStarted = true;
                             WatchDiagnostics.auto(MainActivity.this, config,
                                     "SYSTEM_CHECK_WATCH_AUDIO_STARTED",
@@ -561,9 +564,10 @@ public final class MainActivity extends Activity {
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MEASURE_HEART_REGISTERED",
                             "dataType=HEART_RATE_BPM");
-                    if (finished) {
+                    if (finished || standardHeartFallbackAttempted) {
                         measureClient.unregisterMeasureCallbackAsync(
                                 DataType.HEART_RATE_BPM, this);
+                        measureRegistered = false;
                         return;
                     }
                     updateProgressText();
@@ -574,6 +578,7 @@ public final class MainActivity extends Activity {
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MEASURE_HEART_REGISTRATION_FAILED",
                             safeMessage(error));
+                    startStandardHeartFallback();
                     updateProgressText();
                 }
 
@@ -626,12 +631,64 @@ public final class MainActivity extends Activity {
                                 DataType.HEART_RATE_BPM,
                                 ContextCompat.getMainExecutor(MainActivity.this),
                                 measureCallback);
+                    } else if (!measureSupported) {
+                        startStandardHeartFallback();
                     }
                 } catch (Exception error) {
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MEASURE_CAPABILITIES_FAILED", safeMessage(error));
+                    startStandardHeartFallback();
                 }
             }, ContextCompat.getMainExecutor(MainActivity.this));
+        }
+
+        private void startStandardHeartFallback() {
+            if (finished || standardHeartFallbackAttempted || measureHeartSamples > 0) return;
+            standardHeartFallbackAttempted = true;
+            if (heartRate == null) return;
+            if (measureClient != null && measureCallback != null && measureRegistered) {
+                ListenableFuture<Void> unregister = measureClient.unregisterMeasureCallbackAsync(
+                        DataType.HEART_RATE_BPM, measureCallback);
+                measureRegistered = false;
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_MEASURE_HEART_YIELDED_TO_FALLBACK",
+                        "no usable samples;availability=" + measureAvailability);
+                unregister.addListener(() -> {
+                    try {
+                        unregister.get();
+                        WatchDiagnostics.auto(MainActivity.this, config,
+                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTERED_FOR_FALLBACK",
+                                "success=true");
+                    } catch (Exception error) {
+                        WatchDiagnostics.auto(MainActivity.this, config,
+                                "SYSTEM_CHECK_MEASURE_HEART_UNREGISTER_FOR_FALLBACK_FAILED",
+                                safeMessage(error));
+                    }
+                    registerStandardHeartSensor();
+                }, ContextCompat.getMainExecutor(MainActivity.this));
+                return;
+            }
+            registerStandardHeartSensor();
+        }
+
+        private void registerStandardHeartSensor() {
+            if (finished || heartRate == null) return;
+            try {
+                heartRegistered = sensorHandler != null && sensorManager.registerListener(
+                        this, heartRate, 200_000, 0, sensorHandler);
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        heartRegistered ? "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_STARTED"
+                                : "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_FAILED",
+                        MotionSensorRegistration.describe(heartRate)
+                                + ";measureAvailability=" + measureAvailability);
+            } catch (RuntimeException error) {
+                heartRegistered = false;
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_STANDARD_HEART_FALLBACK_EXCEPTION",
+                        MotionSensorRegistration.describe(heartRate) + ";error="
+                                + safeMessage(error));
+            }
+            updateProgressText();
         }
 
         private void startSamsungCheck() {
@@ -687,11 +744,19 @@ public final class MainActivity extends Activity {
 
         @Override public void onSensorChanged(SensorEvent event) {
             if (finished || event == null || event.sensor == null) return;
-            if (event.sensor == accelerometer
+            if (MotionSensorRegistration.accepts(motionSensors, event.sensor)
                     && event.values != null && event.values.length >= 3
                     && Float.isFinite(event.values[0])
                     && Float.isFinite(event.values[1])
                     && Float.isFinite(event.values[2])) {
+                if (motionEventSensor == null) {
+                    motionEventSensor = event.sensor;
+                    WatchDiagnostics.auto(MainActivity.this, config,
+                            "SYSTEM_CHECK_MOTION_SOURCE_CONFIRMED",
+                            MotionSensorRegistration.describe(motionEventSensor));
+                }
+                if (!MotionSensorRegistration.accepts(
+                        Collections.singletonList(motionEventSensor), event.sensor)) return;
                 motionSamples++;
                 if (motionSamples == 1 || motionSamples % 100 == 0) {
                     WatchDiagnostics.auto(MainActivity.this, config,
@@ -724,6 +789,10 @@ public final class MainActivity extends Activity {
         }
 
         private void updateProgressText() {
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                statusText.post(this::updateProgressText);
+                return;
+            }
             if (finished) return;
             int totalHeart = standardHeartSamples + measureHeartSamples + samsungHeartSamples;
             String audio = watchAudioResult == null
@@ -766,8 +835,11 @@ public final class MainActivity extends Activity {
             statusText.removeCallbacks(progressFiveSeconds);
             statusText.removeCallbacks(progressFifteenSeconds);
             statusText.removeCallbacks(progressThirtySeconds);
+            statusText.removeCallbacks(progressSixtySeconds);
+            statusText.removeCallbacks(standardHeartFallback);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (sensorManager != null) sensorManager.unregisterListener(this);
+            if (sensorThread != null) sensorThread.quitSafely();
             if (measureClient != null && measureCallback != null && measureRegistered) {
                 ListenableFuture<Void> unregister = measureClient.unregisterMeasureCallbackAsync(
                         DataType.HEART_RATE_BPM, measureCallback);
@@ -842,7 +914,8 @@ public final class MainActivity extends Activity {
                     ? String.format(java.util.Locale.US, "%.1f", lastHeartBpm) : "NaN");
             payload.put("motionRegistered", Boolean.toString(motionRegistered));
             payload.put("heartRegistered", Boolean.toString(usableHeartRegistration));
-            payload.put("motionSensor", MotionSensorRegistration.describe(accelerometer));
+            payload.put("motionSensor", MotionSensorRegistration.describe(
+                    motionEventSensor == null ? accelerometer : motionEventSensor));
             payload.put("motionRegistrationDetails", motionRegistrationDetails);
             payload.put("sensorInventory", sensorInventory);
             payload.put("standardHeartRegistered", Boolean.toString(heartRegistered));
@@ -858,7 +931,9 @@ public final class MainActivity extends Activity {
             payload.put("watchAudioReason", watchAudioResult == null
                     ? "not_finished" : watchAudioResult.reason);
             payload.put("watchAudioGain", String.format(
-                    java.util.Locale.US, "%.4f", config.cueGain));
+                    java.util.Locale.US, "%.4f", WatchAudioOutput.SYSTEM_CHECK_GAIN));
+            payload.put("watchAudioWaveform",
+                    com.remote.DreamSync.shared.CueWaveforms.SYSTEM_CHECK_VERSION);
             payload.put("watchMediaVolume", Integer.toString(
                     watchAudioOutput == null ? -1 : watchAudioOutput.mediaVolume()));
             payload.put("watchMediaVolumeMax", Integer.toString(

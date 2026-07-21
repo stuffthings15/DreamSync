@@ -114,6 +114,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
+    private Sensor activeMotionSensor;
+    private List<Sensor> registeredMotionSensors = Collections.emptyList();
     private Sensor heartRate;
     private HandlerThread sensorThread;
     private Handler sensorHandler;
@@ -546,6 +548,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
         MotionSensorRegistration.Result motion = MotionSensorRegistration.register(
                 sensorManager, this, 200_000, 2_000_000, sensorHandler);
         accelerometer = motion.sensor;
+        registeredMotionSensors = motion.sensors;
         accelerometerRegistered = motion.registered;
         motionRegistrationDetails = motion.details;
         if (heartRate != null) {
@@ -569,9 +572,19 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     @Override
     public void onSensorChanged(SensorEvent event) {
+        if (event == null || event.sensor == null || event.values == null) return;
         long now = event.timestamp > 0L
                 ? event.timestamp / 1_000_000L : timeProvider.elapsedRealtimeMs();
-        if (event.sensor == accelerometer) {
+        if (MotionSensorRegistration.accepts(registeredMotionSensors, event.sensor)
+                && event.values.length >= 3) {
+            if (activeMotionSensor == null) {
+                activeMotionSensor = event.sensor;
+                accelerometer = activeMotionSensor;
+                WatchDiagnostics.session(this, config, "MOTION_SOURCE_CONFIRMED",
+                        MotionSensorRegistration.describe(activeMotionSensor));
+            }
+            if (!MotionSensorRegistration.accepts(
+                    Collections.singletonList(activeMotionSensor), event.sensor)) return;
             lastMotionSampleMs = now;
             double x = event.values[0];
             double y = event.values[1];

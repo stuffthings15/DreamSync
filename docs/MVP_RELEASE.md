@@ -12,7 +12,7 @@ Date: 2026-07-20
 - Experimental audio plays from the built-in watch speaker. Phone fallback is Off unless the user explicitly enables it. The phone shows clear `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 - The watch has no settings. Manual launch refers the user to the phone. One short awake-only vibration confirms passive monitoring registration; no haptics are used during sleep.
 - Setup check, full-chain debug export, local history/export/deletion, watchdogs, and fail-closed protocol checks are included.
-- The awake watch check requests missing activity/heart permissions, plays a watch-speaker cue, sends a test vibration, tries three standard motion paths, uses Wear Health Services for live heart rate, records every result, and opens a detailed report on the phone.
+- The 75-second awake watch check requests missing activity/heart permissions, plays three clear watch-speaker tones, sends a test vibration, tries every standard motion path on a dedicated thread, uses Wear Health Services before a sequential standard heart-rate fallback, records every result, and keeps a detailed phone report visible until acknowledged.
 - Durable watch results tolerate reasonable phone/watch clock drift. Time-sensitive cue messages keep the strict five-second future-time limit.
 
 ## High-end Samsung path
@@ -21,8 +21,8 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.3.1-test`, version code 35.
-- Wear OS `1.3.1-test`, version code 36.
+- Phone `1.3.2-test`, version code 37.
+- Wear OS `1.3.2-test`, version code 38.
 - Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
 - Seven phone and nine Wear OS workflow instrumentation tests passed on the Android 16 phone emulator. Real watch sensors, speaker, vibration, battery, reboot, and display behavior still require physical Wear OS hardware.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.

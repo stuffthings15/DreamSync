@@ -145,9 +145,14 @@ public final class PhoneWorkflowInstrumentationTest {
                 assertTrue(status.getText().toString().contains("Watch system check FAIL"));
                 assertTrue(status.getText().toString().contains("Heart-rate permission"));
                 assertTrue(activity.isSystemCheckReportShowingForTest());
+                assertEquals(0L, context.getSharedPreferences(
+                        "dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                        .getLong("last_system_check_displayed_utc", 0L));
+                activity.acknowledgeSystemCheckReportForTest();
                 assertEquals(completedUtcMs, context.getSharedPreferences(
                         "dreamsync_phone", android.content.Context.MODE_PRIVATE)
                         .getLong("last_system_check_displayed_utc", 0L));
+                assertTrue(!activity.isSystemCheckReportShowingForTest());
             });
         }
     }

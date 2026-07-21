@@ -73,4 +73,14 @@ public class SafetyCoreTest {
         assertEquals((int) (0.120 * CueWaveforms.SAMPLE_RATE) * 2
                 + (int) (0.100 * CueWaveforms.SAMPLE_RATE), lucid.length);
     }
+
+    @Test public void awakeSystemCheckUsesThreeAudibleTones() {
+        float[] check = CueWaveforms.audibleSystemCheck(1.0f);
+        int tone = CueWaveforms.SAMPLE_RATE * CueWaveforms.SYSTEM_CHECK_TONE_MS / 1_000;
+        int gap = CueWaveforms.SAMPLE_RATE * CueWaveforms.SYSTEM_CHECK_GAP_MS / 1_000;
+        assertEquals(tone * 3 + gap * 2, check.length);
+        assertNotEquals(0f, check[tone / 2], 0f);
+        assertEquals(0f, check[tone + gap / 2], 0f);
+        assertNotEquals(0f, check[tone + gap + tone / 2], 0f);
+    }
 }

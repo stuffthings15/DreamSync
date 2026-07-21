@@ -76,6 +76,7 @@ public final class MainActivity extends Activity {
     private boolean calibrationEnablePending;
     private boolean audioPreviewInProgress;
     private boolean systemCheckReportShowing;
+    private AlertDialog systemCheckReportDialog;
     private String startingState = "";
     private int watchInstallPollAttempt;
     private String pendingExportJson = "";
@@ -126,6 +127,12 @@ public final class MainActivity extends Activity {
                     "watch owns sleep detection and primary audio; no always-running phone service");
         } else retryPendingRemoteDisable();
         updateReadiness();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        restoreLatestSystemCheckStatus();
     }
 
     private void bindViews() {
@@ -355,10 +362,10 @@ public final class MainActivity extends Activity {
         launchRemoteIntent(
                 remoteIntent,
                 targetNodeId,
-                "System check 2 of 2: keep the watch snug and still for about 45 seconds.",
+                "System check 2 of 2: keep the watch snug and still for about 75 seconds.",
                 "Could not start the watch system check: ",
                 () -> DebugLog.append(this, "WATCH_SYSTEM_CHECK_OPENED",
-                        "checkId=" + checkId + ";durationSeconds=45"));
+                        "checkId=" + checkId + ";durationSeconds=75"));
     }
 
     private void expireSystemCheckIfNeeded() {
@@ -1401,7 +1408,6 @@ public final class MainActivity extends Activity {
         String reason = prefs.getString(
                 "last_system_check_reason", "The watch returned no reason.");
         statusText.setText("Watch system check " + result + ": " + reason);
-        prefs.edit().putLong("last_system_check_displayed_utc", completedUtcMs).apply();
         DebugLog.append(this, "SYSTEM_CHECK_RESULT_RESTORED",
                 "status=" + result + ";reason=" + reason);
         showSystemCheckReport(result, reason, completedUtcMs);
@@ -1443,13 +1449,16 @@ public final class MainActivity extends Activity {
                 + heartRegistered + "\n"
                 + "Health Services heart state: " + measureAvailability + "\n\n"
                 + "Export Debug Log contains the sensor inventory, every registration attempt, "
-                + "5/15/30-second progress, audio route, and the final payload.";
+                + "5/15/30/60-second progress, audio route, and the final payload.";
         systemCheckReportShowing = true;
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle("Watch check " + result)
                 .setMessage(message)
                 .setCancelable(false)
-                .setOnDismissListener(dialog -> systemCheckReportShowing = false);
+                .setOnDismissListener(dialog -> {
+                    systemCheckReportShowing = false;
+                    systemCheckReportDialog = null;
+                });
         if (watchAudioStarted || watchAudioCompleted) {
             builder.setPositiveButton("I heard watch sound", (dialog, which) -> {
                 prefs.edit()
@@ -1469,6 +1478,7 @@ public final class MainActivity extends Activity {
                                 + ";watchMediaVolume=" + watchMediaVolume
                                 + ";watchMediaVolumeMax=" + watchMediaVolumeMax
                                 + ";overnightGain=" + Math.min(0.04f, watchAudioGain * 0.5f));
+                markSystemCheckReportHandled(completedUtcMs);
             });
             builder.setNegativeButton("No watch sound", (dialog, which) -> {
                 String failure = "Watch reported playback, but the user heard no watch sound.";
@@ -1484,12 +1494,15 @@ public final class MainActivity extends Activity {
                         .apply();
                 statusText.setText("Watch system check FAIL: " + failure);
                 DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_NOT_AUDIBLE", failure);
+                markSystemCheckReportHandled(completedUtcMs);
             });
-            builder.setNeutralButton("Close", null);
+            builder.setNeutralButton("Close",
+                    (dialog, which) -> markSystemCheckReportHandled(completedUtcMs));
         } else {
-            builder.setPositiveButton("Close", null);
+            builder.setPositiveButton("Close",
+                    (dialog, which) -> markSystemCheckReportHandled(completedUtcMs));
         }
-        builder.show();
+        systemCheckReportDialog = builder.show();
         DebugLog.append(this, "SYSTEM_CHECK_REPORT_DISPLAYED",
                 "status=" + result + ";motionSamples=" + motionSamples
                         + ";heartSamples=" + heartSamples
@@ -1499,6 +1512,25 @@ public final class MainActivity extends Activity {
 
     boolean isSystemCheckReportShowingForTest() {
         return systemCheckReportShowing;
+    }
+
+    void acknowledgeSystemCheckReportForTest() {
+        long completedUtcMs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getLong("last_system_check_utc", 0L);
+        markSystemCheckReportHandled(completedUtcMs);
+        AlertDialog dialog = systemCheckReportDialog;
+        systemCheckReportDialog = null;
+        systemCheckReportShowing = false;
+        if (dialog != null) dialog.dismiss();
+    }
+
+    private void markSystemCheckReportHandled(long completedUtcMs) {
+        if (completedUtcMs <= 0L) return;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putLong("last_system_check_displayed_utc", completedUtcMs)
+                .apply();
+        DebugLog.append(this, "SYSTEM_CHECK_REPORT_ACKNOWLEDGED",
+                "completedUtcMs=" + completedUtcMs);
     }
 
     private void setupOrOpenWatch() {

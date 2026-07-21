@@ -4,17 +4,17 @@ Date: 20 July 2026
 
 ## Verified locally
 
-### Current 1.3.4 test build
+### Prepared 1.3.5 test build
 
-- Phone version code 41 and Wear OS version code 42 (`1.3.4-test`) are available to internal testers in Google Play Console. The phone track is Active. Play still labels the Wear OS track Inactive while its form-factor setup remains incomplete.
+- Phone version code 43 and Wear OS version code 44 (`1.3.5-test`) are signed and ready for internal-test upload. Google Play still serves 1.3.4 until this build is uploaded.
 - 74 local unit tests passed with 0 failures, 0 errors, and 0 skipped.
-- Phone instrumentation passed 8/8 on an Android 16 phone emulator, including the Morning Check-in button with no completed night. Wear workflow instrumentation passed 9/9 when installed on that phone emulator; this proves Android behavior only, not physical Wear OS sensors, audio, vibration, battery, reboot, or display behavior.
+- Phone instrumentation passed 9/9 on an Android 16 phone emulator, including the Morning Check-in button and the compatibility distinction between detected hardware and verified readings. Wear workflow instrumentation passed 10/10, including the rule that advertised advanced sensors are not called verified until live samples pass; this proves Android behavior only, not physical Wear OS sensors, audio, vibration, battery, reboot, or display behavior.
 - Phone and Wear OS lint passed with no blocking errors.
 - Phone and Wear OS debug APKs built successfully.
-- Signed phone APK SHA-256: `5BEAFE84131151BCB0F704044CAAA98D3E660653FA6C29BE69C81B74E448DAE5`.
-- Signed Wear OS APK SHA-256: `473EBF6C660C8F5161F1ABE6DC76DE720431C29FD0A3244D3C448BFEB69C5DBE`.
-- Signed phone AAB SHA-256: `84006DD7F430B593651526E0FAE66BE162595D680DA66BD338270C0BBC21780B`.
-- Signed Wear OS AAB SHA-256: `5EAC1191F37DDB35B7CE6778283E00CE3E2C0F6EB2A1AB11E99B721256C09287`.
+- Signed phone APK SHA-256: `F9CBFCDB1946FBE5125A3C49BFECFB0D534203FFA5D3BF9976660B89858859A2`.
+- Signed Wear OS APK SHA-256: `33A0188E284DFF5406F3FC2A5B1998CA3D7DC98DCB245A06A4FD3642FDC12678`.
+- Signed phone AAB SHA-256: `D6F9158BE7C08D5F0F29F414903891C7525DDBF5BB91928D8DC542A446B43A73`.
+- Signed Wear OS AAB SHA-256: `729F614D1513D1ABE2AEB879E8D80EE7DE9EEEE493687019E05A795244470E60`.
 - Both AAB signatures passed integrity verification. Google Play showed only the expected non-blocking missing-deobfuscation-file warning; R8/ProGuard obfuscation is not enabled.
 - Release builds now fail before execution when the protected upload-signing configuration is missing; Gradle can no longer silently emit an unsigned internal-test bundle.
 - Reboot recovery clears persisted elapsed-realtime sample markers before passive monitoring restarts, while preserving the learned sleep baseline.
@@ -22,7 +22,7 @@ Date: 20 July 2026
 - Raw PPG reopens for the full bounded five-minute quality window when watch audio starts, even when the pre-cue window has already closed.
 - Protect only is the default. Experimental watch sound can begin on the first eligible night after a successful watch sound check, starts at one pair, can progress to two and four after low-disturbance nights, observes for five minutes after each pair, pauses 20 minutes after arousal signs, and reduces the next gain by 30% after a cue-linked arousal.
 - Passive watch monitoring is restored after reboot through WorkManager. A fresh phone-watch handshake is still required before any sound.
-- The compatibility screen reports motion, standard heart rate, IBI/HRV, skin temperature, off-wrist protection, and raw PPG independently; higher-end features remain enabled whenever the live provider reports them.
+- The compatibility screen separates detected hardware from verified live readings. A failed check no longer falsely labels motion or heart-rate hardware unavailable. Advanced Samsung features explicitly show that the official sensor package or live verification is missing.
 - Morning Check-in now always displays a scrollable form. If no completed watch night exists, it creates a clearly labeled manual record. The debug log records tap, display, save, and save failure.
 
 - Public name: DreamSync.
@@ -117,5 +117,5 @@ Date: 20 July 2026
 - Concurrent polysomnography before any sleep-stage accuracy claim.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
-- Google Play 1.3.4 internal releases are complete. The Wear OS release is available to testers, but its track still shows Inactive until the Wear form-factor setup is finished. The closed-release gate and all production-policy tasks remain external to local code.
+- Google Play 1.3.4 internal releases are complete. Version 1.3.5 is built locally and awaits upload confirmation. The Wear OS track still shows Inactive until the Wear form-factor setup is finished. The closed-release gate and all production-policy tasks remain external to local code.
 - The hardware runner parsed successfully and its list-only preflight found zero attached physical Android devices on 2026-07-19; physical execution therefore remains pending.

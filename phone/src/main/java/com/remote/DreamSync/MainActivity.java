@@ -1341,35 +1341,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showWatchCompatibility() {
-        String json = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString("watch_capabilities", "");
-        String live;
-        if (json.isEmpty()) {
-            live = "PHONE PROTECTION ONLY\nNo live watch report yet. Connect a Wear OS watch and run the watch check. If a watch is expected, this profile needs attention before watch monitoring can start.";
-        } else {
-            try {
-                JSONObject values = new JSONObject(json);
-                String status = values.optString("profile", "NEEDS_ATTENTION")
-                        .replace('_', ' ');
-                live = values.optString("manufacturer", "") + " "
-                        + values.optString("model", "") + "\n"
-                        + status + "\n" + values.optString("reason", "") + "\n\n"
-                        + "Available now:\n"
-                        + featureLine("Motion", values.optBoolean("motion"))
-                        + featureLine("Heart rate", values.optBoolean("standardHeartRate")
-                        || values.optBoolean("ibi"))
-                        + featureLine("Watch speaker", values.optBoolean("watchSpeaker"))
-                        + featureLine("Permissions", values.optBoolean("permissionsReady"))
-                        + featureLine("Live self-test", values.optBoolean("liveSelfTestPassed"))
-                        + featureLine("IBI / HRV verified", values.optBoolean("ibi"))
-                        + featureLine("Skin temperature verified", values.optBoolean("skinTemperature"))
-                        + featureLine("Off-wrist protection", values.optBoolean("offWrist"))
-                        + featureLine("Raw PPG available", values.optBoolean("rawPpgAvailable"))
-                        + "\nFive profiles: Enhanced protection, Core protection, Monitoring only, Phone protection only, and Needs attention. Higher-end features turn on independently when verified.";
-            } catch (JSONException error) {
-                live = "Live compatibility data could not be read. Run a new automatic session.";
-            }
-        }
+        String live = watchCompatibilityTextForTest();
         new AlertDialog.Builder(this)
                 .setTitle("Watch compatibility")
                 .setMessage(live + "\n\nCore support:\n"
@@ -1377,7 +1349,65 @@ public final class MainActivity extends Activity {
                         + "Wear OS 3+ watch with motion and heart rate\n\n"
                         + "DreamSync checks the actual watch sensors. Core watches use standard motion and heart rate. More capable watches keep approved IBI/HRV, skin temperature, off-wrist, and raw-PPG features when verified. Raw PPG runs only in short cue-quality windows. Apple Watch, Fitbit, Garmin, Galaxy Fit, and older Tizen watches are not supported in this release.")
                 .setPositiveButton("Done", null)
+                .setNeutralButton("Run watch check", (dialog, which) -> runSystemCheck())
                 .show();
+    }
+
+    String watchCompatibilityTextForTest() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String json = prefs.getString("watch_capabilities", "");
+        String live;
+        if (json.isEmpty()) {
+            live = "NOT CHECKED YET\nNo live watch report exists. This does not mean the features are unavailable.";
+        } else {
+            try {
+                JSONObject values = new JSONObject(json);
+                String status = values.optString("profile", "NEEDS_ATTENTION")
+                        .replace('_', ' ');
+                boolean motionVerified = values.optBoolean("motion");
+                boolean heartVerified = values.optBoolean("standardHeartRate")
+                        || values.optBoolean("ibi");
+                boolean motionDetected = motionVerified || prefs.getBoolean(
+                        "last_system_check_motion_registered", false);
+                boolean heartDetected = heartVerified || prefs.getBoolean(
+                        "last_system_check_heart_registered", false);
+                int motionSamples = prefs.getInt("last_system_check_motion_samples", 0);
+                int heartSamples = prefs.getInt("last_system_check_heart_samples", 0);
+                String checkStatus = prefs.getString("last_system_check_status", "NOT RUN");
+                String checkReason = prefs.getString("last_system_check_reason", "");
+                long checkedUtc = prefs.getLong("last_system_check_utc", 0L);
+                live = values.optString("manufacturer", "") + " "
+                        + values.optString("model", "") + "\n"
+                        + status + "\n\nCore hardware:\n"
+                        + capabilityLine("Motion", motionVerified, motionDetected,
+                        motionSamples + " samples")
+                        + capabilityLine("Heart rate", heartVerified, heartDetected,
+                        heartSamples + " samples")
+                        + capabilityLine("Off-wrist / stale-signal safety gate",
+                        heartVerified, heartDetected, "blocks cues when heart data stops")
+                        + capabilityLine("Watch speaker", values.optBoolean("watchSpeaker"),
+                        prefs.getBoolean("last_system_check_watch_audio_started", false),
+                        prefs.getString("last_system_check_watch_audio_reason", "not checked"))
+                        + capabilityLine("Permissions", values.optBoolean("permissionsReady"),
+                        false, "")
+                        + capabilityLine("Live self-test",
+                        values.optBoolean("liveSelfTestPassed"), false,
+                        checkStatus + (checkReason.isEmpty() ? "" : ": " + checkReason))
+                        + "\nAdvanced Samsung features:\n"
+                        + advancedCapabilityLine("IBI / HRV", values, "ibi", "ibiAvailable")
+                        + advancedCapabilityLine("Skin temperature", values,
+                        "skinTemperature", "skinTemperatureAvailable")
+                        + advancedCapabilityLine("Raw PPG", values,
+                        "rawPpg", "rawPpgAvailable")
+                        + "\nLast check: " + (checkedUtc <= 0L ? "not recorded"
+                        : new java.text.SimpleDateFormat("MMM d, h:mm a", Locale.US)
+                        .format(new java.util.Date(checkedUtc)))
+                        + "\n\nDetected means the watch reported the hardware. Verified means usable readings arrived. A failed check is not the same as missing hardware.";
+            } catch (JSONException error) {
+                live = "The saved watch report could not be read. Run a new watch check.";
+            }
+        }
+        return live;
     }
 
     private void showScience() {
@@ -1433,8 +1463,25 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    private String featureLine(String name, boolean available) {
-        return (available ? "✓ " : "— ") + name + "\n";
+    private String capabilityLine(
+            String name, boolean verified, boolean detected, String detail) {
+        String state = verified ? "VERIFIED"
+                : detected ? "DETECTED, NOT VERIFIED" : "NOT VERIFIED";
+        return "• " + name + ": " + state
+                + (detail == null || detail.isEmpty() ? "" : " (" + detail + ")") + "\n";
+    }
+
+    private String advancedCapabilityLine(
+            String name, JSONObject values, String verifiedKey, String availableKey) {
+        boolean verified = values.optBoolean(verifiedKey);
+        boolean available = values.optBoolean(availableKey);
+        boolean packaged = values.optBoolean("samsungSdkPackaged");
+        boolean connected = values.optBoolean("samsungSdkConnected");
+        String state = verified ? "VERIFIED"
+                : !packaged ? "NOT ENABLED — Samsung sensor package missing"
+                : !connected ? "NOT VERIFIED — Samsung sensor service not connected"
+                : available ? "DETECTED, NOT VERIFIED" : "NOT REPORTED BY WATCH";
+        return "• " + name + ": " + state + "\n";
     }
 
     @Override protected void onStart() {

@@ -194,6 +194,34 @@ public final class PhoneWorkflowInstrumentationTest {
         assertEquals(10, config.getInt("watchMediaVolumeMax"));
     }
 
+    @Test public void compatibilitySeparatesDetectedHardwareFromVerifiedReadings() {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putString("watch_capabilities", "{\"manufacturer\":\"samsung\","
+                        + "\"model\":\"SM-L705U\",\"profile\":\"NEEDS_ATTENTION\","
+                        + "\"motion\":false,\"standardHeartRate\":false,"
+                        + "\"samsungSdkPackaged\":false}")
+                .putBoolean("last_system_check_motion_registered", true)
+                .putBoolean("last_system_check_heart_registered", true)
+                .putInt("last_system_check_motion_samples", 0)
+                .putInt("last_system_check_heart_samples", 0)
+                .putString("last_system_check_status", "FAIL")
+                .putString("last_system_check_reason", "No readings arrived.")
+                .apply();
+
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                String text = activity.watchCompatibilityTextForTest();
+                assertTrue(text.contains("Motion: DETECTED, NOT VERIFIED"));
+                assertTrue(text.contains("Heart rate: DETECTED, NOT VERIFIED"));
+                assertTrue(text.contains("Samsung sensor package missing"));
+                assertFalse(text.contains("Motion: unavailable"));
+            });
+        }
+    }
+
     private static boolean containsScrollView(View view) {
         if (view instanceof ScrollView) return true;
         if (!(view instanceof android.view.ViewGroup)) return false;

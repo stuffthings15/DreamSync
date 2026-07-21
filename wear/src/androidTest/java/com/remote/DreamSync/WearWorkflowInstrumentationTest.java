@@ -23,8 +23,10 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.json.JSONObject;
 
 import java.util.Arrays;
+import java.util.Set;
 
 @RunWith(AndroidJUnit4.class)
 public final class WearWorkflowInstrumentationTest {
@@ -155,6 +157,32 @@ public final class WearWorkflowInstrumentationTest {
         assertEquals("process restarted", stored.terminationReason);
         assertEquals(2L, stored.endUtcMs);
         dao.deleteAllSessions();
+    }
+
+    @Test public void advancedCapabilitiesAreNotCalledVerifiedBeforeLiveSamplesPass()
+            throws Exception {
+        Set<String> trackers = Set.of(
+                "HEART_RATE_CONTINUOUS",
+                "SKIN_TEMPERATURE_CONTINUOUS",
+                "PPG_CONTINUOUS");
+        SensorCapabilitySnapshot unverified = new SensorCapabilitySnapshot(
+                true, true, true, true, trackers,
+                true, false, true, true, "no advanced samples");
+        JSONObject first = new JSONObject(unverified.toJson());
+        assertTrue(first.getBoolean("ibiAvailable"));
+        assertTrue(first.getBoolean("skinTemperatureAvailable"));
+        assertTrue(first.getBoolean("rawPpgAvailable"));
+        assertFalse(first.getBoolean("ibi"));
+        assertFalse(first.getBoolean("skinTemperature"));
+        assertFalse(first.getBoolean("rawPpg"));
+
+        SensorCapabilitySnapshot verified = new SensorCapabilitySnapshot(
+                true, true, true, true, trackers,
+                true, true, true, true, "advanced samples passed");
+        JSONObject second = new JSONObject(verified.toJson());
+        assertTrue(second.getBoolean("ibi"));
+        assertTrue(second.getBoolean("skinTemperature"));
+        assertTrue(second.getBoolean("rawPpg"));
     }
 
     private static boolean containsScrollView(View view) {

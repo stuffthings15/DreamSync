@@ -83,7 +83,6 @@ final class SensorCapabilitySnapshot {
 
     String toJson() {
         CapabilityReport report = report();
-        DeviceCompatibility.Capabilities values = compatibility();
         JSONObject object = new JSONObject();
         try {
             object.put("manufacturer", manufacturer);
@@ -92,16 +91,18 @@ final class SensorCapabilitySnapshot {
             object.put("standardHeartRate", standardHeartRate);
             object.put("samsungSdkPackaged", samsungSdkPackaged);
             object.put("samsungSdkConnected", samsungSdkConnected);
-            object.put("ibi", values.ibi);
-            object.put("skinTemperature", values.skinTemperature);
-            object.put("rawPpg", values.rawPpg);
-            object.put("offWrist", values.offWrist);
+            object.put("ibi", report.ibi);
+            object.put("skinTemperature", report.skinTemperature);
+            object.put("rawPpg", report.rawPpg && advancedSelfTestPassed);
+            object.put("offWrist", report.offWrist);
             object.put("liveSelfTestPassed", liveSelfTestPassed);
             object.put("advancedSelfTestPassed", advancedSelfTestPassed);
             object.put("ibiAvailable", supports("HEART_RATE_CONTINUOUS"));
             object.put("skinTemperatureAvailable",
                     supports("SKIN_TEMPERATURE_CONTINUOUS"));
             object.put("rawPpgAvailable", supports("PPG_CONTINUOUS"));
+            object.put("offWristProtectionAvailable",
+                    standardHeartRate || supports("HEART_RATE_CONTINUOUS"));
             object.put("watchSpeaker", watchSpeaker);
             object.put("permissionsReady", permissionsReady);
             object.put("status", report.profile().name());

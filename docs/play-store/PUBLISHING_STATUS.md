@@ -59,23 +59,26 @@
 - Wear OS version code 58 (`1.3.12-test`) published on 2026-07-20.
 - Phone version code 59 (`1.3.13-test`) published on 2026-07-21.
 - Wear OS version code 60 (`1.3.13-test`) published on 2026-07-21.
+- Phone version code 61 (`1.3.14-test`) published on 2026-07-21.
+- Wear OS version code 62 (`1.3.14-test`) published on 2026-07-21.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
-## Current internal-test build
+## Previous internal-test build
 
 - Phone version code 59 (`1.3.13-test`) is available to internal testers and its track is Active.
 - Wear OS version code 60 (`1.3.13-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
 - Version 1.3.13 serializes motion and heart-rate sensor ownership, displays live sensor values, rejects registration-only false passes, forwards fresh passive heart readings, and exports expanded callback diagnostics.
 
-## Prepared 1.3.14 internal build
+## Current internal-test build: 1.3.14
 
-- Phone version code 61 and Wear OS version code 62 (`1.3.14-test`) are built and signed for internal testing.
+- Phone version code 61 (`1.3.14-test`) is available to internal testers and its track is Active.
+- Wear OS version code 62 (`1.3.14-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
 - The Wear bundle packages the official Samsung Health Sensor SDK v1.4.1 AAR downloaded from Samsung Developer. The licensed AAR is stored locally and ignored by Git.
 - Samsung accelerometer, heart-rate/IBI, skin temperature, off-wrist, and bounded PPG adapter paths are packaged with standard Wear OS fallbacks.
 - 97 unit tests, both release lints, both debug builds, both signed release bundles, and both signature checks passed.
-- Google Play upload is pending. Samsung partner approval and physical Galaxy Watch Ultra verification remain required.
+- Google Play internal publication completed on 2026-07-21. Samsung partner approval and physical Galaxy Watch Ultra verification remain required.
 
 ## Version 1.3.13 published to internal testing
 

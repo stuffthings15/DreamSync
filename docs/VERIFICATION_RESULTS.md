@@ -4,9 +4,9 @@ Date: 21 July 2026
 
 ## Verified locally
 
-### Prepared 1.3.14 official Samsung SDK build
+### Published 1.3.14 official Samsung SDK build
 
-- Phone version code 61 and Wear OS version code 62 (`1.3.14-test`) were built and signed for internal testing.
+- Phone version code 61 and Wear OS version code 62 (`1.3.14-test`) were built, signed, and published to Google Play internal testing on 2026-07-21. Both releases are available to internal testers; the phone track is Active and Play labels the Wear OS track Inactive.
 - The official Samsung Health Sensor SDK v1.4.1 AAR was downloaded from the signed-in Samsung Developer site, installed locally under `wear/libs/`, verified by Gradle, and packaged into the Wear APK. The licensed AAR remains ignored by Git.
 - Samsung continuous accelerometer, heart-rate/IBI, skin-temperature, off-wrist, and explicit Green/IR/Red PPG adapter paths compile and package. Standard Wear OS motion and heart-rate paths remain available as fallback.
 - Samsung motion must deliver five fresh samples before becoming primary. Standard motion remains available and is restored if Samsung data stalls. Samsung heart data is accepted only when Samsung reports successful status.

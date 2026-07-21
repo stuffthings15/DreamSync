@@ -9,6 +9,7 @@ import com.google.android.gms.wearable.Wearable;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.ProtectionConfig;
 import com.remote.DreamSync.shared.ProtectionMode;
+import com.remote.DreamSync.shared.ResearchMissionContract;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -111,13 +112,13 @@ final class PhoneAutoControl {
                     .put("watchMediaVolume", watchMediaVolume)
                     .put("watchMediaVolumeMax", watchMediaVolumeMax)
                     .put("armTimeoutMin", 30)
-                    .put("deepStartMin", 25)
-                    .put("deepEndMin", 145)
+                    .put("deepStartMin", ResearchMissionContract.NREM_WINDOW_START_MIN)
+                    .put("deepEndMin", ResearchMissionContract.NREM_WINDOW_END_MIN)
                     .put("remStartMin", 255)
                     .put("sessionEndMin", 510)
-                    .put("deepStableMin", 10)
+                    .put("deepStableMin", ResearchMissionContract.NREM_STABLE_MIN)
                     .put("remStableMin", 5)
-                    .put("deepCueIntervalSec", 300)
+                    .put("deepCueIntervalSec", ResearchMissionContract.CUE_INTERVAL_SEC)
                     .put("deepCuesPerBlock", 4)
                     .put("maxDeepBlocks", 1)
                     .put("lucidCueIntervalSec", 180)

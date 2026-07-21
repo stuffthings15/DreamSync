@@ -21,13 +21,13 @@ final class SessionConfig {
     long expiresUtcMs;
     float cueGain = 0.04f;
     int armTimeoutMin = 180;
-    int deepStartMin = 25;
-    int deepEndMin = 145;
+    int deepStartMin = com.remote.DreamSync.shared.ResearchMissionContract.NREM_WINDOW_START_MIN;
+    int deepEndMin = com.remote.DreamSync.shared.ResearchMissionContract.NREM_WINDOW_END_MIN;
     int remStartMin = 255;
     int sessionEndMin = 510;
-    int deepStableMin = 10;
+    int deepStableMin = com.remote.DreamSync.shared.ResearchMissionContract.NREM_STABLE_MIN;
     int remStableMin = 5;
-    int deepCueIntervalSec = 300;
+    int deepCueIntervalSec = com.remote.DreamSync.shared.ResearchMissionContract.CUE_INTERVAL_SEC;
     int deepCuesPerBlock = 4;
     int maxDeepBlocks = 1;
     int lucidCueIntervalSec = 180;

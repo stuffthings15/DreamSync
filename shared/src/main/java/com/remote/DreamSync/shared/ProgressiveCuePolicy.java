@@ -9,7 +9,7 @@ public final class ProgressiveCuePolicy {
         if (mode != ProtectionMode.EXPERIMENTAL_AUDIO) return 0;
         if (consecutiveSafeCueNights >= 4) return 4;
         if (consecutiveSafeCueNights >= 2) return 2;
-        return 1;
+        return ResearchMissionContract.FIRST_ELIGIBLE_NIGHT_PAIRS;
     }
 
     public int nextSafeNightStreak(
@@ -22,6 +22,8 @@ public final class ProgressiveCuePolicy {
     }
 
     public double gainAfterCueLinkedArousal(double currentGain) {
-        return Math.max(0.005, Math.min(0.10, currentGain) * 0.70);
+        return Math.max(0.005,
+                Math.min(ResearchMissionContract.MAX_AWAKE_TEST_GAIN,
+                        currentGain) * 0.70);
     }
 }

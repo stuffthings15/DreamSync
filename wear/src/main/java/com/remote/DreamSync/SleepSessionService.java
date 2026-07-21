@@ -44,6 +44,7 @@ import com.remote.DreamSync.shared.ProgressiveCuePolicy;
 import com.remote.DreamSync.shared.ProtectionConfig;
 import com.remote.DreamSync.shared.ProtectionMode;
 import com.remote.DreamSync.shared.RawPpgWindowPolicy;
+import com.remote.DreamSync.shared.ResearchMissionContract;
 import com.remote.DreamSync.shared.ProtocolEnvelope;
 import com.remote.DreamSync.shared.SessionCoordinator;
 import com.remote.DreamSync.shared.SessionOutcome;
@@ -697,7 +698,8 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 && !arousal && !Double.isNaN(features.motionRms30)
                 && features.motionRms30 < 0.30;
         long onset = sleepOnsetEstimator.update(
-                quietCandidate, now, 10L * 60_000L);
+                quietCandidate, now,
+                ResearchMissionContract.SLEEP_ONSET_QUIET_MIN * 60_000L);
         boolean onsetJustDetected = estimatedSleepOnsetMs == 0L && onset > 0L;
         if (onsetJustDetected) {
             estimatedSleepOnsetMs = onset;

@@ -4,9 +4,9 @@ Date: 21 July 2026
 
 ## Verified locally
 
-### Prepared 1.3.15 enforced Samsung SDK build
+### Published 1.3.15 enforced Samsung SDK build
 
-- Phone version code 63 and Wear OS version code 64 (`1.3.15-test`) were built and signed for Google Play internal testing on 2026-07-21.
+- Phone version code 63 and Wear OS version code 64 (`1.3.15-test`) were built, signed, and published to Google Play internal testing on 2026-07-21. Both releases say Available to internal testers; the phone track is Active and Play still labels the Wear OS track Inactive.
 - Wear release builds now fail if the exact official Samsung Health Sensor SDK v1.4.1 AAR is absent, altered, or missing any required tracking contract class.
 - The verified SDK exposes the exact APIs used by DreamSync for continuous accelerometer, continuous heart rate and IBI, continuous skin temperature, off-wrist status, and Green/IR/Red continuous PPG.
 - 97 unit tests passed with zero failures. Phone and Wear release lint, debug APK builds, signed AAB builds, both AAB signature checks, and the Samsung SDK checksum/API-contract gate passed.

@@ -774,8 +774,14 @@ public final class MainActivity extends Activity {
         EditText disturbance = field(form, "How disturbing were cues? 0-10", true);
         EditText awareness = field(form, "Cue noticed: no / unsure / yes", false);
         EditText recall = field(form, "Dream recall 0-3", true);
+        EditText lucid = field(form, "Lucid dream: no / unsure / yes", false);
         EditText adverse = field(form, "Headache, nightmare, anxiety, sleepiness, or none", false);
         EditText notes = field(form, "Dream journal and notes", false);
+        TextView validation = new TextView(this);
+        validation.setTextColor(getColor(R.color.ds_danger));
+        validation.setVisibility(android.view.View.GONE);
+        form.addView(validation, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -790,23 +796,35 @@ public final class MainActivity extends Activity {
                         ? "No completed watch night was found. Save a manual morning record instead."
                         : "Save how the night felt and any dream notes.")
                 .setView(scroll)
-                .setPositiveButton("Save", (ignored, which) -> {
-                    MorningSurveyEntity survey = new MorningSurveyEntity();
-                    survey.sessionId = sessionId;
-                    survey.sleepQuality = boundedInt(sleep.getText().toString(), 1, 10, 0);
-                    survey.restedness = boundedInt(rested.getText().toString(), 1, 10, 0);
-                    survey.rememberedAwakenings = boundedInt(
-                            awakenings.getText().toString(), 0, 100, 0);
-                    survey.disturbanceRating = boundedInt(
-                            disturbance.getText().toString(), 0, 10, 0);
-                    survey.cueAwareness = choice(awareness.getText().toString());
-                    survey.dreamRecall = boundedInt(recall.getText().toString(), 0, 3, 0);
-                    survey.lucidDream = "UNSURE";
-                    survey.adverseEffects = adverse.getText().toString().trim();
-                    survey.dreamNotes = notes.getText().toString().trim();
-                    survey.submittedUtcMs = System.currentTimeMillis();
-                    applyDisturbanceGain(survey.disturbanceRating, sessionId);
-                    databaseExecutor.execute(() -> {
+                .setPositiveButton("Save", null)
+                .setNegativeButton("Later", null)
+                .create();
+        dialog.setOnDismissListener(ignored -> {
+            morningSurveyShowing = false;
+            morningSurveySessionId = "";
+            morningSurveyDialog = null;
+        });
+        morningSurveyDialog = dialog;
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(ignored -> {
+            MorningSurveyInput.Result input = MorningSurveyInput.validate(
+                    sleep.getText().toString(), rested.getText().toString(),
+                    awakenings.getText().toString(), disturbance.getText().toString(),
+                    awareness.getText().toString(), recall.getText().toString(),
+                    lucid.getText().toString(), adverse.getText().toString(),
+                    notes.getText().toString());
+            if (!input.valid) {
+                validation.setText(input.error);
+                validation.setVisibility(android.view.View.VISIBLE);
+                DebugLog.append(this, "MORNING_CHECKIN_VALIDATION_FAILED", input.error);
+                return;
+            }
+            validation.setVisibility(android.view.View.GONE);
+            MorningSurveyEntity survey = input.toEntity(sessionId, System.currentTimeMillis());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            validation.setText("Saving...");
+            validation.setVisibility(android.view.View.VISIBLE);
+            databaseExecutor.execute(() -> {
                         try {
                             dao.upsertSurvey(survey);
                             SessionEntity session = dao.session(sessionId);
@@ -830,29 +848,25 @@ public final class MainActivity extends Activity {
                                         .putString("last_summary_session", sessionId).apply();
                             }
                             runOnUiThread(() -> {
+                                applyDisturbanceGain(survey.disturbanceRating, sessionId);
                                 statusText.setText("Morning check-in saved.");
                                 DebugLog.append(this, "MORNING_CHECKIN_SAVED",
                                         "saved locally; manual=" + sessionId.startsWith("manual-"));
+                                dialog.dismiss();
                             });
                         } catch (Exception error) {
                             runOnUiThread(() -> {
                                 statusText.setText("Morning check-in could not be saved: "
                                         + safeMessage(error));
+                                validation.setText("Could not save. Try again: " + safeMessage(error));
+                                validation.setVisibility(android.view.View.VISIBLE);
+                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
                                 DebugLog.append(this, "MORNING_CHECKIN_SAVE_FAILED",
                                         safeMessage(error));
                             });
                         }
                     });
-                })
-                .setNegativeButton("Later", null)
-                .create();
-        dialog.setOnDismissListener(ignored -> {
-            morningSurveyShowing = false;
-            morningSurveySessionId = "";
-            morningSurveyDialog = null;
         });
-        morningSurveyDialog = dialog;
-        dialog.show();
         DebugLog.append(this, "MORNING_CHECKIN_DISPLAYED",
                 "manual=" + sessionId.startsWith("manual-"));
     }
@@ -1754,17 +1768,6 @@ public final class MainActivity extends Activity {
 
     private String pref(String key) {
         return getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
-    }
-
-    private int boundedInt(String value, int min, int max, int fallback) {
-        try { return Math.max(min, Math.min(max, Integer.parseInt(value.trim()))); }
-        catch (Exception ignored) { return fallback; }
-    }
-
-    private String choice(String value) {
-        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.US);
-        if ("YES".equals(normalized) || "NO".equals(normalized)) return normalized;
-        return "UNSURE";
     }
 
     private int dp(int value) {

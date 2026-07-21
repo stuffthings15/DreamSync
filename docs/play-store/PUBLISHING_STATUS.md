@@ -6,7 +6,7 @@
 - Official slogan: Dreams Redefined.
 - Official mission centered on automatic likely-sleep estimation, sleep continuity, and fail-closed cue safety.
 - Broad capability-based Android 8.0+/Wear OS 3+ compatibility copy, with full-sensor features preserved on capable watches, Galaxy Watch Ultra first in physical validation, and Apple Watch clearly marked as planned.
-- Version 1.3.7-test with unique phone and Wear OS version codes prepared for internal testing.
+- Version 1.3.8-test with unique phone and Wear OS version codes prepared for internal testing.
 - Consumer interface with sleep-cue settings only.
 - Health permission disclosure before the watch permission prompt.
 - In-app privacy and wellness disclosures.
@@ -74,13 +74,14 @@
 - Samsung watches remain in Core protection or Monitoring only until the official SDK AAR, partnership approval, package/signature registration, and live advanced self-test are complete. The build provides a fail-closed verification task for the missing AAR.
 - The 1.2.7 sound path explicitly prefers the built-in phone speaker, uses AudioTrack on Android 8, and no longer treats an available Bluetooth watch route as active headphones. The phone shows large `OFF`, `STARTING`, `ON`, and watch-confirmed states.
 
-## Prepared 1.3.7 build
+## Prepared 1.3.8 build
 
-- Phone version code 47 and Wear OS version code 48 (`1.3.7-test`) are not yet uploaded.
+- Phone version code 49 and Wear OS version code 50 (`1.3.8-test`) are not yet uploaded.
 - Compatibility now reports `DETECTED, NOT VERIFIED` when hardware registration succeeds but samples do not arrive. It no longer calls that hardware unavailable.
 - The screen shows why advanced Samsung features are disabled: the official Samsung sensor package and approval remain missing.
 - Heart-rate checks now use Wear Health Services first, then try every standard watch heart-rate sensor after ten seconds. The overnight service also uses all standard heart-rate candidates instead of one default sensor.
 - Motion checks now try accelerometer, linear acceleration, and gravity, then retry on the watch main sensor loop when registration succeeds but readings remain at zero. The report and export identify the selected source and retry path.
+- Morning Check-in now validates the complete report and saves the user's lucid result, adverse effects, and notes. It no longer closes on invalid input or before storage confirms success.
 - Nine phone and ten Wear OS instrumentation tests, unit tests, phone/watch lint, debug builds, and signed release builds passed.
 
 ## Version 1.2.7 fixes

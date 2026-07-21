@@ -21,10 +21,11 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.3.7-test`, version code 47.
-- Wear OS `1.3.7-test`, version code 48.
+- Phone `1.3.8-test`, version code 49.
+- Wear OS `1.3.8-test`, version code 50.
 - Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
 - Nine phone and ten Wear OS workflow instrumentation tests passed on Android emulators. Real watch sensors, speaker, vibration, battery, reboot, and display behavior still require physical Wear OS hardware.
+- The morning report collects and validates sleep quality, restedness, awakenings, cue disturbance, cue awareness, dream recall, lucid result, adverse effects, and notes. Invalid required values stay visible for correction, and the form closes only after Room confirms the save.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.
 
 ## Still required on real hardware

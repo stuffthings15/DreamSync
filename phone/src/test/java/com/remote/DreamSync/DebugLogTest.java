@@ -59,4 +59,21 @@ public final class DebugLogTest {
         assertTrue(report.contains("18. Watch speaker test: PASS"));
         assertTrue(report.contains("19. Phone result report displayed: PASS"));
     }
+
+    @Test public void pipelineSeparatesRequestedHapticFromPhysicalConfirmation() {
+        String requested = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_HAPTIC_REQUESTED | durationMs=240\n");
+        String felt = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_HAPTIC_REQUESTED | durationMs=240\n"
+                        + "2 | SYSTEM_CHECK_WATCH_HAPTIC_FELT | confirmed=true\n");
+        String notFelt = DebugLog.pipelineVerification(
+                "1 | SYSTEM_CHECK_WATCH_HAPTIC_NOT_FELT | confirmed=false\n");
+
+        assertTrue(requested.contains(
+                "20. User-confirmed physical watch vibration: WAITING"));
+        assertTrue(felt.contains(
+                "20. User-confirmed physical watch vibration: PASS"));
+        assertTrue(notFelt.contains(
+                "20. User-confirmed physical watch vibration: FAIL"));
+    }
 }

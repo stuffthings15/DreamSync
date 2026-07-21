@@ -96,6 +96,11 @@ final class DebugLog {
                                 ? Boolean.toString(prefs.getBoolean(
                                         "last_watch_audio_audible", false))
                                 : "not_confirmed").append('\n')
+                .append("lastWatchHapticFelt=").append(
+                        prefs.contains("last_watch_haptic_felt")
+                                ? Boolean.toString(prefs.getBoolean(
+                                        "last_watch_haptic_felt", false))
+                                : "not_confirmed").append('\n')
                 .append("lastSystemCheckDetails=").append(sanitize(
                         prefs.getString("last_system_check_details", ""), 8_000)).append('\n')
                 .append("audio=").append(audioOutput.diagnostics()).append('\n')
@@ -207,6 +212,9 @@ final class DebugLog {
         step(out, 19, "Phone result report displayed",
                 events, new String[]{" | SYSTEM_CHECK_REPORT_DISPLAYED |"},
                 new String[]{});
+        step(out, 20, "User-confirmed physical watch vibration",
+                events, new String[]{" | SYSTEM_CHECK_WATCH_HAPTIC_FELT |"},
+                new String[]{" | SYSTEM_CHECK_WATCH_HAPTIC_NOT_FELT |"});
         return out.toString();
     }
 

@@ -1610,7 +1610,7 @@ public final class MainActivity extends Activity {
                                 + ";watchMediaVolume=" + watchMediaVolume
                                 + ";watchMediaVolumeMax=" + watchMediaVolumeMax
                                 + ";overnightGain=" + Math.min(0.04f, watchAudioGain * 0.5f));
-                markSystemCheckReportHandled(completedUtcMs);
+                showHapticConfirmation(completedUtcMs);
             });
             builder.setNegativeButton("No watch sound", (dialog, which) -> {
                 String failure = "Watch reported playback, but the user heard no watch sound.";
@@ -1626,7 +1626,7 @@ public final class MainActivity extends Activity {
                         .apply();
                 statusText.setText("Watch system check FAIL: " + failure);
                 DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_NOT_AUDIBLE", failure);
-                markSystemCheckReportHandled(completedUtcMs);
+                showHapticConfirmation(completedUtcMs);
             });
             builder.setNeutralButton("Close",
                     (dialog, which) -> markSystemCheckReportHandled(completedUtcMs));
@@ -1640,6 +1640,35 @@ public final class MainActivity extends Activity {
                         + ";heartSamples=" + heartSamples
                         + ";watchAudioStarted=" + watchAudioStarted
                         + ";watchAudioCompleted=" + watchAudioCompleted);
+    }
+
+    private void showHapticConfirmation(long completedUtcMs) {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        new AlertDialog.Builder(this)
+                .setTitle("Watch vibration")
+                .setMessage("Did you feel the short watch vibration at the start of the check?")
+                .setCancelable(false)
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    prefs.edit()
+                            .putBoolean("last_watch_haptic_felt", true)
+                            .putLong("last_watch_haptic_feedback_utc",
+                                    System.currentTimeMillis())
+                            .apply();
+                    DebugLog.append(this, "SYSTEM_CHECK_WATCH_HAPTIC_FELT",
+                            "completedUtcMs=" + completedUtcMs);
+                    markSystemCheckReportHandled(completedUtcMs);
+                })
+                .setNegativeButton("No", (dialog, which) -> {
+                    prefs.edit()
+                            .putBoolean("last_watch_haptic_felt", false)
+                            .putLong("last_watch_haptic_feedback_utc",
+                                    System.currentTimeMillis())
+                            .apply();
+                    DebugLog.append(this, "SYSTEM_CHECK_WATCH_HAPTIC_NOT_FELT",
+                            "completedUtcMs=" + completedUtcMs);
+                    markSystemCheckReportHandled(completedUtcMs);
+                })
+                .show();
     }
 
     boolean isSystemCheckReportShowingForTest() {

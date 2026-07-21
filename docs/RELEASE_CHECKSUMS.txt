@@ -35,10 +35,15 @@ Google Play internal testing published 2026-07-20:
 - Phone versionCode 57 on track 4701743177829341351. Track status: Active and available to internal testers.
 - Wear OS versionCode 58 on track 4700051853729851607. Release is available to internal testers; Play labels the Wear OS track Inactive.
 
-DreamSync 1.3.13-test local debug artifacts
-Prepared, not uploaded: 2026-07-20 America/Los_Angeles
+DreamSync 1.3.13-test internal-test artifacts
+Built, signed, and published: 2026-07-21 America/Los_Angeles
 
 FABD3905D8E89CC205A0343F0A8EAE44C80A40043E54445CFB53E64FC4EFE577  artifacts/1.3.13-test/DreamSync-Phone-1.3.13-test-debug.apk
 28FAE6487F4D988C3AF117FB35948469903FC4B40188635C632B7AA84863A535  artifacts/1.3.13-test/DreamSync-WearOS-1.3.13-test-debug.apk
+11A03F75BC7D355EDBCACEC48087D589A49B0DD877C77719F3E83A6FFFED2893  artifacts/1.3.13-test/DreamSync-Phone-1.3.13-test.aab
+AD582BD137301FAF35BF3406FB6C0D009189B8C503769236F8B741AD7DA4FB18  artifacts/1.3.13-test/DreamSync-WearOS-1.3.13-test.aab
 
-These are debug-signed device-test APKs, not Google Play upload bundles.
+Both AAB signatures verified with jarsigner.
+Google Play internal testing published 2026-07-21:
+- Phone versionCode 59 on track 4701743177829341351. Track status: Active and available to internal testers.
+- Wear OS versionCode 60 on track 4700051853729851607. Release is available to internal testers; Play labels the Wear OS track Inactive.

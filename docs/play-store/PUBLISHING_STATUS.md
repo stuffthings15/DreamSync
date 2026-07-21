@@ -57,19 +57,21 @@
 - Wear OS version code 56 (`1.3.11-test`) published on 2026-07-20.
 - Phone version code 57 (`1.3.12-test`) published on 2026-07-20.
 - Wear OS version code 58 (`1.3.12-test`) published on 2026-07-20.
+- Phone version code 59 (`1.3.13-test`) published on 2026-07-21.
+- Wear OS version code 60 (`1.3.13-test`) published on 2026-07-21.
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
 
 ## Current internal-test build
 
-- Phone version code 57 (`1.3.12-test`) is available to internal testers and its track is Active.
-- Wear OS version code 58 (`1.3.12-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
-- Version 1.3.12 pauses passive Health Services monitoring during the live sensor check, restores it afterward, keeps live heart acquisition active for the full test, and exports expanded callback diagnostics.
+- Phone version code 59 (`1.3.13-test`) is available to internal testers and its track is Active.
+- Wear OS version code 60 (`1.3.13-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
+- Version 1.3.13 serializes motion and heart-rate sensor ownership, displays live sensor values, rejects registration-only false passes, forwards fresh passive heart readings, and exports expanded callback diagnostics.
 
-## Version 1.3.13 prepared locally
+## Version 1.3.13 published to internal testing
 
-- Phone version code 59 and Wear OS version code 60 are built for device testing but are not uploaded.
+- Phone version code 59 and Wear OS version code 60 were published on 2026-07-21 and are available to internal testers.
 - The live check serializes motion and heart-rate ownership, displays changing sensor values, rejects registration-only false passes, and exports a specific global-sensor-silence diagnosis.
 - A new physical Watch Ultra result is required before this sensor fix is described as hardware-verified.
 - Version 1.3.11 centralizes the research-based sleep-protection contract across phone and watch: conservative sound limits, fresh-sensor gating, automatic onset stability, post-cue observation, arousal quiet time, and no sleep haptics.
@@ -79,7 +81,7 @@
 - The phone sound check uses a local WAV player with streaming PCM fallback and requires the user to confirm that the cue was audible. A saved calibration without that confirmation is rejected.
 - **Run phone + watch check** confirms phone audio, then runs a 75-second watch check with three clear awake-only tones, all standard motion streams, Health Services heart rate, and a sequential standard heart-rate fallback. The result stays visible until acknowledged and the exact pass, fail, or two-minute timeout is stored in Export Debug Log.
 - The debug export verifies the full chain: configuration, passive monitoring and inputs, automatic session handshake, sensor registration and readings, quality and eligibility decisions, cue transport, phone audio lifecycle, user-run system check, no-haptics policy, and terminal summary.
-- Release bundle SHA-256: phone `97EA746FA6CF44FA4A8FE95C9BE77D0363707B7B456FC50475D1618958EDA402`; Wear OS `DDADD97D8EC9F66EB5529DC3DA6B0EF32D465423A1DEB42EC8744AA0B0D1C9DC`.
+- Release bundle SHA-256: phone `11A03F75BC7D355EDBCACEC48087D589A49B0DD877C77719F3E83A6FFFED2893`; Wear OS `AD582BD137301FAF35BF3406FB6C0D009189B8C503769236F8B741AD7DA4FB18`.
 - Experimental watch sound no longer waits for seven baseline nights. After a successful watch sound check, the first eligible night allows one cue pair. The rolling seven-night baseline remains for personalization.
 - This build resets passive elapsed-time markers after reboot, ties watch calibration to the exact media-volume setup, preserves the bounded five-minute post-playback raw-PPG window, and fails release builds closed when upload signing is unavailable.
 - The phone detects the paired watch app. When missing, it opens DreamSync's official Play Store page on the watch and continues setup after the user confirms Install. Google Play does not permit a silent background install.

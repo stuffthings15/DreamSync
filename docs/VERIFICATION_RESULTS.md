@@ -1,12 +1,12 @@
 # DreamSync validation results
 
-Date: 20 July 2026
+Date: 21 July 2026
 
 ## Verified locally
 
-### Prepared 1.3.13 sensor-recovery build
+### Published 1.3.13 sensor-recovery build
 
-- Phone version code 59 and Wear OS version code 60 (`1.3.13-test`) are prepared locally. They are not yet uploaded to Google Play.
+- Phone version code 59 and Wear OS version code 60 (`1.3.13-test`) were published to their Google Play internal tracks on 2026-07-21. Both releases are available to internal testers; the phone track is Active and Play labels the Wear OS track Inactive.
 - Log 8 proved that watch audio and vibration passed, permissions were granted, passive monitoring paused successfully, but Android delivered zero motion callbacks and Health Services remained `ACQUIRING` with zero heart readings.
 - The awake watch check now waits for sensor release, probes one motion source at a time, requires five valid samples from one source, runs Health Services heart measurement alone, fully unregisters it, then probes one raw heart sensor at a time.
 - Live watch text now shows X/Y/Z, vector magnitude, BPM, the active source, and source-specific state. Registration alone is never reported as a sensor pass.
@@ -14,6 +14,7 @@ Date: 20 July 2026
 - The overnight foreground service uses the same one-source-at-a-time fallback approach. Fresh passive heart readings are forwarded into the active session instead of discarded; motion and cardiac safety gates still fail closed.
 - Clean build, 91 unit tests, phone instrumentation 9/9, Wear workflow instrumentation 10/10, both debug APKs, and both Android lint checks passed.
 - Debug APK SHA-256: phone `FABD3905D8E89CC205A0343F0A8EAE44C80A40043E54445CFB53E64FC4EFE577`; Wear OS `28FAE6487F4D988C3AF117FB35948469903FC4B40188635C632B7AA84863A535`.
+- Published AAB SHA-256: phone `11A03F75BC7D355EDBCACEC48087D589A49B0DD877C77719F3E83A6FFFED2893`; Wear OS `AD582BD137301FAF35BF3406FB6C0D009189B8C503769236F8B741AD7DA4FB18`.
 - Physical Watch Ultra motion and heart-rate delivery is not claimed fixed until the new build returns changing values. If it still reports global silence, disable the watch developer `Sensors Off` toggle and Power saving, wear it snugly, and rerun before exporting the new log.
 
 ### Prepared 1.3.8 test build
@@ -132,5 +133,5 @@ Date: 20 July 2026
 - Concurrent polysomnography before any sleep-stage accuracy claim.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Apple Watch remains a separate future Swift/HealthKit/Core Motion/Watch Connectivity feasibility project.
-- Google Play 1.3.12 internal releases are complete. Version 1.3.13 is locally prepared but not uploaded. The Wear OS track still shows Inactive until the Wear form-factor setup is finished. The closed-release gate and all production-policy tasks remain external to local code.
+- Google Play 1.3.13 internal releases are complete. Both releases are available to internal testers. The Wear OS track still shows Inactive until the Wear form-factor setup is finished. The closed-release gate and all production-policy tasks remain external to local code.
 - The hardware runner parsed successfully and its list-only preflight found zero attached physical Android devices on 2026-07-19; physical execution therefore remains pending.

@@ -22,5 +22,8 @@ public final class PowerAndAudioPolicyTest {
         assertFalse(calibration.valid(true, 0.0));
         assertTrue(calibration.valid(true, 0.04));
         assertEquals(0.02, calibration.overnightGain(0.04), 0.0001);
+        assertTrue(calibration.setupMatches(true, 0.04, 4, 10, 4, 10));
+        assertFalse(calibration.setupMatches(true, 0.04, 4, 10, 5, 10));
+        assertFalse(calibration.setupMatches(true, 0.04, 4, 10, 4, 15));
     }
 }

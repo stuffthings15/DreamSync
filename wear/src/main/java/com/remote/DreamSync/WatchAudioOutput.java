@@ -167,6 +167,16 @@ final class WatchAudioOutput {
                 + ";backend=" + lastBackend;
     }
 
+    int mediaVolume() {
+        return audioManager == null ? -1
+                : audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+    }
+
+    int mediaVolumeMax() {
+        return audioManager == null ? -1
+                : audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+    }
+
     private Result result(boolean success, boolean started, String reason) {
         return new Result(success, started, reason, diagnostics());
     }

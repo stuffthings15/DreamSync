@@ -11,8 +11,8 @@ Date: 2026-07-20
 - Estimated sleep onset, conservative NREM-eligible and REM-like eligible labels, seven-night baseline, and sleep-continuity protections.
 - Guided user workflow, morning report, local history/export/deletion, deterministic replay, and de-identified sample export.
 - Seventy-three deterministic unit tests pass; phone and watch debug, lint, signed bundles, and Android instrumentation packages build.
-- Phone instrumentation passes 6/6 on an Android 16 phone emulator; Wear workflow instrumentation passes 8/8 when installed on that same phone emulator. This is Android behavior evidence, not physical Wear OS hardware evidence.
-- Google Play internal testing serves phone 33 and Wear 34 (`1.3.0-test`).
+- Phone instrumentation passes 7/7 on an Android 16 phone emulator; Wear workflow instrumentation passes 9/9 when installed on that same phone emulator. This is Android behavior evidence, not physical Wear OS hardware evidence.
+- Google Play internal testing serves phone 35 and Wear 36 (`1.3.1-test`). The phone track is Active; the Wear OS track summary remains Inactive pending completion of its Play form-factor setup.
 - The one-time sound check waits for real playback, uses local PCM WAV playback with streaming fallback, requires human confirmation that the cue was audible, shows the exact backend error, and provides a bounded Export Debug Log without raw node identifiers.
 - A phone-controlled 45-second live check records actual watch motion and heart-rate samples, permissions, sensor registration, off-wrist state, and available advanced-sensor counts. It rejects stale, duplicate, wrong-watch, wrong-enrollment, and wrong-check results, and logs a failure after a two-minute timeout.
 - Phone and watch diagnostics now trace configuration, passive monitoring and inputs, automatic-session handshake, sensor registration and readings, quality and eligibility decisions, cue delivery and phone audio acknowledgement, the user-run live system check, no-haptics policy, failures, and terminal summaries.
@@ -24,8 +24,10 @@ Date: 2026-07-20
 - Passive candidate detection uses the learned resting-heart-rate baseline after three valid nights, with a conservative 75 BPM fallback before enough history exists.
 - Capability, provider, night-state, decision-snapshot, and summary contracts are connected to live session persistence and debug output.
 - Compatibility uses all five profiles: Enhanced, Core, Monitoring only, Phone protection only, and Needs attention.
-- Watch-speaker calibration stores the exact user-confirmed gain. Experimental sound stays blocked until a real audible check is confirmed.
-- Raw PPG is restricted to a 30-second pre-cue quality window and a bounded post-cue observation window instead of running all night.
+- Watch-speaker calibration stores the exact user-confirmed gain and watch media-volume setting. Experimental sound stays blocked until a real audible check is confirmed and is invalidated if that volume changes.
+- Raw PPG is restricted to a 30-second pre-cue quality window and reopens for a bounded five-minute post-playback observation window instead of running all night.
+- Reboot recovery clears old elapsed-realtime sample markers before passive registration resumes, preventing timestamps from the prior boot from blocking new samples.
+- Phone and Wear release tasks fail closed unless the protected upload key and passwords are present.
 - Room schema 4 migrates historical `DEEP` session records to `EXPERIMENTAL_AUDIO`; old settings still fail closed to Protect.
 - The hardware runner now records Galaxy, Pixel Watch, and third-party Wear OS groups, battery use, reboot-night evidence, and seven-night progress.
 
@@ -38,7 +40,7 @@ Date: 2026-07-20
 
 - Official Samsung Health Sensor SDK AAR, Samsung partner approval, and package/signing-certificate registration.
 - Physical Galaxy, Pixel Watch, and third-party Wear OS sensor, audio, route, disconnect, permission, process-death, off-wrist, reboot-night, seven-night, and battery validation.
-- The earlier zero-reading and missing-watch-audio failures are not claimed fixed on physical hardware until build 34 is exercised on a real watch and its exported log is reviewed.
+- The earlier zero-reading and missing-watch-audio failures are not claimed fixed on physical hardware until build 36 is exercised on a real watch and its exported log is reviewed.
 - PSG comparison before sleep-stage accuracy claims.
 - Controlled 12-20-night study before any claim that DreamSync reduces fragmentation or keeps users asleep.
 - Owner-signed prototype/source/asset declaration and its supporting attachments before public production release.

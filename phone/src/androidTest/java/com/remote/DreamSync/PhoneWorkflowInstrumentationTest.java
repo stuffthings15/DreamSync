@@ -152,6 +152,26 @@ public final class PhoneWorkflowInstrumentationTest {
         }
     }
 
+    @Test public void sessionConfigCarriesWatchVolumeCalibration() throws Exception {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("watch_audio_calibrated", true)
+                .putFloat("watch_audible_threshold", 0.04f)
+                .putInt("watch_calibration_media_volume", 4)
+                .putInt("watch_calibration_media_volume_max", 10)
+                .apply();
+
+        org.json.JSONObject config = PhoneAutoControl.sessionConfig(
+                context, "session-volume", "phone", "watch", 1000L);
+
+        assertTrue(config.getBoolean("watchAudioCalibrated"));
+        assertEquals(0.04, config.getDouble("watchAudibleThreshold"), 0.0001);
+        assertEquals(4, config.getInt("watchMediaVolume"));
+        assertEquals(10, config.getInt("watchMediaVolumeMax"));
+    }
+
     private static boolean containsScrollView(View view) {
         if (view instanceof ScrollView) return true;
         if (!(view instanceof android.view.ViewGroup)) return false;

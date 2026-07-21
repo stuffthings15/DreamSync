@@ -93,6 +93,10 @@ final class PhoneAutoControl {
                 "watch_audio_calibrated", false);
         float watchAudibleThreshold = prefs.getFloat(
                 "watch_audible_threshold", 0f);
+        int watchMediaVolume = prefs.getInt(
+                "watch_calibration_media_volume", -1);
+        int watchMediaVolumeMax = prefs.getInt(
+                "watch_calibration_media_volume_max", -1);
         try {
             return new JSONObject()
                     .put("sessionId", sessionId)
@@ -104,6 +108,8 @@ final class PhoneAutoControl {
                     .put("cueGain", gain)
                     .put("watchAudioCalibrated", watchAudioCalibrated)
                     .put("watchAudibleThreshold", watchAudibleThreshold)
+                    .put("watchMediaVolume", watchMediaVolume)
+                    .put("watchMediaVolumeMax", watchMediaVolumeMax)
                     .put("armTimeoutMin", 30)
                     .put("deepStartMin", 25)
                     .put("deepEndMin", 145)

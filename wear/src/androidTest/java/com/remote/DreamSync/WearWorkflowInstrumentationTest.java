@@ -61,7 +61,9 @@ public final class WearWorkflowInstrumentationTest {
         config = SessionConfig.fromJson("{"
                 + "\"mode\":\"EXPERIMENTAL_AUDIO\","
                 + "\"watchAudioCalibrated\":true,"
-                + "\"watchAudibleThreshold\":0.04}");
+                + "\"watchAudibleThreshold\":0.04,"
+                + "\"watchMediaVolume\":4,"
+                + "\"watchMediaVolumeMax\":10}");
         assertTrue(config.usesDeepCues());
     }
 
@@ -73,6 +75,21 @@ public final class WearWorkflowInstrumentationTest {
         AutoSleepConfig restored = AutoSleepConfig.load(context);
         assertEquals(7, restored.baselineNights);
         assertEquals(61.5, restored.learnedRestingHeartRateBpm, 0.001);
+    }
+
+    @Test public void rebootResetClearsElapsedRealtimeSequenceOnly() {
+        AutoSleepConfig config = new AutoSleepConfig();
+        config.baselineNights = 7;
+        config.learnedRestingHeartRateBpm = 61.5;
+        config.firstLowHeartRateElapsedMs = 5_000L;
+        config.lastPassiveHeartRateElapsedMs = 6_000L;
+        config.lowHeartRateSamples = 3;
+        config.resetPassiveSequence();
+        assertEquals(0L, config.firstLowHeartRateElapsedMs);
+        assertEquals(0L, config.lastPassiveHeartRateElapsedMs);
+        assertEquals(0, config.lowHeartRateSamples);
+        assertEquals(7, config.baselineNights);
+        assertEquals(61.5, config.learnedRestingHeartRateBpm, 0.001);
     }
 
     @Test public void roundScreenWorkflowIsScrollableAndPhoneControlled() {

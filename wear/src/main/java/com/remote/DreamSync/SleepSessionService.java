@@ -56,6 +56,7 @@ import com.remote.DreamSync.shared.SleepOnsetEstimator;
 import com.remote.DreamSync.shared.SleepPhaseMachine;
 import com.remote.DreamSync.shared.SleepSessionClock;
 import com.remote.DreamSync.shared.TimeProvider;
+import com.remote.DreamSync.shared.WatchAudioCalibration;
 
 import org.json.JSONObject;
 
@@ -334,6 +335,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
         sessionCoordinator.beginFreshHandshake();
         sessionCoordinator.arm();
         sessionCoordinator.waitForSleep();
+        boolean calibrationSetupMatches = new WatchAudioCalibration().setupMatches(
+                config.watchAudioCalibrated,
+                config.watchAudibleThreshold,
+                config.watchMediaVolume,
+                config.watchMediaVolumeMax,
+                watchAudioOutput.mediaVolume(),
+                watchAudioOutput.mediaVolumeMax());
+        if (config.watchAudioCalibrated && !calibrationSetupMatches) {
+            config.watchAudioCalibrated = false;
+        }
         currentGain = config.cueGain;
         sessionStartMs = timeProvider.elapsedRealtimeMs();
         sessionStartUtcMs = timeProvider.utcMs();
@@ -343,6 +354,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
         startAsForeground();
         acquireWakeLock();
         openLog();
+        if (!calibrationSetupMatches
+                && ProtectionMode.EXPERIMENTAL_AUDIO.name().equals(config.mode)) {
+            persistEvent("WATCH_CALIBRATION_INVALIDATED", "",
+                    "watch media volume changed; run the awake watch check again");
+            WatchDiagnostics.session(this, config, "WATCH_CALIBRATION_INVALIDATED",
+                    "calibratedVolume=" + config.watchMediaVolume
+                            + "/" + config.watchMediaVolumeMax
+                            + ";currentVolume=" + watchAudioOutput.mediaVolume()
+                            + "/" + watchAudioOutput.mediaVolumeMax());
+        }
         registerSensors();
         WatchDiagnostics.session(this, config, "SENSOR_REGISTRATION",
                 "accelerometerPresent=" + (accelerometer != null)
@@ -857,7 +878,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
     }
 
     private void extendRawPpgPostCue(long now) {
-        if (!rawPpgWindowActive) return;
+        if (!rawPpgWindowActive) {
+            openRawPpgWindow(now, RawPpgWindowPolicy.POST_CUE_MS,
+                    "POST_CUE_QUALITY");
+            return;
+        }
         rawPpgWindowUntilMs = RAW_PPG_POLICY.extendAfterAudioStart(
                 rawPpgWindowUntilMs, now);
         persistEvent("RAW_PPG_WINDOW_EXTENDED", "",

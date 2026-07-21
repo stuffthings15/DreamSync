@@ -21,10 +21,10 @@ DreamSync keeps its optional Samsung adapter for IBI/HRV, skin temperature, raw 
 
 ## Evidence for this build
 
-- Phone `1.3.0-test`, version code 33.
-- Wear OS `1.3.0-test`, version code 34.
+- Phone `1.3.1-test`, version code 35.
+- Wear OS `1.3.1-test`, version code 36.
 - Automated test and build totals are recorded in `VERIFICATION_RESULTS.md` after each release build.
-- Six Wear OS instrumentation tests compile; real watch sensors and vibration still require the physical Watch Ultra.
+- Seven phone and nine Wear OS workflow instrumentation tests passed on the Android 16 phone emulator. Real watch sensors, speaker, vibration, battery, reboot, and display behavior still require physical Wear OS hardware.
 - Phone and watch lint, debug APKs, signed release bundles, signature verification, and Android 16 phone-emulator workflow passed.
 
 ## Still required on real hardware

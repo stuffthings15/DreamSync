@@ -36,6 +36,8 @@ final class SessionConfig {
     boolean enableRawPpg;
     boolean watchAudioCalibrated;
     float watchAudibleThreshold;
+    int watchMediaVolume = -1;
+    int watchMediaVolumeMax = -1;
 
     static SessionConfig fromJson(String json) {
         SessionConfig config = new SessionConfig();
@@ -66,6 +68,8 @@ final class SessionConfig {
                     "watchAudioCalibrated", false);
             config.watchAudibleThreshold = (float) object.optDouble(
                     "watchAudibleThreshold", 0.0);
+            config.watchMediaVolume = object.optInt("watchMediaVolume", -1);
+            config.watchMediaVolumeMax = object.optInt("watchMediaVolumeMax", -1);
         } catch (Exception ignored) {
             // Invalid fields retain conservative defaults.
         }
@@ -96,10 +100,17 @@ final class SessionConfig {
         maxLucidCues = clampInt(maxLucidCues, 0, 10);
         safeCueNights = clampInt(safeCueNights, 0, 30);
         watchAudibleThreshold = clampFloat(watchAudibleThreshold, 0f, 0.10f);
+        watchMediaVolume = Math.max(-1, watchMediaVolume);
+        watchMediaVolumeMax = Math.max(-1, watchMediaVolumeMax);
         if (!new WatchAudioCalibration().valid(
-                watchAudioCalibrated, watchAudibleThreshold)) {
+                watchAudioCalibrated, watchAudibleThreshold)
+                || watchMediaVolume <= 0
+                || watchMediaVolumeMax <= 0
+                || watchMediaVolume > watchMediaVolumeMax) {
             watchAudioCalibrated = false;
             watchAudibleThreshold = 0f;
+            watchMediaVolume = -1;
+            watchMediaVolumeMax = -1;
         }
         if (deepEndMin <= deepStartMin) {
             deepEndMin = deepStartMin + 60;
@@ -136,6 +147,8 @@ final class SessionConfig {
         c.enableRawPpg = p.getBoolean("enableRawPpg", false);
         c.watchAudioCalibrated = p.getBoolean("watchAudioCalibrated", false);
         c.watchAudibleThreshold = p.getFloat("watchAudibleThreshold", 0f);
+        c.watchMediaVolume = p.getInt("watchMediaVolume", -1);
+        c.watchMediaVolumeMax = p.getInt("watchMediaVolumeMax", -1);
         c.clamp();
         return c;
     }
@@ -168,6 +181,8 @@ final class SessionConfig {
                 .putBoolean("enableRawPpg", enableRawPpg)
                 .putBoolean("watchAudioCalibrated", watchAudioCalibrated)
                 .putFloat("watchAudibleThreshold", watchAudibleThreshold)
+                .putInt("watchMediaVolume", watchMediaVolume)
+                .putInt("watchMediaVolumeMax", watchMediaVolumeMax)
                 .apply();
     }
 

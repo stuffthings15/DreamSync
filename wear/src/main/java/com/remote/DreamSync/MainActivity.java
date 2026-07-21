@@ -859,6 +859,10 @@ public final class MainActivity extends Activity {
                     ? "not_finished" : watchAudioResult.reason);
             payload.put("watchAudioGain", String.format(
                     java.util.Locale.US, "%.4f", config.cueGain));
+            payload.put("watchMediaVolume", Integer.toString(
+                    watchAudioOutput == null ? -1 : watchAudioOutput.mediaVolume()));
+            payload.put("watchMediaVolumeMax", Integer.toString(
+                    watchAudioOutput == null ? -1 : watchAudioOutput.mediaVolumeMax()));
             payload.put("watchAudioDiagnostics", watchAudioResult == null
                     ? watchAudioOutput == null ? "not_started" : watchAudioOutput.diagnostics()
                     : watchAudioResult.diagnostics);

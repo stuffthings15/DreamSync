@@ -16,6 +16,12 @@ public final class AutoSleepBootReceiver extends BroadcastReceiver {
         if (!BootActionGate.accepts(intent.getAction())) return;
         AutoSleepConfig config = AutoSleepConfig.load(context);
         if (!config.validBinding()) return;
+        // Health Services timestamps are measured from boot. Never compare a new-boot
+        // sample against a timestamp persisted from the previous boot.
+        config.resetPassiveSequence();
+        config.save(context);
+        WatchDiagnostics.auto(context, config, "PASSIVE_SEQUENCE_RESET",
+                "reason=" + intent.getAction());
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(
                 AutoSleepRegistrationWorker.class).build();
         WorkManager.getInstance(context).enqueueUniqueWork(

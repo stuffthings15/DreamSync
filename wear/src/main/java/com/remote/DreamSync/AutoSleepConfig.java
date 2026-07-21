@@ -83,6 +83,12 @@ final class AutoSleepConfig {
                 && !phoneNodeId.isEmpty() && !watchNodeId.isEmpty();
     }
 
+    void resetPassiveSequence() {
+        firstLowHeartRateElapsedMs = 0L;
+        lastPassiveHeartRateElapsedMs = 0L;
+        lowHeartRateSamples = 0;
+    }
+
     void save(Context context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean("enabled", enabled)

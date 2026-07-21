@@ -162,6 +162,8 @@ public final class MainActivity extends Activity {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putBoolean("watch_audio_calibrated", false)
                         .remove("watch_audible_threshold")
+                        .remove("watch_calibration_media_volume")
+                        .remove("watch_calibration_media_volume_max")
                         .apply();
                 syncAutoSettingsIfEnabled();
             }
@@ -1421,6 +1423,10 @@ public final class MainActivity extends Activity {
                 "last_system_check_watch_audio_reason", "not reported");
         float watchAudioGain = prefs.getFloat(
                 "last_system_check_watch_audio_gain", 0f);
+        int watchMediaVolume = prefs.getInt(
+                "last_system_check_watch_media_volume", -1);
+        int watchMediaVolumeMax = prefs.getInt(
+                "last_system_check_watch_media_volume_max", -1);
         String measureAvailability = prefs.getString(
                 "last_system_check_measure_availability", "not reported");
         String message = "Result: " + result + "\n"
@@ -1429,6 +1435,8 @@ public final class MainActivity extends Activity {
                 : watchAudioStarted ? "STARTED BUT FAILED" : "DID NOT START") + "\n"
                 + "Audio detail: " + watchAudioReason + "\n"
                 + "Test gain: " + Math.round(watchAudioGain * 100f) + "%\n"
+                + "Watch media volume: " + watchMediaVolume + "/"
+                + watchMediaVolumeMax + "\n"
                 + "Motion: " + motionSamples + " samples; registered="
                 + motionRegistered + "\n"
                 + "Heart rate: " + heartSamples + " samples; registered="
@@ -1446,14 +1454,20 @@ public final class MainActivity extends Activity {
             builder.setPositiveButton("I heard watch sound", (dialog, which) -> {
                 prefs.edit()
                         .putBoolean("last_watch_audio_audible", true)
-                        .putBoolean("watch_audio_calibrated", watchAudioGain >= 0.005f)
+                        .putBoolean("watch_audio_calibrated", watchAudioGain >= 0.005f
+                                && watchMediaVolume > 0
+                                && watchMediaVolumeMax >= watchMediaVolume)
                         .putFloat("watch_audible_threshold", watchAudioGain)
+                        .putInt("watch_calibration_media_volume", watchMediaVolume)
+                        .putInt("watch_calibration_media_volume_max", watchMediaVolumeMax)
                         .putFloat("auto_gain", watchAudioGain)
                         .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
                         .apply();
                 DebugLog.append(this, "SYSTEM_CHECK_WATCH_AUDIO_AUDIBLE_CONFIRMED",
                         "completedUtcMs=" + completedUtcMs
                                 + ";audibleThreshold=" + watchAudioGain
+                                + ";watchMediaVolume=" + watchMediaVolume
+                                + ";watchMediaVolumeMax=" + watchMediaVolumeMax
                                 + ";overnightGain=" + Math.min(0.04f, watchAudioGain * 0.5f));
             });
             builder.setNegativeButton("No watch sound", (dialog, which) -> {
@@ -1462,6 +1476,8 @@ public final class MainActivity extends Activity {
                         .putBoolean("last_watch_audio_audible", false)
                         .putBoolean("watch_audio_calibrated", false)
                         .remove("watch_audible_threshold")
+                        .remove("watch_calibration_media_volume")
+                        .remove("watch_calibration_media_volume_max")
                         .putLong("last_watch_audio_feedback_utc", System.currentTimeMillis())
                         .putString("last_system_check_status", "FAIL")
                         .putString("last_system_check_reason", failure)

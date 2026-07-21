@@ -466,6 +466,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 envelope.payload.getOrDefault("watchAudioReason", ""))
                 + ";watchAudioGain="
                 + envelope.payload.getOrDefault("watchAudioGain", "")
+                + ";watchMediaVolume="
+                + envelope.payload.getOrDefault("watchMediaVolume", "")
+                + ";watchMediaVolumeMax="
+                + envelope.payload.getOrDefault("watchMediaVolumeMax", "")
                 + ";watchAudioDiagnostics=" + cleanDetails(
                 envelope.payload.getOrDefault("watchAudioDiagnostics", ""))
                 + ";hapticAvailable=" + envelope.payload.getOrDefault("hapticAvailable", "")
@@ -510,6 +514,10 @@ public final class PhoneDataListenerService extends WearableListenerService {
                         envelope.payload.getOrDefault("watchAudioReason", "")))
                 .putFloat("last_system_check_watch_audio_gain", floating(
                         envelope.payload.getOrDefault("watchAudioGain", "0"), 0f))
+                .putInt("last_system_check_watch_media_volume", integer(
+                        envelope.payload.getOrDefault("watchMediaVolume", "-1")))
+                .putInt("last_system_check_watch_media_volume_max", integer(
+                        envelope.payload.getOrDefault("watchMediaVolumeMax", "-1")))
                 .putString("last_system_check_measure_availability", cleanStatus(
                         envelope.payload.getOrDefault("measureAvailability", "")))
                 .putLong("last_system_check_utc", System.currentTimeMillis());

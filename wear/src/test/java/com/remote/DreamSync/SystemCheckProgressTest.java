@@ -26,4 +26,15 @@ public final class SystemCheckProgressTest {
         assertTrue(text.contains("heart 4 reading"));
         assertTrue(text.contains("sound passed"));
     }
+
+    @Test public void liveSensorValuesAreShown() {
+        String text = SystemCheckProgress.format(
+                12_000L, 75_000L, 25, "reading accelerometer",
+                1.25f, -2.5f, 9.75f, 10.14,
+                3, "Health Services reading", 64.5, "passed");
+
+        assertTrue(text.contains("x 1.25, y -2.50, z 9.75"));
+        assertTrue(text.contains("|m| 10.14"));
+        assertTrue(text.contains("64.5 BPM"));
+    }
 }

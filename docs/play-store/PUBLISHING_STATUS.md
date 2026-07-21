@@ -66,6 +66,12 @@
 - Phone version code 57 (`1.3.12-test`) is available to internal testers and its track is Active.
 - Wear OS version code 58 (`1.3.12-test`) is available to internal testers. Play labels the Wear OS track Inactive, but the release itself is available.
 - Version 1.3.12 pauses passive Health Services monitoring during the live sensor check, restores it afterward, keeps live heart acquisition active for the full test, and exports expanded callback diagnostics.
+
+## Version 1.3.13 prepared locally
+
+- Phone version code 59 and Wear OS version code 60 are built for device testing but are not uploaded.
+- The live check serializes motion and heart-rate ownership, displays changing sensor values, rejects registration-only false passes, and exports a specific global-sensor-silence diagnosis.
+- A new physical Watch Ultra result is required before this sensor fix is described as hardware-verified.
 - Version 1.3.11 centralizes the research-based sleep-protection contract across phone and watch: conservative sound limits, fresh-sensor gating, automatic onset stability, post-cue observation, arousal quiet time, and no sleep haptics.
 - Shared, phone, and Wear unit tests passed. Both release lints, signed bundle builds, and bundle signature checks passed before publishing.
 - Seventy-four unit tests and eight phone instrumentation tests passed. Nine Wear workflow instrumentation tests passed on the Android phone emulator but still require a physical Wear OS watch for sensor, speaker, vibration, battery, reboot, and display proof. Phone and watch lint, signed-bundle, signature, and release-integrity checks also passed before publishing.

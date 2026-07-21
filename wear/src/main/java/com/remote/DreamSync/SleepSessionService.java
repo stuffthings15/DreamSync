@@ -57,6 +57,7 @@ import com.remote.DreamSync.shared.SleepFeatureEngine;
 import com.remote.DreamSync.shared.SleepOnsetEstimator;
 import com.remote.DreamSync.shared.SleepPhaseMachine;
 import com.remote.DreamSync.shared.SleepSessionClock;
+import com.remote.DreamSync.shared.SystemCheckEvaluator;
 import com.remote.DreamSync.shared.TimeProvider;
 import com.remote.DreamSync.shared.WatchAudioCalibration;
 
@@ -89,13 +90,19 @@ public final class SleepSessionService extends Service implements SensorEventLis
     static final String ACTION_STOP = "com.remote.DreamSync.STOP_SESSION";
     static final String ACTION_STATUS = "com.remote.DreamSync.STATUS";
     static final String ACTION_CUE_ACK = "com.remote.DreamSync.CUE_ACK";
+    static final String ACTION_PASSIVE_HEART_RATE =
+            "com.remote.DreamSync.PASSIVE_HEART_RATE";
     static final String EXTRA_STATUS = "status";
     static final String EXTRA_START_SESSION_ID = "startSessionId";
     static final String EXTRA_HANDSHAKE_MESSAGE_ID = "handshakeMessageId";
+    static final String EXTRA_PASSIVE_BPM = "passiveBpm";
+    static final String EXTRA_PASSIVE_SAMPLE_ELAPSED_MS = "passiveSampleElapsedMs";
 
     private static final String CHANNEL_ID = "dreamsync_watch_session";
     private static final int NOTIFICATION_ID = 3001;
     private static final long EVALUATION_INTERVAL_MS = 5_000L;
+    private static final long MOTION_SENSOR_PROBE_TIMEOUT_MS = 10_000L;
+    private static final long HEART_SENSOR_PROBE_TIMEOUT_MS = 30_000L;
     private static final long WAKELOCK_MARGIN_MS = 30L * 60L * 1000L;
     private static final long CUE_AROUSAL_WINDOW_MS =
             ProtectionConfig.POST_CUE_OBSERVATION_MS;
@@ -119,9 +126,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private Sensor accelerometer;
     private Sensor activeMotionSensor;
     private List<Sensor> registeredMotionSensors = Collections.emptyList();
+    private List<Sensor> availableMotionSensors = Collections.emptyList();
+    private int motionSensorProbeIndex = -1;
+    private long motionSensorProbeStartedMs;
+    private volatile int currentMotionProbeSamples;
+    private boolean motionSensorProbesExhausted;
     private Sensor heartRate;
     private Sensor activeHeartRateSensor;
     private List<Sensor> registeredHeartRateSensors = Collections.emptyList();
+    private List<Sensor> availableHeartRateSensors = Collections.emptyList();
+    private int heartSensorProbeIndex = -1;
+    private long heartSensorProbeStartedMs;
+    private boolean heartSensorProbesExhausted;
     private HandlerThread sensorThread;
     private Handler sensorHandler;
     private Handler evaluatorHandler;
@@ -130,10 +146,11 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
     private long sessionStartMs;
     private long sessionStartUtcMs;
-    private long lastMotionSampleMs;
-    private long lastHeartSampleMs;
-    private long lastIbiSampleMs;
-    private long lastTemperatureSampleMs;
+    private volatile long lastMotionSampleMs;
+    private volatile long lastHeartSampleMs;
+    private volatile long lastStandardHeartSampleMs;
+    private volatile long lastIbiSampleMs;
+    private volatile long lastTemperatureSampleMs;
     private long lastHeartbeatMs;
     private long probableNremSinceMs;
     private long probableRemSinceMs;
@@ -293,6 +310,14 @@ public final class SleepSessionService extends Service implements SensorEventLis
             return START_NOT_STICKY;
         }
         String action = intent.getAction();
+        if (ACTION_PASSIVE_HEART_RATE.equals(action)) {
+            if (!running || !sessionInitialized || config == null) {
+                stopSelfResult(startId);
+                return START_NOT_STICKY;
+            }
+            acceptPassiveHeartRate(intent);
+            return START_NOT_STICKY;
+        }
         if (ACTION_STOP.equals(action)) {
             terminalState = intent == null
                     ? "USER_STOPPED" : intent.getStringExtra("terminationReason");
@@ -459,6 +484,18 @@ public final class SleepSessionService extends Service implements SensorEventLis
                         if (Double.isFinite(bpm) && bpm >= 30.0 && bpm <= 220.0) {
                             lastHeartSampleMs = now;
                             heartRateRegistered = true;
+                            if (!registeredHeartRateSensors.isEmpty()) {
+                                sensorManager.unregisterListener(
+                                        SleepSessionService.this,
+                                        registeredHeartRateSensors.get(0));
+                                registeredHeartRateSensors = Collections.emptyList();
+                                activeHeartRateSensor = null;
+                                heartSensorProbesExhausted = true;
+                                WatchDiagnostics.session(SleepSessionService.this, config,
+                                        "HEART_SENSOR_SOURCE_SWITCHED",
+                                        "source=SAMSUNG_HEALTH_SENSOR_SDK;"
+                                                + "standardProbeStopped=true");
+                            }
                             synchronized (sampleLock) {
                                 heartSamples.addLast(new SleepFeatureEngine.Sample(now, bpm));
                                 prune(heartSamples, now - 20L * 60_000L);
@@ -547,41 +584,121 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 samsungDetail + "; " + advanced.reason);
     }
 
+    private void acceptPassiveHeartRate(Intent intent) {
+        if (!running || !sessionInitialized || config == null) return;
+        double bpm = intent.getDoubleExtra(EXTRA_PASSIVE_BPM, Double.NaN);
+        long sampleElapsedMs = intent.getLongExtra(
+                EXTRA_PASSIVE_SAMPLE_ELAPSED_MS, 0L);
+        long now = timeProvider.elapsedRealtimeMs();
+        long ageMs = sampleElapsedMs <= 0L ? Long.MAX_VALUE : now - sampleElapsedMs;
+        if (!Double.isFinite(bpm) || bpm < 30.0 || bpm > 220.0
+                || ageMs < 0L || ageMs > 10L * 60_000L) {
+            WatchDiagnostics.session(this, config, "PASSIVE_HEART_FORWARD_REJECTED",
+                    "bpm=" + bpm + ";sampleElapsedMs=" + sampleElapsedMs
+                            + ";ageMs=" + ageMs);
+            return;
+        }
+        lastHeartSampleMs = sampleElapsedMs;
+        heartRateRegistered = true;
+        synchronized (sampleLock) {
+            heartSamples.addLast(new SleepFeatureEngine.Sample(sampleElapsedMs, bpm));
+            prune(heartSamples, now - 20L * 60L * 1000L);
+        }
+        WatchDiagnostics.session(this, config, "PASSIVE_HEART_FORWARDED_TO_SESSION",
+                "bpm=" + bpm + ";sampleElapsedMs=" + sampleElapsedMs
+                        + ";ageMs=" + ageMs);
+    }
+
     private void registerSensors() {
-        MotionSensorRegistration.Result motion = MotionSensorRegistration.register(
-                sensorManager, this, 200_000, 2_000_000, sensorHandler);
-        accelerometer = motion.sensor;
-        registeredMotionSensors = motion.sensors;
-        accelerometerRegistered = motion.registered;
-        motionRegistrationDetails = motion.details;
-        HeartRateSensorRegistration.Result heart = HeartRateSensorRegistration.register(
-                sensorManager, this, 1_000_000, 0, sensorHandler);
-        heartRate = heart.primary;
-        registeredHeartRateSensors = heart.sensors;
-        heartRateRegistered = heart.registered;
-        heartRegistrationDetails = heart.details;
+        availableMotionSensors = MotionSensorRegistration.candidates(sensorManager);
+        availableHeartRateSensors = HeartRateSensorRegistration.candidates(sensorManager);
+        startNextMotionSensorProbe("initial session probe");
+        startNextHeartSensorProbe("initial session probe");
     }
 
     private void retryMotionOnMainThread() {
-        if (motionRetryAttempted || lastMotionSampleMs > 0L || sensorManager == null) return;
+        if (currentMotionProbeSamples >= SystemCheckEvaluator.MIN_MOTION_SAMPLES
+                || sensorManager == null
+                || motionSensorProbesExhausted) return;
         motionRetryAttempted = true;
-        for (Sensor sensor : registeredMotionSensors) {
-            sensorManager.unregisterListener(this, sensor);
+        startNextMotionSensorProbe("no events before timeout");
+    }
+
+    private void startNextMotionSensorProbe(String reason) {
+        if (sensorManager == null || currentMotionProbeSamples
+                >= SystemCheckEvaluator.MIN_MOTION_SAMPLES) return;
+        if (!registeredMotionSensors.isEmpty()) {
+            sensorManager.unregisterListener(this, registeredMotionSensors.get(0));
         }
-        MotionSensorRegistration.Result retry = MotionSensorRegistration.register(
-                sensorManager, this, 200_000, 0, null);
-        accelerometer = retry.sensor;
+        registeredMotionSensors = Collections.emptyList();
         activeMotionSensor = null;
+        currentMotionProbeSamples = 0;
         motionVectorFilter.reset();
-        registeredMotionSensors = retry.sensors;
-        accelerometerRegistered = retry.registered;
-        motionRegistrationDetails = motionRegistrationDetails
-                + " || MAIN_THREAD_RETRY: " + retry.details;
-        WatchDiagnostics.session(this, config,
-                accelerometerRegistered ? "MOTION_MAIN_THREAD_RETRY_STARTED"
-                        : "MOTION_MAIN_THREAD_RETRY_FAILED",
-                "reason=no events after 10 seconds;registered="
-                        + registeredMotionSensors.size() + ";attempts=" + retry.details);
+        while (++motionSensorProbeIndex < availableMotionSensors.size()) {
+            Sensor candidate = availableMotionSensors.get(motionSensorProbeIndex);
+            MotionSensorRegistration.Result result = MotionSensorRegistration.registerCandidate(
+                    sensorManager, this, candidate, 200_000, 0, sensorHandler);
+            motionRegistrationDetails = appendRegistrationDetail(
+                    motionRegistrationDetails,
+                    "probe=" + motionSensorProbeIndex + ";reason=" + reason
+                            + ";" + result.details);
+            accelerometer = candidate;
+            WatchDiagnostics.session(this, config,
+                    result.registered ? "MOTION_SENSOR_PROBE_STARTED"
+                            : "MOTION_SENSOR_PROBE_REGISTRATION_FAILED",
+                    "probe=" + motionSensorProbeIndex + ";reason=" + reason
+                            + ";sensor=" + MotionSensorRegistration.describe(candidate));
+            if (!result.registered) continue;
+            registeredMotionSensors = result.sensors;
+            accelerometerRegistered = true;
+            motionSensorProbeStartedMs = timeProvider.elapsedRealtimeMs();
+            return;
+        }
+        accelerometerRegistered = false;
+        motionSensorProbesExhausted = true;
+        WatchDiagnostics.session(this, config, "MOTION_SENSOR_PROBES_EXHAUSTED",
+                "candidateCount=" + availableMotionSensors.size()
+                        + ";reason=" + reason + ";callbacks=0");
+    }
+
+    private void startNextHeartSensorProbe(String reason) {
+        if (sensorManager == null || lastStandardHeartSampleMs > 0L) return;
+        if (!registeredHeartRateSensors.isEmpty()) {
+            sensorManager.unregisterListener(this, registeredHeartRateSensors.get(0));
+        }
+        registeredHeartRateSensors = Collections.emptyList();
+        activeHeartRateSensor = null;
+        while (++heartSensorProbeIndex < availableHeartRateSensors.size()) {
+            Sensor candidate = availableHeartRateSensors.get(heartSensorProbeIndex);
+            HeartRateSensorRegistration.Result result =
+                    HeartRateSensorRegistration.registerCandidate(
+                            sensorManager, this, candidate, 1_000_000, 0, sensorHandler);
+            heartRegistrationDetails = appendRegistrationDetail(
+                    heartRegistrationDetails,
+                    "probe=" + heartSensorProbeIndex + ";reason=" + reason
+                            + ";" + result.details);
+            heartRate = candidate;
+            WatchDiagnostics.session(this, config,
+                    result.registered ? "HEART_SENSOR_PROBE_STARTED"
+                            : "HEART_SENSOR_PROBE_REGISTRATION_FAILED",
+                    "probe=" + heartSensorProbeIndex + ";reason=" + reason
+                            + ";sensor=" + MotionSensorRegistration.describe(candidate));
+            if (!result.registered) continue;
+            registeredHeartRateSensors = result.sensors;
+            heartRateRegistered = true;
+            heartSensorProbeStartedMs = timeProvider.elapsedRealtimeMs();
+            return;
+        }
+        heartRateRegistered = false;
+        heartSensorProbesExhausted = true;
+        WatchDiagnostics.session(this, config, "HEART_SENSOR_PROBES_EXHAUSTED",
+                "candidateCount=" + availableHeartRateSensors.size()
+                        + ";reason=" + reason + ";callbacks=0");
+    }
+
+    private String appendRegistrationDetail(String existing, String detail) {
+        if (existing == null || existing.isBlank()) return detail;
+        return existing + " || " + detail;
     }
 
     @Override
@@ -590,7 +707,10 @@ public final class SleepSessionService extends Service implements SensorEventLis
         long now = event.timestamp > 0L
                 ? event.timestamp / 1_000_000L : timeProvider.elapsedRealtimeMs();
         if (MotionSensorRegistration.accepts(registeredMotionSensors, event.sensor)
-                && event.values.length >= 3) {
+                && event.values.length >= 3
+                && Float.isFinite(event.values[0])
+                && Float.isFinite(event.values[1])
+                && Float.isFinite(event.values[2])) {
             if (activeMotionSensor == null) {
                 activeMotionSensor = event.sensor;
                 accelerometer = activeMotionSensor;
@@ -600,6 +720,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
             if (!MotionSensorRegistration.accepts(
                     Collections.singletonList(activeMotionSensor), event.sensor)) return;
             lastMotionSampleMs = now;
+            currentMotionProbeSamples++;
             double x = event.values[0];
             double y = event.values[1];
             double z = event.values[2];
@@ -624,6 +745,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
                 if (!HeartRateSensorRegistration.accepts(
                         Collections.singletonList(activeHeartRateSensor), event.sensor)) return;
                 lastHeartSampleMs = now;
+                lastStandardHeartSampleMs = now;
                 synchronized (sampleLock) {
                     heartSamples.addLast(new SleepFeatureEngine.Sample(now, bpm));
                     prune(heartSamples, now - 20L * 60L * 1000L);
@@ -661,9 +783,16 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private void evaluateAndAct() {
         long now = timeProvider.elapsedRealtimeMs();
         double armedElapsedMin = (now - sessionStartMs) / 60_000.0;
-        if (!motionRetryAttempted && lastMotionSampleMs == 0L
-                && now - sessionStartMs >= 10_000L) {
+        if (currentMotionProbeSamples < SystemCheckEvaluator.MIN_MOTION_SAMPLES
+                && !motionSensorProbesExhausted
+                && motionSensorProbeStartedMs > 0L
+                && now - motionSensorProbeStartedMs >= MOTION_SENSOR_PROBE_TIMEOUT_MS) {
             retryMotionOnMainThread();
+        }
+        if (lastStandardHeartSampleMs == 0L && !heartSensorProbesExhausted
+                && heartSensorProbeStartedMs > 0L
+                && now - heartSensorProbeStartedMs >= HEART_SENSOR_PROBE_TIMEOUT_MS) {
+            startNextHeartSensorProbe("no valid heart-rate event before timeout");
         }
         if (!enforceRequiredSensorPermissions()) {
             stopSelf();

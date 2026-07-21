@@ -436,10 +436,21 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";motionSamples=" + envelope.payload.getOrDefault("motionSamples", "")
                 + ";allSensorCallbacks="
                 + envelope.payload.getOrDefault("allSensorCallbacks", "")
+                + ";firstSensorCallbackLatencyMs="
+                + envelope.payload.getOrDefault("firstSensorCallbackLatencyMs", "")
                 + ";rejectedMotionCallbacks="
                 + envelope.payload.getOrDefault("rejectedMotionCallbacks", "")
+                + ";motionProbeState=" + cleanDetails(
+                envelope.payload.getOrDefault("motionProbeState", ""))
+                + ";motionX=" + envelope.payload.getOrDefault("motionX", "")
+                + ";motionY=" + envelope.payload.getOrDefault("motionY", "")
+                + ";motionZ=" + envelope.payload.getOrDefault("motionZ", "")
+                + ";motionMagnitude="
+                + envelope.payload.getOrDefault("motionMagnitude", "")
                 + ";heartSamples=" + envelope.payload.getOrDefault("heartSamples", "")
                 + ";lastHeartBpm=" + envelope.payload.getOrDefault("lastHeartBpm", "")
+                + ";heartProbeState=" + cleanDetails(
+                envelope.payload.getOrDefault("heartProbeState", ""))
                 + ";motionRegistered=" + envelope.payload.getOrDefault("motionRegistered", "")
                 + ";motionRetryAttempted="
                 + envelope.payload.getOrDefault("motionRetryAttempted", "")
@@ -497,6 +508,15 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";hapticAvailable=" + envelope.payload.getOrDefault("hapticAvailable", "")
                 + ";hapticRequested=" + envelope.payload.getOrDefault("hapticRequested", "")
                 + ";offWrist=" + envelope.payload.getOrDefault("offWrist", "")
+                + ";offWristKnown="
+                + envelope.payload.getOrDefault("offWristKnown", "")
+                + ";sensorSilenceDetected="
+                + envelope.payload.getOrDefault("sensorSilenceDetected", "")
+                + ";deviceState=" + cleanDetails(
+                envelope.payload.getOrDefault("deviceState", ""))
+                + ";flushRequests=" + envelope.payload.getOrDefault("flushRequests", "")
+                + ";flushCompletions="
+                + envelope.payload.getOrDefault("flushCompletions", "")
                 + ";durationMs=" + envelope.payload.getOrDefault("durationMs", "")
                 + ";samsungSdkConnected="
                 + envelope.payload.getOrDefault("samsungSdkConnected", "")

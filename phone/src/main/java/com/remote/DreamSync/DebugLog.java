@@ -135,7 +135,10 @@ final class DebugLog {
                 new String[]{" | SOUND_CHECK_NOT_AUDIBLE |",
                         " | SOUND_CHECK_FAILED |", " | SOUND_CHECK_BLOCKED |"});
         step(out, 2, "Wear OS watch discovered",
-                events, new String[]{" | WATCH_FOUND |"},
+                events, new String[]{" | WATCH_FOUND |",
+                        " | WATCH_AUTO_CONFIG_RECEIVED |",
+                        " | WATCH_PASSIVE_MONITORING_READY |",
+                        " | WATCH_SYSTEM_CHECK_STARTED |"},
                 new String[]{" | WATCH_NOT_FOUND |"});
         step(out, 3, "Automatic configuration delivered",
                 events, new String[]{" | AUTO_CONFIG_PUBLISHED |", " | WATCH_AUTO_CONFIG_RECEIVED |"},
@@ -145,7 +148,7 @@ final class DebugLog {
                 new String[]{" | WATCH_PASSIVE_MONITORING_FAILED |",
                         " | WATCH_HEALTH_PERMISSION_LOST |"});
         step(out, 5, "Passive sleep input received",
-                events, new String[]{" | WATCH_PASSIVE_ACTIVITY_RECEIVED |",
+                events, new String[]{";asleep=true",
                         " | WATCH_PASSIVE_HEART_RATE_BATCH |"},
                 new String[]{});
         step(out, 6, "Likely-sleep candidate and handshake",
@@ -196,14 +199,16 @@ final class DebugLog {
                 new String[]{"advancedSensorState=FAILED",
                         " | WATCH_ADVANCED_PERMISSION_MISSING |",
                         " | WATCH_SAMSUNG_SENSOR_ERROR |"});
-        step(out, 16, "Watch motion sensor registration",
-                events, new String[]{" | WATCH_SYSTEM_CHECK_MOTION_REGISTERED |"},
-                new String[]{" | WATCH_SYSTEM_CHECK_MOTION_REGISTRATION_FAILED |"});
-        step(out, 17, "Health Services live heart-rate path",
-                events, new String[]{" | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED |",
-                        " | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA |"},
+        step(out, 16, "Watch motion readings",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_MOTION_DATA |"},
+                new String[]{" | WATCH_SYSTEM_CHECK_MOTION_PROBES_EXHAUSTED |",
+                        " | WATCH_SYSTEM_CHECK_GLOBAL_SENSOR_SILENCE |"});
+        step(out, 17, "Watch heart-rate readings",
+                events, new String[]{" | WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED |"},
                 new String[]{" | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTRATION_FAILED |",
-                        " | WATCH_SYSTEM_CHECK_MEASURE_CAPABILITIES_FAILED |"});
+                        " | WATCH_SYSTEM_CHECK_MEASURE_CAPABILITIES_FAILED |",
+                        " | WATCH_SYSTEM_CHECK_STANDARD_HEART_PROBES_EXHAUSTED |",
+                        " | WATCH_SYSTEM_CHECK_GLOBAL_SENSOR_SILENCE |"});
         step(out, 18, "Watch speaker test",
                 events, new String[]{" | WATCH_SYSTEM_CHECK_WATCH_AUDIO_COMPLETED |"},
                 new String[]{" | WATCH_SYSTEM_CHECK_WATCH_AUDIO_PREFLIGHT_FAIL |",

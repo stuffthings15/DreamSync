@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** Registers every standard heart-rate sensor and uses whichever emits valid data. */
+/** Registers standard heart-rate sensors one at a time. */
 final class HeartRateSensorRegistration {
     static final class Result {
         final Sensor primary;
@@ -35,33 +35,64 @@ final class HeartRateSensorRegistration {
         if (manager == null) {
             return new Result(null, Collections.emptyList(), false, "sensorManager=null");
         }
-        List<Sensor> candidates = manager.getSensorList(Sensor.TYPE_HEART_RATE);
+        List<Sensor> candidates = candidates(manager);
         if (candidates == null || candidates.isEmpty()) {
             return new Result(null, Collections.emptyList(), false, "type=HEART_RATE:none");
         }
-        List<Sensor> registered = new ArrayList<>();
         StringBuilder details = new StringBuilder();
         for (Sensor candidate : candidates) {
-            boolean success = false;
-            String error = "";
-            try {
-                success = handler == null
-                        ? manager.registerListener(listener, candidate, samplingPeriodUs)
-                        : manager.registerListener(listener, candidate, samplingPeriodUs,
-                        maximumLatencyUs, handler);
-            } catch (RuntimeException exception) {
-                error = exception.getClass().getSimpleName() + ":"
-                        + safe(exception.getMessage());
-            }
+            Result result = registerCandidate(manager, listener, candidate,
+                    samplingPeriodUs, maximumLatencyUs, handler);
             if (details.length() > 0) details.append(" || ");
-            details.append(MotionSensorRegistration.describe(candidate))
-                    .append(";samplePeriodUs=").append(samplingPeriodUs)
-                    .append(";registered=").append(success);
-            if (!error.isEmpty()) details.append(";error=").append(error);
-            if (success) registered.add(candidate);
+            details.append(result.details);
+            if (result.registered) {
+                return new Result(candidate, Collections.singletonList(candidate), true,
+                        details.toString());
+            }
         }
-        return new Result(registered.isEmpty() ? null : registered.get(0),
-                registered, !registered.isEmpty(), details.toString());
+        return new Result(null, Collections.emptyList(), false, details.toString());
+    }
+
+    static Result registerCandidate(
+            SensorManager manager,
+            SensorEventListener listener,
+            Sensor candidate,
+            int samplingPeriodUs,
+            int maximumLatencyUs,
+            Handler handler
+    ) {
+        if (manager == null || candidate == null) {
+            return new Result(null, Collections.emptyList(), false,
+                    manager == null ? "sensorManager=null" : "candidate=null");
+        }
+        boolean success = false;
+        String error = "";
+        try {
+            success = handler == null
+                    ? manager.registerListener(listener, candidate, samplingPeriodUs)
+                    : manager.registerListener(listener, candidate, samplingPeriodUs,
+                    maximumLatencyUs, handler);
+        } catch (RuntimeException exception) {
+            error = exception.getClass().getSimpleName() + ":"
+                    + safe(exception.getMessage());
+        }
+        String details = MotionSensorRegistration.describe(candidate)
+                + ";samplePeriodUs=" + samplingPeriodUs
+                + ";registered=" + success
+                + (error.isEmpty() ? "" : ";error=" + error);
+        return new Result(candidate,
+                success ? Collections.singletonList(candidate) : Collections.emptyList(),
+                success, details);
+    }
+
+    static List<Sensor> candidates(SensorManager manager) {
+        if (manager == null) return Collections.emptyList();
+        List<Sensor> sensors = manager.getSensorList(Sensor.TYPE_HEART_RATE);
+        if (sensors == null || sensors.isEmpty()) return Collections.emptyList();
+        List<Sensor> ordered = new ArrayList<>(sensors);
+        ordered.sort((first, second) -> Boolean.compare(
+                first.isWakeUpSensor(), second.isWakeUpSensor()));
+        return Collections.unmodifiableList(ordered);
     }
 
     static boolean accepts(List<Sensor> registeredSensors, Sensor eventSensor) {

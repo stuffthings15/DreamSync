@@ -1,5 +1,6 @@
 package com.remote.DreamSync;
 
+import android.content.Intent;
 import android.os.SystemClock;
 
 import androidx.health.services.client.PassiveListenerService;
@@ -46,14 +47,37 @@ public final class AutoSleepPassiveService extends PassiveListenerService {
                     "passiveHeartRateSupported=false");
             return;
         }
+        List<SampleDataPoint<Double>> heartRates = points.getData(
+                DataType.HEART_RATE_BPM);
         if (SleepSessionService.isRunning()) {
-            WatchDiagnostics.auto(this, config, "PASSIVE_DATA_IGNORED",
-                    "activeSession=true;full-rate sensors already running");
+            int forwarded = 0;
+            for (SampleDataPoint<Double> point : heartRates) {
+                long sampleElapsed = point.getTimeDurationFromBoot().toMillis();
+                if (sampleElapsed <= config.lastPassiveHeartRateElapsedMs) continue;
+                Double bpm = point.getValue();
+                if (bpm == null || !Double.isFinite(bpm)
+                        || bpm < 30.0 || bpm > 220.0) continue;
+                Intent forward = new Intent(this, SleepSessionService.class)
+                        .setAction(SleepSessionService.ACTION_PASSIVE_HEART_RATE)
+                        .putExtra(SleepSessionService.EXTRA_PASSIVE_BPM, bpm)
+                        .putExtra(SleepSessionService.EXTRA_PASSIVE_SAMPLE_ELAPSED_MS,
+                                sampleElapsed);
+                try {
+                    startService(forward);
+                    config.lastPassiveHeartRateElapsedMs = sampleElapsed;
+                    forwarded++;
+                } catch (RuntimeException error) {
+                    WatchDiagnostics.auto(this, config,
+                            "PASSIVE_HEART_FORWARD_FAILED",
+                            "error=" + safeMessage(error));
+                }
+            }
+            config.save(this);
+            WatchDiagnostics.auto(this, config, "PASSIVE_HEART_FORWARDED_TO_SESSION",
+                    "forwarded=" + forwarded + ";received=" + heartRates.size());
             return;
         }
 
-        List<SampleDataPoint<Double>> heartRates = points.getData(
-                DataType.HEART_RATE_BPM);
         long nowElapsed = SystemClock.elapsedRealtime();
         long nowUtc = System.currentTimeMillis();
         int newSamples = 0;

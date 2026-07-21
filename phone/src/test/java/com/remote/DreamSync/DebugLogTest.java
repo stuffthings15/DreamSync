@@ -49,15 +49,43 @@ public final class DebugLogTest {
     @Test public void pipelineReportsVerboseWatchSensorAudioAndReportStages() {
         String report = DebugLog.pipelineVerification(
                 "1 | WATCH_SYSTEM_CHECK_MOTION_REGISTERED | selected=accelerometer\n"
-                        + "2 | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED | HEART_RATE_BPM\n"
-                        + "3 | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA | accepted=1\n"
-                        + "4 | WATCH_SYSTEM_CHECK_WATCH_AUDIO_COMPLETED | builtInSpeaker=true\n"
-                        + "5 | SYSTEM_CHECK_REPORT_DISPLAYED | status=PASS\n");
+                        + "2 | WATCH_SYSTEM_CHECK_MOTION_DATA | count=1;x=1;y=2;z=3\n"
+                        + "3 | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED | HEART_RATE_BPM\n"
+                        + "4 | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA | accepted=1\n"
+                        + "5 | WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED | source=HEALTH_SERVICES\n"
+                        + "6 | WATCH_SYSTEM_CHECK_WATCH_AUDIO_COMPLETED | builtInSpeaker=true\n"
+                        + "7 | SYSTEM_CHECK_REPORT_DISPLAYED | status=PASS\n");
 
-        assertTrue(report.contains("16. Watch motion sensor registration: PASS"));
-        assertTrue(report.contains("17. Health Services live heart-rate path: PASS"));
+        assertTrue(report.contains("16. Watch motion readings: PASS"));
+        assertTrue(report.contains("17. Watch heart-rate readings: PASS"));
         assertTrue(report.contains("18. Watch speaker test: PASS"));
         assertTrue(report.contains("19. Phone result report displayed: PASS"));
+    }
+
+    @Test public void registrationWithoutCallbacksDoesNotPassSensorStages() {
+        String report = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_MOTION_PROBE_STARTED | registered=true\n"
+                        + "2 | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED | registered=true\n"
+                        + "3 | WATCH_SYSTEM_CHECK_GLOBAL_SENSOR_SILENCE | callbacks=0\n");
+
+        assertTrue(report.contains("16. Watch motion readings: FAIL"));
+        assertTrue(report.contains("17. Watch heart-rate readings: FAIL"));
+    }
+
+    @Test public void zeroAcceptedHeartDataDoesNotPassHeartStage() {
+        String report = DebugLog.pipelineVerification(
+                "1 | WATCH_SYSTEM_CHECK_MEASURE_HEART_REGISTERED | registered=true\n"
+                        + "2 | WATCH_SYSTEM_CHECK_MEASURE_HEART_DATA | received=1;accepted=0\n");
+
+        assertTrue(report.contains("17. Watch heart-rate readings: WAITING"));
+    }
+
+    @Test public void laterWatchActivityRecoversEarlyDiscoveryFailure() {
+        String report = DebugLog.pipelineVerification(
+                "1 | WATCH_NOT_FOUND | initial lookup\n"
+                        + "2 | WATCH_SYSTEM_CHECK_STARTED | connected watch\n");
+
+        assertTrue(report.contains("2. Wear OS watch discovered: PASS"));
     }
 
     @Test public void pipelineSeparatesRequestedHapticFromPhysicalConfirmation() {

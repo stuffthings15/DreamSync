@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** Tries the standard motion sensors in order and records every registration attempt. */
+/** Tries standard motion sensors one at a time and records every registration attempt. */
 final class MotionSensorRegistration {
     static final class Result {
         final Sensor sensor;
@@ -35,32 +35,57 @@ final class MotionSensorRegistration {
         if (manager == null) {
             return new Result(null, Collections.emptyList(), false, "sensorManager=null");
         }
+        StringBuilder details = new StringBuilder();
+        for (Sensor candidate : candidates(manager)) {
+            boolean registered = tryRegister(manager, listener, candidate,
+                    samplingPeriodUs, maximumLatencyUs, handler, details);
+            if (!registered && samplingPeriodUs != SensorManager.SENSOR_DELAY_NORMAL) {
+                registered = tryRegister(manager, listener, candidate,
+                        SensorManager.SENSOR_DELAY_NORMAL, maximumLatencyUs, handler, details);
+            }
+            if (registered) {
+                return new Result(candidate, Collections.singletonList(candidate), true,
+                        details.toString());
+            }
+        }
+        return new Result(null, Collections.emptyList(), false, details.toString());
+    }
+
+    static Result registerCandidate(
+            SensorManager manager,
+            SensorEventListener listener,
+            Sensor candidate,
+            int samplingPeriodUs,
+            int maximumLatencyUs,
+            Handler handler
+    ) {
+        if (manager == null || candidate == null) {
+            return new Result(null, Collections.emptyList(), false,
+                    manager == null ? "sensorManager=null" : "candidate=null");
+        }
+        StringBuilder details = new StringBuilder();
+        boolean registered = tryRegister(manager, listener, candidate,
+                samplingPeriodUs, maximumLatencyUs, handler, details);
+        return new Result(candidate,
+                registered ? Collections.singletonList(candidate) : Collections.emptyList(),
+                registered, details.toString());
+    }
+
+    static List<Sensor> candidates(SensorManager manager) {
+        if (manager == null) return Collections.emptyList();
+        List<Sensor> ordered = new ArrayList<>();
+        addUnique(ordered, manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER));
         int[] types = new int[]{
                 Sensor.TYPE_ACCELEROMETER,
                 Sensor.TYPE_LINEAR_ACCELERATION,
                 Sensor.TYPE_GRAVITY
         };
-        StringBuilder details = new StringBuilder();
-        List<Sensor> registeredSensors = new ArrayList<>();
         for (int type : types) {
-            List<Sensor> candidates = manager.getSensorList(type);
-            if (candidates == null || candidates.isEmpty()) {
-                append(details, "type=" + type + ":none");
-                continue;
-            }
-            for (Sensor candidate : candidates) {
-                boolean registered = tryRegister(manager, listener, candidate,
-                        samplingPeriodUs, maximumLatencyUs, handler, details);
-                if (!registered && samplingPeriodUs != 200_000) {
-                    registered = tryRegister(manager, listener, candidate,
-                            200_000, maximumLatencyUs, handler, details);
-                }
-                if (registered) registeredSensors.add(candidate);
-            }
+            List<Sensor> sensors = manager.getSensorList(type);
+            if (sensors == null) continue;
+            for (Sensor sensor : sensors) addUnique(ordered, sensor);
         }
-        Sensor primary = registeredSensors.isEmpty() ? null : registeredSensors.get(0);
-        return new Result(primary, registeredSensors, !registeredSensors.isEmpty(),
-                details.toString());
+        return Collections.unmodifiableList(ordered);
     }
 
     static boolean accepts(List<Sensor> registeredSensors, Sensor eventSensor) {
@@ -138,6 +163,17 @@ final class MotionSensorRegistration {
     private static void append(StringBuilder output, String value) {
         if (output.length() > 0) output.append(" || ");
         output.append(value);
+    }
+
+    private static void addUnique(List<Sensor> sensors, Sensor candidate) {
+        if (candidate == null) return;
+        for (Sensor existing : sensors) {
+            if (existing == candidate) return;
+            if (existing.getType() == candidate.getType()
+                    && safe(existing.getName()).equals(safe(candidate.getName()))
+                    && safe(existing.getVendor()).equals(safe(candidate.getVendor()))) return;
+        }
+        sensors.add(candidate);
     }
 
     private static String safe(String value) {

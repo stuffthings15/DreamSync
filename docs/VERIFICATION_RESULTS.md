@@ -1,10 +1,10 @@
 # DreamSync validation results
 
-Date: 21 July 2026
+Date: 23 July 2026
 
 ## Verified locally
 
-### Local 1.3.16 Samsung-approved sensor candidate
+### Published 1.3.16 Samsung-approved sensor delivery
 
 - Phone version code 65 and Wear OS version code 66 (`1.3.16-test`) compile.
 - Official Samsung Health Sensor SDK v1.4.1 and its required API contract verified.
@@ -15,8 +15,11 @@ Date: 21 July 2026
 - Shared, phone, and Wear OS debug/release unit suites passed: 123 test executions,
   zero failures, zero errors, zero skipped.
 - Phone and Wear OS debug lint, debug APKs, and instrumentation APK packaging passed.
-- Physical Galaxy Watch proof is still required. This candidate is not yet uploaded
-  to Google Play Internal testing and must not be described as hardware-verified.
+- Signed phone version code 65 and Wear OS version code 66 were published to Google
+  Play Internal testing on 2026-07-23. Both releases show Available to internal
+  testers. The phone track is Active; Play still labels the Wear OS track Inactive.
+- Physical Galaxy Watch proof is still required. Publication does not prove live
+  Samsung sensor delivery and must not be described as hardware verification.
 
 ### Published 1.3.15 enforced Samsung SDK build
 

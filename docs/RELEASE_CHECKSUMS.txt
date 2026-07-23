@@ -73,3 +73,17 @@ Both AAB signatures verified with jarsigner. The Wear release gate verified the 
 Google Play internal testing published 2026-07-21:
 - Phone versionCode 63 on track 4701743177829341351. Track status: Active and available to internal testers.
 - Wear OS versionCode 64 on track 4700051853729851607. Release is available to internal testers; Play labels the Wear OS track Inactive.
+
+DreamSync 1.3.16-test internal-test artifacts
+Built, signed, and published: 2026-07-23 America/Los_Angeles
+
+418282ED751E987888CC3371516AC325AECFB784E2F38C19B68787C143CED903  artifacts/1.3.16-test/DreamSync-Phone-1.3.16-test-debug.apk
+0A68CA63E252B916239F9D57EA89EDD18275CCCB7821AC889044CAC47E9B5E78  artifacts/1.3.16-test/DreamSync-WearOS-1.3.16-test-debug.apk
+C9EC6FE8822991459CD39DACBD79CF1E00F0C9BA91B642E202AE09485E810310  artifacts/1.3.16-test/DreamSync-Phone-1.3.16-test.aab
+FF8E02B919AE6D1317859F2E5F2F98453CDA2F53F3BCD6424F3D087CD2166D8E  artifacts/1.3.16-test/DreamSync-WearOS-1.3.16-test.aab
+
+Both signed AABs were accepted by Google Play. Google reported only the expected
+missing-deobfuscation-file warning because code shrinking is not enabled.
+Google Play internal testing published 2026-07-23:
+- Phone versionCode 65 on track 4701743177829341351. Track status: Active and available to internal testers.
+- Wear OS versionCode 66 on track 4700051853729851607. Release is available to internal testers; Play labels the Wear OS track Inactive.

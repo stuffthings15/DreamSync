@@ -19,6 +19,11 @@
 
 ## Internal testing
 
+- Phone version code 65 and Wear OS version code 66 (`1.3.16-test`) were published
+  on 2026-07-23 and show Available to internal testers. The phone track is Active.
+  Play still labels the Wear OS track Inactive. The release uses the approved
+  Samsung Health Sensor SDK paths and adds controlled tracker flushes and detailed
+  sensor-delivery logging. Physical Galaxy Watch verification remains required.
 - Phone version code 63 and Wear OS version code 64 (`1.3.15-test`) were published on 2026-07-21 and are available to internal testers. The phone track is Active. Play labels the Wear OS track Inactive even though its release says Available to internal testers. The Wear release is blocked at build time unless the exact official Samsung Health Sensor SDK v1.4.1 AAR and required contract classes verify.
 - Phone version code 9 (`1.0.0`) published on 2026-07-19.
 - Wear OS version code 7 (`1.0.0`) published on 2026-07-19.

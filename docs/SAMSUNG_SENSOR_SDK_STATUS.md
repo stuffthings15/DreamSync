@@ -1,19 +1,31 @@
 # Samsung Health Sensor SDK gate
 
-Status: **official SDK v1.4.1 installed locally; blocked on Samsung partner approval and live hardware verification**.
+Status: **Samsung partner approval received; official SDK v1.4.1 integrated; live
+Play-signed hardware verification pending**.
 
 DreamSync's adapter, Android 16 permissions, Samsung continuous accelerometer, heart-rate/IBI, skin-temperature, off-wrist, explicit Green/IR/Red PPG selection, short raw-PPG windows, runtime capability checks, and standard Wear OS fallback are implemented. The official v1.4.1 library is installed locally and remains ignored by Git under Samsung's license. Wear release builds now fail unless its exact SHA-256 and required API contract verify. Compilation and packaging pass; internal-track installation and live Galaxy Watch Ultra verification remain.
 
-## Required owner/Samsung steps
+The `1.3.16-test` candidate also requests controlled Samsung tracker flushes during
+the awake check and every 30 seconds during an active sleep session. This makes
+batched motion, heart/IBI, temperature, and PPG readings visible without turning
+raw PPG into a continuous all-night stream. Debug export records every request,
+SDK acceptance, completion callback, tracker error, and sample count.
+
+## Required verification steps
 
 1. Run `gradlew.bat :wear:verifySamsungSensorSdk`. Every Wear release build runs this gate automatically.
 2. Enable Health Platform developer mode for private device testing.
 3. Run the live check on a Galaxy Watch. Confirm changing Samsung accelerometer values, heart rate, IBI, skin temperature, off-wrist behavior, and the short raw-PPG window in Export Debug Log.
-4. Submit the signed-in [Samsung Health Sensor SDK partner request](https://developer.samsung.com/SHealth/business-partner/m48wzh9rwz606k0h).
-5. Register package `com.remote.DreamSync`, its Google Play **app-signing** certificate SHA-256, and every requested tracker type. Do not submit the upload-key fingerprint as the production signature.
-6. Keep public builds on standard Wear OS sensors until Samsung shows the package/signature registration as approved.
+4. Confirm Samsung's approval record includes package `com.remote.DreamSync`, its
+   Google Play **app-signing** certificate SHA-256, and every requested tracker type.
+5. Install the Wear build from Google Play Internal testing. A locally signed build
+   does not use the registered Play app-signing certificate.
+6. Keep standard Wear OS fallback enabled for non-Samsung watches and for any tracker
+   not reported by Samsung's runtime capability check.
 
-Samsung states that public SDK use needs prior partner approval and package/signature registration. An unregistered public build can receive `SDK_POLICY_ERROR`. Developer mode is for testing only.
+Samsung states that SDK use needs prior partner approval and package/signature
+registration. An unregistered or differently signed build can receive
+`SDK_POLICY_ERROR`. Developer mode is for local testing only.
 
 ## Release evidence
 

@@ -524,6 +524,12 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 + ";temperatureSamples="
                 + envelope.payload.getOrDefault("temperatureSamples", "")
                 + ";ppgSamples=" + envelope.payload.getOrDefault("ppgSamples", "")
+                + ";samsungFlushRequests="
+                + envelope.payload.getOrDefault("samsungFlushRequests", "")
+                + ";samsungFlushAccepted="
+                + envelope.payload.getOrDefault("samsungFlushAccepted", "")
+                + ";samsungFlushCompletions="
+                + envelope.payload.getOrDefault("samsungFlushCompletions", "")
                 + ";additionalHealthPermission="
                 + envelope.payload.getOrDefault("additionalHealthPermission", "")
                 + ";advancedSensorsExpected="

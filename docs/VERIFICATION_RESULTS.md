@@ -4,6 +4,20 @@ Date: 21 July 2026
 
 ## Verified locally
 
+### Local 1.3.16 Samsung-approved sensor candidate
+
+- Phone version code 65 and Wear OS version code 66 (`1.3.16-test`) compile.
+- Official Samsung Health Sensor SDK v1.4.1 and its required API contract verified.
+- Samsung continuous trackers now receive controlled flush requests during the awake
+  check and every 30 seconds during a live session so batched readings reach the app.
+- Debug export records each tracker flush request, SDK acceptance, completion callback,
+  tracker error, and advanced-sensor sample count.
+- Shared, phone, and Wear OS debug/release unit suites passed: 123 test executions,
+  zero failures, zero errors, zero skipped.
+- Phone and Wear OS debug lint, debug APKs, and instrumentation APK packaging passed.
+- Physical Galaxy Watch proof is still required. This candidate is not yet uploaded
+  to Google Play Internal testing and must not be described as hardware-verified.
+
 ### Published 1.3.15 enforced Samsung SDK build
 
 - Phone version code 63 and Wear OS version code 64 (`1.3.15-test`) were built, signed, and published to Google Play internal testing on 2026-07-21. Both releases say Available to internal testers; the phone track is Active and Play still labels the Wear OS track Inactive.

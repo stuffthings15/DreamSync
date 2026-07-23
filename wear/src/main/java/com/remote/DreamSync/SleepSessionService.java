@@ -230,6 +230,7 @@ public final class SleepSessionService extends Service implements SensorEventLis
     private ExecutorService cueAudioExecutor;
     private WearDao dao;
     private SamsungHealthSensorBridge samsungBridge;
+    private long lastSamsungFlushMs;
     private WatchAudioOutput watchAudioOutput;
     private String motionRegistrationDetails = "";
 
@@ -274,6 +275,13 @@ public final class SleepSessionService extends Service implements SensorEventLis
         public void run() {
             if (!running) return;
             try {
+                if (samsungBridge != null && samsungSdkConnected) {
+                    long now = timeProvider.elapsedRealtimeMs();
+                    if (now - lastSamsungFlushMs >= 30_000L) {
+                        samsungBridge.flushTrackers("sleep_session_periodic");
+                        lastSamsungFlushMs = now;
+                    }
+                }
                 evaluateAndAct();
             } catch (RuntimeException error) {
                 terminateSession(SessionState.INTERNAL_ERROR, "INTERNAL_ERROR",
@@ -599,6 +607,19 @@ public final class SleepSessionService extends Service implements SensorEventLis
 
                     @Override public void onPpgSample(long timestampMs, boolean valid) {
                         if (valid) validPpgSamples++;
+                    }
+
+                    @Override public void onTrackerFlush(
+                            String trackerName, boolean requestAccepted,
+                            boolean completed, String detail) {
+                        WatchDiagnostics.session(SleepSessionService.this, config,
+                                completed
+                                        ? "SAMSUNG_SENSOR_FLUSH_COMPLETED"
+                                        : "SAMSUNG_SENSOR_FLUSH_REQUESTED",
+                                "tracker=" + trackerName
+                                        + ";accepted=" + requestAccepted
+                                        + ";completed=" + completed
+                                        + ";detail=" + detail);
                     }
 
                     @Override public void onBridgeError(String code, String detail) {

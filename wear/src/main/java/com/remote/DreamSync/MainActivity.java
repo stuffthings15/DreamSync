@@ -458,10 +458,10 @@ public final class MainActivity extends Activity {
         private final SensorManager sensorManager;
         private final long startedElapsedMs = SystemClock.elapsedRealtime();
         private final Runnable finishRunnable = this::finish;
-        private final Runnable progressFiveSeconds = () -> logProgress("5s");
-        private final Runnable progressFifteenSeconds = () -> logProgress("15s");
-        private final Runnable progressThirtySeconds = () -> logProgress("30s");
-        private final Runnable progressSixtySeconds = () -> logProgress("60s");
+        private final Runnable progressFiveSeconds = () -> flushAndLogProgress("5s");
+        private final Runnable progressFifteenSeconds = () -> flushAndLogProgress("15s");
+        private final Runnable progressThirtySeconds = () -> flushAndLogProgress("30s");
+        private final Runnable progressSixtySeconds = () -> flushAndLogProgress("60s");
         private final Runnable beginAfterSensorRelease = this::beginSensorCheck;
         private final Runnable delayedHealthMeasureStart = this::startHealthMeasureCheck;
         private final Runnable motionProbeTimeout =
@@ -561,6 +561,9 @@ public final class MainActivity extends Activity {
         private boolean charging;
         private int flushRequests;
         private int flushCompletions;
+        private int samsungFlushRequests;
+        private int samsungFlushAccepted;
+        private int samsungFlushCompletions;
         private boolean hapticAvailable;
         private boolean hapticRequested;
         private volatile boolean watchAudioStarted;
@@ -1051,6 +1054,25 @@ public final class MainActivity extends Activity {
                             if (valid) ppgSamples++;
                         }
 
+                        @Override public void onTrackerFlush(
+                                String trackerName, boolean requestAccepted,
+                                boolean completed, String detail) {
+                            if (completed) {
+                                samsungFlushCompletions++;
+                            } else {
+                                samsungFlushRequests++;
+                                if (requestAccepted) samsungFlushAccepted++;
+                            }
+                            WatchDiagnostics.auto(MainActivity.this, config,
+                                    completed
+                                            ? "SYSTEM_CHECK_SAMSUNG_FLUSH_COMPLETED"
+                                            : "SYSTEM_CHECK_SAMSUNG_FLUSH_REQUESTED",
+                                    "tracker=" + trackerName
+                                            + ";accepted=" + requestAccepted
+                                            + ";completed=" + completed
+                                            + ";detail=" + detail);
+                        }
+
                         @Override public void onBridgeError(String code, String detail) {
                             samsungDetail = code + ": " + detail;
                             WatchDiagnostics.auto(MainActivity.this, config,
@@ -1058,6 +1080,17 @@ public final class MainActivity extends Activity {
                         }
                     });
             samsungBridge.start(additionalHealthPermission);
+        }
+
+        private void flushAndLogProgress(String checkpoint) {
+            if (!finished && samsungBridge != null && samsungConnected) {
+                int accepted = samsungBridge.flushTrackers("system_check_" + checkpoint);
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_SAMSUNG_FLUSH_SUMMARY",
+                        "checkpoint=" + checkpoint + ";acceptedTrackers=" + accepted
+                                + ";knownTrackers=" + samsungTrackerTypes);
+            }
+            logProgress(checkpoint);
         }
 
         @Override public void onSensorChanged(SensorEvent event) {
@@ -1561,6 +1594,10 @@ public final class MainActivity extends Activity {
             payload.put("ibiSamples", Integer.toString(ibiSamples));
             payload.put("temperatureSamples", Integer.toString(temperatureSamples));
             payload.put("ppgSamples", Integer.toString(ppgSamples));
+            payload.put("samsungFlushRequests", Integer.toString(samsungFlushRequests));
+            payload.put("samsungFlushAccepted", Integer.toString(samsungFlushAccepted));
+            payload.put("samsungFlushCompletions",
+                    Integer.toString(samsungFlushCompletions));
             payload.put("advancedSensorsExpected", Boolean.toString(advanced.expected));
             payload.put("advancedSensorsVerified", Boolean.toString(advanced.passed));
             payload.put("advancedSensorState", !advanced.expected

@@ -32,6 +32,8 @@ final class SamsungHealthSensorBridge {
         void onHeartRate(long timestampMs, double bpm, List<Integer> ibiMs, boolean offWrist);
         void onSkinTemperature(long timestampMs, double skinC, double ambientC);
         void onPpgSample(long timestampMs, boolean valid);
+        void onTrackerFlush(
+                String trackerName, boolean requestAccepted, boolean completed, String detail);
         void onBridgeError(String code, String detail);
     }
 
@@ -178,6 +180,9 @@ final class SamsungHealthSensorBridge {
                         } else if ("onError".equals(method.getName())) {
                             listener.onBridgeError(trackerName + "_TRACKER_ERROR",
                                     args == null || args.length == 0 ? "unknown" : safe(args[0]));
+                        } else if ("onFlushCompleted".equals(method.getName())) {
+                            listener.onTrackerFlush(
+                                    trackerName, true, true, "flush callback received");
                         }
                         return null;
                     });
@@ -223,6 +228,32 @@ final class SamsungHealthSensorBridge {
         }
         detach("PPG_CONTINUOUS");
         return false;
+    }
+
+    /**
+     * Requests delivery of Samsung's currently batched samples.
+     *
+     * The SDK documents flush support for every continuous tracker used by DreamSync.
+     * Calls are intentionally scheduled at low frequency by callers to protect battery.
+     */
+    synchronized int flushTrackers(String reason) {
+        int acceptedCount = 0;
+        for (Map.Entry<String, Object> entry : trackers.entrySet()) {
+            boolean accepted = false;
+            String detail = "reason=" + reason;
+            try {
+                Object result = entry.getValue().getClass().getMethod("flush")
+                        .invoke(entry.getValue());
+                accepted = Boolean.TRUE.equals(result);
+                if (accepted) acceptedCount++;
+                detail += ";sdkAccepted=" + accepted;
+            } catch (Throwable error) {
+                detail += ";error=" + safe(error);
+                listener.onBridgeError(entry.getKey() + "_FLUSH_FAILED", safe(error));
+            }
+            listener.onTrackerFlush(entry.getKey(), accepted, false, detail);
+        }
+        return acceptedCount;
     }
 
     private void detach(String trackerName) {

@@ -59,6 +59,8 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_DEBUG_EXPORT = 603;
     private static final String PREFS = "dreamsync_phone";
     private static final int WATCH_INSTALL_POLL_LIMIT = 40;
+    private static final int WATCH_SETUP_RETRY_LIMIT = 12;
+    private static final long WATCH_SETUP_RETRY_MS = 5_000L;
     private static final long SYSTEM_CHECK_TIMEOUT_MS = 2L * 60L * 1000L;
 
     private TextView statusText;
@@ -82,6 +84,7 @@ public final class MainActivity extends Activity {
     private String morningSurveySessionId = "";
     private String startingState = "";
     private int watchInstallPollAttempt;
+    private boolean watchConfirmationRetryScheduled;
     private String pendingExportJson = "";
     private String pendingDebugLog = "";
 
@@ -94,6 +97,13 @@ public final class MainActivity extends Activity {
                     DebugLog.append(MainActivity.this, "WATCH_STATUS", status);
                 }
                 String state = intent.getStringExtra("state");
+                if ("AUTO_ON".equals(state)) {
+                    startingState = "";
+                    watchConfirmationRetryScheduled = false;
+                } else if (state != null && state.startsWith("AUTO_")
+                        && !"AUTO_ON".equals(state)) {
+                    startingState = "";
+                }
                 if (state != null && state.startsWith("SYSTEM_CHECK_")) {
                     restoreLatestSystemCheckStatus();
                 }
@@ -421,6 +431,7 @@ public final class MainActivity extends Activity {
         String generation = UUID.randomUUID().toString();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString("pending_enable_generation", generation)
+                .putInt("watch_setup_retry_attempt", 0)
                 .apply();
         statusText.setText("Finding the paired Wear OS watch...");
         showPowerStarting("FINDING WATCH...");
@@ -503,9 +514,10 @@ public final class MainActivity extends Activity {
                 .putString("bound_watch_node", watch.getId())
                 .putString("auto_mode", mode)
                 .putFloat("auto_gain", gain)
-                .remove("pending_enable_generation")
+                .putString("pending_enable_enrollment", enrollment)
+                .putInt("watch_setup_retry_attempt", 0)
                 .apply();
-        startingState = "";
+        startingState = "WAITING FOR WATCH SETUP";
         updatePowerState();
         DebugLog.append(this, "PHONE_PASSIVE_READY",
                 "watch owns low-power detection and primary audio; phone service starts only for an opted-in fallback session");
@@ -517,21 +529,93 @@ public final class MainActivity extends Activity {
                 .addOnSuccessListener(item -> {
                     DebugLog.append(this, "AUTO_CONFIG_PUBLISHED",
                             "durableDataItem=true;watchConfirmation=pending");
-                    statusText.setText("DreamSync is On. Approve watch access once; then it runs every night.");
-                    openWatchApp(true, enrollmentId);
+                    statusText.setText("Setting up the watch. Approve watch access when prompted.");
+                    statusText.postDelayed(() -> {
+                        if (!isCurrentEnableGeneration(generation)
+                                || getSharedPreferences(PREFS, MODE_PRIVATE)
+                                .getBoolean("watch_auto_confirmed", false)) return;
+                        openWatchApp(true, enrollmentId);
+                        scheduleWatchConfirmationRetry(generation, enrollmentId);
+                    }, 750L);
                     updatePowerState();
                     updateReadiness();
                 })
                 .addOnFailureListener(error -> {
                     DebugLog.append(this, "AUTO_CONFIG_PUBLISH_FAILED", safeMessage(error));
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                            .putBoolean("auto_enabled", false).apply();
+                            .putBoolean("auto_enabled", false)
+                            .remove("pending_enable_generation")
+                            .remove("pending_enable_enrollment")
+                            .remove("watch_setup_retry_attempt")
+                            .apply();
                     startingState = "";
                     stopService(new Intent(this, CuePlaybackService.class));
                     statusText.setText("Could not synchronize automatic setup: "
                             + safeMessage(error));
                     updatePowerState();
                 });
+    }
+
+    private void scheduleWatchConfirmationRetry(
+            String generation,
+            String enrollmentId
+    ) {
+        if (!isCurrentEnableGeneration(generation)
+                || getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("watch_auto_confirmed", false)
+                || watchConfirmationRetryScheduled) return;
+        watchConfirmationRetryScheduled = true;
+        statusText.postDelayed(() -> {
+            watchConfirmationRetryScheduled = false;
+            android.content.SharedPreferences prefs =
+                    getSharedPreferences(PREFS, MODE_PRIVATE);
+            if (!isCurrentEnableGeneration(generation)
+                    || prefs.getBoolean("watch_auto_confirmed", false)) return;
+            int attempt = prefs.getInt("watch_setup_retry_attempt", 0) + 1;
+            if (attempt > WATCH_SETUP_RETRY_LIMIT) {
+                DebugLog.append(this, "WATCH_SETUP_CONFIRMATION_TIMEOUT",
+                        "attempts=" + WATCH_SETUP_RETRY_LIMIT);
+                prefs.edit()
+                        .putBoolean("auto_enabled", false)
+                        .putBoolean("watch_auto_confirmed", false)
+                        .remove("pending_enable_generation")
+                        .remove("pending_enable_enrollment")
+                        .remove("watch_setup_retry_attempt")
+                        .apply();
+                startingState = "";
+                statusText.setText("Watch setup did not confirm. Keep both devices connected, open DreamSync on the watch, then retry.");
+                updatePowerState();
+                updateReadiness();
+                return;
+            }
+            prefs.edit().putInt("watch_setup_retry_attempt", attempt).apply();
+            String phone = pref("local_phone_node");
+            String watch = pref("bound_watch_node");
+            if (phone.isEmpty() || watch.isEmpty() || enrollmentId.isEmpty()) {
+                failPendingEnable(generation, "Watch setup binding became incomplete. Retry setup.");
+                return;
+            }
+            DebugLog.append(this, "WATCH_SETUP_RETRY_REQUESTED",
+                    "attempt=" + attempt + ";watchConfirmation=pending");
+            PhoneAutoControl.publishAutoConfig(
+                            this, true, enrollmentId, phone, watch,
+                            selectedMode(), cueGain())
+                    .addOnSuccessListener(item -> {
+                        DebugLog.append(this, "AUTO_CONFIG_REPUBLISHED",
+                                "attempt=" + attempt + ";durableDataItem=true");
+                        statusText.setText("Waiting for the watch to confirm setup"
+                                + " (" + attempt + "/" + WATCH_SETUP_RETRY_LIMIT + ")...");
+                        if (attempt % 3 == 0) {
+                            openWatchApp(true, enrollmentId, watch);
+                        }
+                        scheduleWatchConfirmationRetry(generation, enrollmentId);
+                    })
+                    .addOnFailureListener(error -> {
+                        DebugLog.append(this, "AUTO_CONFIG_REPUBLISH_FAILED",
+                                "attempt=" + attempt + ";reason=" + safeMessage(error));
+                        scheduleWatchConfirmationRetry(generation, enrollmentId);
+                    });
+        }, WATCH_SETUP_RETRY_MS);
     }
 
     private void openWatchPlayStoreForInstall(String generation) {
@@ -628,7 +712,10 @@ public final class MainActivity extends Activity {
                 .remove("active_session_id")
                 .remove("watch_live_session_id")
                 .remove("pending_enable_generation")
+                .remove("pending_enable_enrollment")
+                .remove("watch_setup_retry_attempt")
                 .apply();
+        watchConfirmationRetryScheduled = false;
         startingState = "";
         stopService(new Intent(this, CuePlaybackService.class));
         restoreNotificationProtection();
@@ -678,7 +765,11 @@ public final class MainActivity extends Activity {
         if (!isCurrentEnableGeneration(generation)) return;
         DebugLog.append(this, "TURN_ON_FAILED", message);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean("auto_enabled", false)
+                .putBoolean("watch_auto_confirmed", false)
                 .remove("pending_enable_generation")
+                .remove("pending_enable_enrollment")
+                .remove("watch_setup_retry_attempt")
                 .apply();
         startingState = "";
         statusText.setText(message);
@@ -1522,6 +1613,13 @@ public final class MainActivity extends Activity {
                 .getBoolean("watch_install_pending", false)
                 && watchInstallPollAttempt == 0) {
             scheduleWatchInstallCheck(pendingGeneration);
+        } else if (!pendingGeneration.isEmpty() && autoEnabled()
+                && !getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean("watch_auto_confirmed", false)) {
+            startingState = "WAITING FOR WATCH SETUP";
+            updatePowerState();
+            scheduleWatchConfirmationRetry(
+                    pendingGeneration, pref("pending_enable_enrollment"));
         }
     }
 

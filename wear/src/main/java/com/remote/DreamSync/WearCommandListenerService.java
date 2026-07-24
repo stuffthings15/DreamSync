@@ -139,7 +139,11 @@ public final class WearCommandListenerService extends WearableListenerService {
                 envelope.messageType)) return;
         MessageGuard.Result result = guard.check(
                 envelope, "", localNodeId, sourceNodeId, System.currentTimeMillis());
-        if (result != MessageGuard.Result.ACCEPT) return;
+        if (result != MessageGuard.Result.ACCEPT) {
+            WatchDiagnostics.local(this, "AUTO_CONFIG_REJECTED",
+                    "reason=" + result + ";sourcePresent=true");
+            return;
+        }
         AutoSleepConfig current = AutoSleepConfig.load(this);
         if (com.remote.DreamSync.shared.Protocol.TYPE_AUTO_OFF.equals(envelope.messageType)) {
             if (!current.enrollmentId.isEmpty()
@@ -155,11 +159,19 @@ public final class WearCommandListenerService extends WearableListenerService {
             return;
         }
         String json = envelope.payload.get("config");
-        if (json == null || json.isEmpty()) return;
+        if (json == null || json.isEmpty()) {
+            WatchDiagnostics.local(this, "AUTO_CONFIG_REJECTED",
+                    "reason=CONFIG_PAYLOAD_MISSING");
+            return;
+        }
         AutoSleepConfig config = AutoSleepConfig.fromJson(json);
         if (!config.enabled || !envelope.sessionId.equals(config.enrollmentId)
                 || !sourceNodeId.equals(config.phoneNodeId)
-                || !localNodeId.equals(config.watchNodeId)) return;
+                || !localNodeId.equals(config.watchNodeId)) {
+            WatchDiagnostics.local(this, "AUTO_CONFIG_REJECTED",
+                    "reason=CONFIG_BINDING_MISMATCH");
+            return;
+        }
         if (current.enrollmentId.equals(config.enrollmentId)) {
             config.lastSessionUtcMs = current.lastSessionUtcMs;
         }

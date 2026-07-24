@@ -76,7 +76,7 @@ public final class MainActivity extends Activity {
     private static final String READ_ADDITIONAL_HEALTH_DATA =
             "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA";
     private static final String USER_PREFS = "dreamsync_watch_user";
-    private static final int CONFIG_SYNC_RETRY_LIMIT = 20;
+    private static final int CONFIG_SYNC_RETRY_LIMIT = 80;
     private static final long SYSTEM_CHECK_DURATION_MS = 75_000L;
 
     private TextView statusText;

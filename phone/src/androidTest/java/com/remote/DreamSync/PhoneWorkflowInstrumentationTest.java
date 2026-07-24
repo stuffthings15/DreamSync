@@ -76,6 +76,35 @@ public final class PhoneWorkflowInstrumentationTest {
         }
     }
 
+    @Test public void pendingWatchSetupIsNeverShownAsFullyOn() {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+        context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("auto_enabled", true)
+                .putBoolean("watch_auto_confirmed", false)
+                .putString("pending_enable_generation", "test-generation")
+                .putString("pending_enable_enrollment", "test-enrollment")
+                .apply();
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                android.widget.TextView state = activity.findViewById(R.id.powerStateText);
+                assertNotNull(state);
+                assertTrue(state.getText().toString().contains("WAITING FOR WATCH"));
+                assertFalse(state.getText().toString().contains("MONITORING EVERY NIGHT"));
+            });
+        } finally {
+            context.getSharedPreferences("dreamsync_phone", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("auto_enabled", false)
+                    .putBoolean("watch_auto_confirmed", false)
+                    .remove("pending_enable_generation")
+                    .remove("pending_enable_enrollment")
+                    .remove("watch_setup_retry_attempt")
+                    .apply();
+        }
+    }
+
     @Test public void debugExportContainsActionableDeviceStateWithoutNodeIds() {
         android.content.Context context = InstrumentationRegistry.getInstrumentation()
                 .getTargetContext();

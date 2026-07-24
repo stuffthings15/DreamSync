@@ -121,7 +121,21 @@ public final class PhoneDataListenerService extends WearableListenerService {
             restoreNotificationProtection();
         } else if ("ON".equals(state)) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putBoolean("watch_auto_confirmed", true).apply();
+                    .putBoolean("auto_enabled", true)
+                    .putBoolean("watch_auto_confirmed", true)
+                    .remove("pending_enable_generation")
+                    .remove("pending_enable_enrollment")
+                    .remove("watch_setup_retry_attempt")
+                    .apply();
+        } else if ("UNAVAILABLE".equals(state)
+                || "PERMISSION_LOST".equals(state)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean("auto_enabled", false)
+                    .putBoolean("watch_auto_confirmed", false)
+                    .remove("pending_enable_generation")
+                    .remove("pending_enable_enrollment")
+                    .remove("watch_setup_retry_attempt")
+                    .apply();
         }
         sendBroadcast(new Intent(ACTION_STATUS_CHANGED).setPackage(getPackageName())
                 .putExtra("status", status)

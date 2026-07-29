@@ -39,8 +39,8 @@ android {
         androidTest.assets.srcDirs += files("$projectDir/schemas")
     }
 
-    if (dreamSyncReleaseSigningReady) {
-        signingConfigs {
+    signingConfigs {
+        if (dreamSyncReleaseSigningReady) {
             release {
                 storeFile file(dreamSyncKeystore)
                 storePassword dreamSyncStorePassword
@@ -48,8 +48,16 @@ android {
                 keyPassword dreamSyncKeyPassword
             }
         }
-        buildTypes {
-            release {
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-dev'
+            resValue 'string', 'app_name', 'DreamSync Dev'
+        }
+        release {
+            if (dreamSyncReleaseSigningReady) {
                 signingConfig signingConfigs.release
             }
         }

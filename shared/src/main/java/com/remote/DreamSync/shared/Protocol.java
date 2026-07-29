@@ -23,6 +23,8 @@ public final class Protocol {
     public static final String TYPE_DELETE_DATA = "DELETE_DATA";
     public static final String TYPE_DIAGNOSTIC = "DIAGNOSTIC";
     public static final String TYPE_SYSTEM_CHECK_RESULT = "SYSTEM_CHECK_RESULT";
+    public static final String TYPE_DEBUG_SNAPSHOT_REQUEST = "DEBUG_SNAPSHOT_REQUEST";
+    public static final String TYPE_DEBUG_SNAPSHOT_RESPONSE = "DEBUG_SNAPSHOT_RESPONSE";
 
     public static final String PATH_CONFIG_PREFIX = "/dreamsync/config/";
     public static final String PATH_STATE_PREFIX = "/dreamsync/state/";
@@ -37,6 +39,10 @@ public final class Protocol {
     public static final String PATH_DIAGNOSTIC_PREFIX = "/dreamsync/diagnostic/";
     public static final String PATH_SYSTEM_CHECK_RESULT_PREFIX =
             "/dreamsync/system-check/result/";
+    public static final String PATH_DEBUG_SNAPSHOT_REQUEST =
+            "/dreamsync/debug/snapshot/request";
+    public static final String PATH_DEBUG_SNAPSHOT_RESPONSE_PREFIX =
+            "/dreamsync/debug/snapshot/response/";
 
     public static final long CUE_TTL_MS = 15_000L;
     public static final long CONTROL_TTL_MS = 120_000L;
@@ -44,6 +50,7 @@ public final class Protocol {
     public static final long AUTO_CONFIG_TTL_MS = 10L * 365L * 24L * 60L * 60L * 1000L;
     public static final long DIAGNOSTIC_TTL_MS = 7L * 24L * 60L * 60L * 1000L;
     public static final long SYSTEM_CHECK_TTL_MS = 10L * 60L * 1000L;
+    public static final long DEBUG_SNAPSHOT_TTL_MS = 120_000L;
 
     private Protocol() {}
 }

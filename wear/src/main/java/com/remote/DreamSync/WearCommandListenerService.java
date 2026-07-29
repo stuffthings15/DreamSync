@@ -102,6 +102,13 @@ public final class WearCommandListenerService extends WearableListenerService {
         ProtocolEnvelope envelope;
         try { envelope = ProtocolEnvelope.decode(event.getData()); }
         catch (IllegalArgumentException ignored) { return; }
+        if (com.remote.DreamSync.shared.Protocol.PATH_DEBUG_SNAPSHOT_REQUEST.equals(
+                event.getPath())
+                && com.remote.DreamSync.shared.Protocol.TYPE_DEBUG_SNAPSHOT_REQUEST.equals(
+                envelope.messageType)) {
+            publishDebugSnapshot(envelope, event.getSourceNodeId());
+            return;
+        }
         SessionConfig config = SessionConfig.load(this);
         if (!config.phoneNodeId.equals(event.getSourceNodeId())) return;
         MessageGuard.Result result = guard.check(
@@ -127,6 +134,44 @@ public final class WearCommandListenerService extends WearableListenerService {
                     .putExtra("ackType", envelope.messageType)
                     .putExtra("reason", envelope.payload.getOrDefault("reason", "")));
         }
+    }
+
+    private void publishDebugSnapshot(ProtocolEnvelope envelope, String sourceNodeId) {
+        AutoSleepConfig config = AutoSleepConfig.load(this);
+        if (!config.validBinding() || !config.phoneNodeId.equals(sourceNodeId)) {
+            WatchDiagnostics.local(this, "DEBUG_SNAPSHOT_REJECTED",
+                    "reason=INCOMPLETE_OR_WRONG_BINDING");
+            return;
+        }
+        MessageGuard.Result result = guard.check(
+                envelope, config.enrollmentId, config.watchNodeId,
+                sourceNodeId, System.currentTimeMillis());
+        if (result != MessageGuard.Result.ACCEPT) {
+            WatchDiagnostics.local(this, "DEBUG_SNAPSHOT_REJECTED",
+                    "reason=" + result);
+            return;
+        }
+        String snapshot = WatchDiagnostics.snapshot(this);
+        ProtocolEnvelope response = ProtocolEnvelope.create(
+                com.remote.DreamSync.shared.Protocol.TYPE_DEBUG_SNAPSHOT_RESPONSE,
+                config.enrollmentId, envelope.messageId,
+                config.watchNodeId, config.phoneNodeId,
+                System.currentTimeMillis(),
+                com.remote.DreamSync.shared.Protocol.DEBUG_SNAPSHOT_TTL_MS,
+                Map.of("snapshot", snapshot));
+        PutDataMapRequest map = PutDataMapRequest.create(
+                com.remote.DreamSync.shared.Protocol.PATH_DEBUG_SNAPSHOT_RESPONSE_PREFIX
+                        + config.enrollmentId + "/" + envelope.messageId);
+        map.getDataMap().putByteArray("envelope", response.encode());
+        PutDataRequest request = map.asPutDataRequest();
+        request.setUrgent();
+        Wearable.getDataClient(this).putDataItem(request)
+                .addOnSuccessListener(item -> WatchDiagnostics.local(
+                        this, "DEBUG_SNAPSHOT_DELIVERED",
+                        "bytes=" + snapshot.getBytes(java.nio.charset.StandardCharsets.UTF_8).length))
+                .addOnFailureListener(error -> WatchDiagnostics.local(
+                        this, "DEBUG_SNAPSHOT_DELIVERY_FAILED",
+                        "error=" + safeMessage(error)));
     }
 
     private void applyAutoConfiguration(

@@ -51,4 +51,13 @@ public class ProtocolEnvelopeTest {
         assertEquals(MessageGuard.Result.EXPIRED,
                 new MessageGuard().check(cue, "session", "phone", "watch", 1_000L));
     }
+
+    @Test public void debugSnapshotUsesBoundedAuthenticatedControlPaths() {
+        assertEquals("DEBUG_SNAPSHOT_REQUEST", Protocol.TYPE_DEBUG_SNAPSHOT_REQUEST);
+        assertEquals("DEBUG_SNAPSHOT_RESPONSE", Protocol.TYPE_DEBUG_SNAPSHOT_RESPONSE);
+        assertEquals("/dreamsync/debug/snapshot/request", Protocol.PATH_DEBUG_SNAPSHOT_REQUEST);
+        assertEquals("/dreamsync/debug/snapshot/response/",
+                Protocol.PATH_DEBUG_SNAPSHOT_RESPONSE_PREFIX);
+        assertTrue(Protocol.DEBUG_SNAPSHOT_TTL_MS <= Protocol.CONTROL_TTL_MS);
+    }
 }

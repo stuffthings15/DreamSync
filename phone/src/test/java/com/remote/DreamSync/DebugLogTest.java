@@ -104,4 +104,15 @@ public final class DebugLogTest {
         assertTrue(notFelt.contains(
                 "20. User-confirmed physical watch vibration: FAIL"));
     }
+
+    @Test public void watchSnapshotSectionStatesWhetherFreshSnapshotArrived() {
+        String missing = DebugLog.watchSnapshotSection("", 0L, 1_000L);
+        String fresh = DebugLog.watchSnapshotSection(
+                "watchVersion=1.3.18-test\nmotionCallbacks=5",
+                900L, 1_000L);
+
+        assertTrue(missing.contains("status=NO_SNAPSHOT"));
+        assertTrue(fresh.contains("status=FRESH"));
+        assertTrue(fresh.contains("motionCallbacks=5"));
+    }
 }

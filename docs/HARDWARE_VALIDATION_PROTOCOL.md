@@ -1,6 +1,6 @@
 # DreamSync Android and Wear OS hardware validation protocol
 
-Version under test: phone 33 / Wear OS 34 (`1.3.0-test`)
+Version under test: phone 69 / Wear OS 70 (`1.3.18-test`)
 
 Required device groups:
 
@@ -14,19 +14,24 @@ Local tests prove decision logic and build integrity. This protocol gathers the 
 
 1. Install both internal-test releases from Google Play using the approved tester account.
 2. Charge the watch several hours before the normal sleep time and record starting battery; target at least 80%. Charge the phone, enable Bluetooth, and confirm normal Samsung/Wear OS pairing.
-3. Enable developer options and USB or wireless debugging only for the bench tests.
-4. Run `tools/Run-DreamSyncHardwareValidation.ps1 -ListOnly` to confirm both serials.
-5. Run the same tool with explicit serials, `-DeviceGroup`, and `-NightIndex`. Add `-RunInstrumentation` for the Android workflow/migration tests.
-6. Use `-RunProcessDeathTest` on a bench run. Use `-RunRebootTest` only when both devices can safely reboot.
+3. Connect the phone through USB ADB and the watch through paired wireless ADB.
+4. Run `tools/Connect-DreamSyncDevices.ps1 -ListOnly`, then connect the watch with
+   `-WatchAddress` if it is absent.
+5. Use `tools/Start-DreamSyncDeviceTest.ps1` with an explicit lane and scenario.
+   See `USB_DEVICE_LAB.md`.
+6. Destructive scenarios require `-RequireDestructiveApproval`; controlled cueing
+   requires `-RequireControlledCueApproval`.
 7. Keep Samsung advanced features disabled unless the official Samsung AAR and approvals are present.
 
-The runner saves device serials, build fingerprints, package details, logs, and battery/audio/sensor diagnostics under `docs/hardware-validation/`. That folder is Git-ignored. Treat it as private test evidence, review it for personal data before sharing, and never upload it automatically.
+The device lab stores raw evidence under
+`AI Brain\Dream Sync\hardware-validation\`. Manifests use hashed device identities.
+Treat it as private evidence, review it before sharing, and never upload it automatically.
 
 ## Acceptance matrix
 
 | Area | Test | Pass condition | Evidence |
 |---|---|---|---|
-| Installation | Install phone and watch from their Play tester pages | Correct 1.3.0-test build opens on each device | Play screen plus collected package metadata |
+| Installation | Install phone and watch from their Play tester pages | Correct 1.3.18-test build opens on each device | Play screen plus collected package metadata |
 | Pair binding | Turn DreamSync On from the phone | One capability-matched watch is bound; no broadcast to other nodes | Export plus connection events |
 | Permissions | Deny, grant, and revoke each required permission | Clear explanation; no cue when a required permission is missing | Screen capture and event export |
 | Sensors | Wear watch normally for at least 30 minutes | Fresh motion and HR, usable sample rate/coverage, on-wrist state | Capability/signal export |

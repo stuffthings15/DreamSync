@@ -1082,7 +1082,7 @@ public final class MainActivity extends Activity {
 
     private void prepareDebugExport() {
         statusText.setText("Preparing debug log...");
-        remoteExecutor.execute(() -> {
+        requestWatchDebugSnapshot(() -> remoteExecutor.execute(() -> {
             pendingDebugLog = DebugLog.export(
                     getApplicationContext(), new AudioOutput(getApplicationContext()));
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
@@ -1090,7 +1090,41 @@ public final class MainActivity extends Activity {
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_TITLE, "dreamsync-phone-debug-log.txt");
             runOnUiThread(() -> startActivityForResult(intent, REQUEST_DEBUG_EXPORT));
-        });
+        }));
+    }
+
+    private void requestWatchDebugSnapshot(Runnable continuation) {
+        String enrollment = pref("auto_enrollment_id");
+        String phone = pref("local_phone_node");
+        String watch = pref("bound_watch_node");
+        if (enrollment.isEmpty() || phone.isEmpty() || watch.isEmpty()) {
+            DebugLog.append(this, "WATCH_DEBUG_SNAPSHOT_SKIPPED",
+                    "reason=incomplete binding");
+            continuation.run();
+            return;
+        }
+        ProtocolEnvelope envelope = ProtocolEnvelope.create(
+                com.remote.DreamSync.shared.Protocol.TYPE_DEBUG_SNAPSHOT_REQUEST,
+                enrollment, "", phone, watch, System.currentTimeMillis(),
+                com.remote.DreamSync.shared.Protocol.DEBUG_SNAPSHOT_TTL_MS,
+                Map.of("reason", "USER_REQUESTED_DEBUG_EXPORT"));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("pending_debug_snapshot_id", envelope.messageId)
+                .apply();
+        Wearable.getMessageClient(this).sendMessage(
+                        watch,
+                        com.remote.DreamSync.shared.Protocol.PATH_DEBUG_SNAPSHOT_REQUEST,
+                        envelope.encode())
+                .addOnSuccessListener(requestId -> {
+                    DebugLog.append(this, "WATCH_DEBUG_SNAPSHOT_REQUESTED",
+                            "delivery=accepted");
+                    statusText.postDelayed(continuation, 1_500L);
+                })
+                .addOnFailureListener(error -> {
+                    DebugLog.append(this, "WATCH_DEBUG_SNAPSHOT_REQUEST_FAILED",
+                            safeMessage(error));
+                    continuation.run();
+                });
     }
 
     JSONObject buildExportJson() throws JSONException {

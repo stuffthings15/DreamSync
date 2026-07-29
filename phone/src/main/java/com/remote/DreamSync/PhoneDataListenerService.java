@@ -51,6 +51,18 @@ public final class PhoneDataListenerService extends WearableListenerService {
                 if (sourceNodeId == null || sourceNodeId.isEmpty()) continue;
 
                 if (path.startsWith(com.remote.DreamSync.shared.Protocol
+                        .PATH_DEBUG_SNAPSHOT_RESPONSE_PREFIX)) {
+                    String rejection = debugSnapshotRejectionReason(
+                            envelope, sourceNodeId, path);
+                    if (rejection.isEmpty()) {
+                        handleDebugSnapshot(envelope);
+                        Wearable.getDataClient(this).deleteDataItems(
+                                event.getDataItem().getUri());
+                    } else {
+                        DebugLog.append(this, "WATCH_DEBUG_SNAPSHOT_REJECTED",
+                                rejection);
+                    }
+                } else if (path.startsWith(com.remote.DreamSync.shared.Protocol
                         .PATH_SYSTEM_CHECK_RESULT_PREFIX)) {
                     String rejection = systemCheckRejectionReason(
                             envelope, sourceNodeId, path);
@@ -402,6 +414,50 @@ public final class PhoneDataListenerService extends WearableListenerService {
         return guardRejectionReason(messageGuard.check(
                 envelope, envelope.sessionId, phone, watch, System.currentTimeMillis()),
                 envelope);
+    }
+
+    private String debugSnapshotRejectionReason(
+            ProtocolEnvelope envelope,
+            String sourceNodeId,
+            String path
+    ) {
+        if (!com.remote.DreamSync.shared.Protocol.TYPE_DEBUG_SNAPSHOT_RESPONSE.equals(
+                envelope.messageType)) return "reason=WRONG_TYPE";
+        String enrollment = pref("auto_enrollment_id");
+        String watch = pref("bound_watch_node");
+        String phone = pref("local_phone_node");
+        String pending = pref("pending_debug_snapshot_id");
+        if (enrollment.isEmpty() || watch.isEmpty() || phone.isEmpty() || pending.isEmpty()) {
+            return "reason=INCOMPLETE_BINDING";
+        }
+        String expectedPath = com.remote.DreamSync.shared.Protocol
+                .PATH_DEBUG_SNAPSHOT_RESPONSE_PREFIX + enrollment + "/" + pending;
+        if (!path.equals(expectedPath) || !pending.equals(envelope.cueId)) {
+            return "reason=WRONG_PATH_OR_REQUEST";
+        }
+        if (!watch.equals(sourceNodeId)) return "reason=SOURCE_NODE_MISMATCH";
+        return guardRejectionReason(messageGuard.check(
+                envelope, enrollment, phone, watch, System.currentTimeMillis()), envelope);
+    }
+
+    private void handleDebugSnapshot(ProtocolEnvelope envelope) {
+        String snapshot = cleanSnapshot(envelope.payload.getOrDefault("snapshot", ""));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("last_watch_debug_snapshot", snapshot)
+                .putLong("last_watch_debug_snapshot_utc", System.currentTimeMillis())
+                .remove("pending_debug_snapshot_id")
+                .apply();
+        DebugLog.append(this, "WATCH_DEBUG_SNAPSHOT_RECEIVED",
+                "characters=" + snapshot.length());
+    }
+
+    private String cleanSnapshot(String snapshot) {
+        if (snapshot == null) return "";
+        String clean = snapshot
+                .replaceAll("(?i)(node|session|message|cue)Id=[^ ;,|\\r\\n]+",
+                        "$1Id=[redacted]")
+                .replaceAll("(?i)rawPpg=[^ ;,|\\r\\n]+", "rawPpg=[excluded]");
+        return clean.length() > 24_000 ? clean.substring(0, 24_000) : clean;
     }
 
     private String systemCheckRejectionReason(

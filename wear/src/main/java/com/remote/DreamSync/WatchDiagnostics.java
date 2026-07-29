@@ -1,8 +1,12 @@
 package com.remote.DreamSync;
 
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.os.BatteryManager;
 import android.os.Build;
+import android.os.PowerManager;
 import android.os.SystemClock;
+import android.provider.Settings;
 
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
@@ -12,6 +16,7 @@ import com.remote.DreamSync.shared.ProtocolEnvelope;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -106,6 +111,61 @@ final class WatchDiagnostics {
         if (value == null) return "";
         String cleaned = value.replace('\r', ' ').replace('\n', ' ').trim();
         return cleaned.substring(0, Math.min(maximum, cleaned.length()));
+    }
+
+    static String sanitizeSnapshot(String value, int maximum) {
+        if (value == null || maximum <= 0) return "";
+        String cleaned = value
+                .replaceAll("(?i)(node|session|message|cue)Id=[^ ;,|\\r\\n]+",
+                        "$1Id=[redacted]")
+                .replaceAll("(?i)rawPpg=[^ ;,|\\r\\n]+", "rawPpg=[excluded]");
+        if (cleaned.length() > maximum) {
+            cleaned = cleaned.substring(0, maximum);
+        }
+        return cleaned;
+    }
+
+    static String snapshot(Context context) {
+        String events = "";
+        File file = new File(context.getFilesDir(), FILE_NAME);
+        if (file.isFile()) {
+            try {
+                events = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            } catch (Exception error) {
+                events = "WATCH_SNAPSHOT_READ_FAILED | "
+                        + error.getClass().getSimpleName() + "\n";
+            }
+        }
+        PackageInfo info = null;
+        try {
+            info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        } catch (Exception ignored) {
+            // The snapshot remains useful without package metadata.
+        }
+        BatteryManager battery = context.getSystemService(BatteryManager.class);
+        PowerManager power = context.getSystemService(PowerManager.class);
+        AutoSleepConfig auto = AutoSleepConfig.load(context);
+        String header = "generatedUtcMs=" + System.currentTimeMillis()
+                + "\nwatchVersion=" + (info == null ? "unknown" : info.versionName)
+                + "\nversionCode=" + versionCode(info)
+                + "\nwatchDevice=" + Build.MANUFACTURER + " " + Build.MODEL
+                + "\nwatchSdk=" + Build.VERSION.SDK_INT
+                + "\nbatteryPercent=" + (battery == null ? -1
+                : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
+                + "\npowerSaving=" + (power != null && power.isPowerSaveMode())
+                + "\nsensorsOff=" + Settings.Global.getInt(
+                context.getContentResolver(), "sensors_off", 0)
+                + "\nautoEnabled=" + auto.enabled
+                + "\npassiveRegistered=" + auto.passiveRegistered
+                + "\nrawPpg=excluded\n\n--- bounded watch events ---\n";
+        return sanitizeSnapshot(header + events, 24_000);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static long versionCode(PackageInfo info) {
+        if (info == null) return 0L;
+        if (Build.VERSION.SDK_INT >= 28) return info.getLongVersionCode();
+        return info.versionCode;
     }
 
     private WatchDiagnostics() {}

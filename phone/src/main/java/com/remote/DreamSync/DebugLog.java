@@ -121,6 +121,11 @@ final class DebugLog {
         }
         text.append("\n--- pipeline verification ---\n")
                 .append(pipelineVerification(eventsText))
+                .append("\n--- bounded watch snapshot ---\n")
+                .append(watchSnapshotSection(
+                        prefs.getString("last_watch_debug_snapshot", ""),
+                        prefs.getLong("last_watch_debug_snapshot_utc", 0L),
+                        System.currentTimeMillis()))
                 .append("\n--- app and watch events ---\n")
                 .append(eventsText.isEmpty() ? "No events recorded.\n" : eventsText);
         return text.toString();
@@ -221,6 +226,17 @@ final class DebugLog {
                 events, new String[]{" | SYSTEM_CHECK_WATCH_HAPTIC_FELT |"},
                 new String[]{" | SYSTEM_CHECK_WATCH_HAPTIC_NOT_FELT |"});
         return out.toString();
+    }
+
+    static String watchSnapshotSection(String snapshot, long receivedUtcMs, long nowUtcMs) {
+        if (snapshot == null || snapshot.isBlank() || receivedUtcMs <= 0L) {
+            return "status=NO_SNAPSHOT\n";
+        }
+        long ageMs = Math.max(0L, nowUtcMs - receivedUtcMs);
+        String status = ageMs <= com.remote.DreamSync.shared.Protocol.DEBUG_SNAPSHOT_TTL_MS
+                ? "FRESH" : "STALE";
+        return "status=" + status + "\nreceivedUtcMs=" + receivedUtcMs
+                + "\nageMs=" + ageMs + "\n" + sanitize(snapshot, 24_000) + "\n";
     }
 
     private static void step(

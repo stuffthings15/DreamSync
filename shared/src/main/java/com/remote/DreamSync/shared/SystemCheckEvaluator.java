@@ -3,7 +3,7 @@ package com.remote.DreamSync.shared;
 /** Pure, deterministic pass/fail rules for the user-run watch sensor check. */
 public final class SystemCheckEvaluator {
     public static final int MIN_MOTION_SAMPLES = 5;
-    public static final int MIN_HEART_SAMPLES = 1;
+    public static final int MIN_HEART_SAMPLES = 3;
 
     public static final class Result {
         public final boolean passed;

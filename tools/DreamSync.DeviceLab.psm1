@@ -38,6 +38,35 @@ function Get-DreamSyncClockOffsetMs {
     return $HostUtcMs - $DeviceUtcMs
 }
 
+function Get-DreamSyncProviderState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][bool]$Available,
+        [Parameter(Mandatory)][bool]$PermissionGranted,
+        [Parameter(Mandatory)][bool]$PolicyBlocked,
+        [Parameter(Mandatory)][bool]$Registered,
+        [Parameter(Mandatory)][ValidateRange(0, [int]::MaxValue)][int]$CallbackCount,
+        [Parameter(Mandatory)][ValidateRange(0, [int]::MaxValue)][int]$ValidSampleCount
+    )
+    if (-not $Available) { return 'UNAVAILABLE' }
+    if (-not $PermissionGranted) { return 'PERMISSION_BLOCKED' }
+    if ($PolicyBlocked) { return 'POLICY_BLOCKED' }
+    if (-not $Registered) { return 'REGISTRATION_REJECTED' }
+    if ($CallbackCount -eq 0 -or $ValidSampleCount -eq 0) { return 'REGISTERED_SILENT' }
+    return 'DELIVERING_VALID_SAMPLES'
+}
+
+function Test-DreamSyncLanePair {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('Debug', 'Play')][string]$Lane,
+        [Parameter(Mandatory)][string]$PhonePackage,
+        [Parameter(Mandatory)][string]$WatchPackage
+    )
+    $expected = Get-DreamSyncPackageName -Lane $Lane
+    return $PhonePackage -eq $expected -and $WatchPackage -eq $expected
+}
+
 function New-DreamSyncFinding {
     param(
         [string]$Code,
@@ -64,13 +93,13 @@ function Get-DreamSyncFindings {
                         elseif ($motionFail) { 'Motion registration produced no qualifying callbacks.' }
                         else { 'No qualifying motion callback evidence was captured.' })))
 
-        $heartPass = $Text -match 'WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED[^\r\n]*samples=([1-9][0-9]*)'
-        $heartFail = $Text -match 'GLOBAL_SENSOR_SILENCE|heartSamples=0|HEART_PROBES_EXHAUSTED'
+        $heartPass = $Text -match 'WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED[^\r\n]*samples=([3-9]|[1-9][0-9]+)'
+        $heartFail = $Text -match 'GLOBAL_SENSOR_SILENCE|heartSamples=[0-2](?:\D|$)|HEART_PROBES_EXHAUSTED'
         $findings.Add((New-DreamSyncFinding 'HEART_CALLBACKS' `
                     $(if ($heartPass) { 'PASS' } elseif ($heartFail) { 'FAIL' } else { 'NO_EVIDENCE' }) `
-                    $(if ($heartPass) { 'A valid heart-rate callback was recorded.' }
-                        elseif ($heartFail) { 'Heart-rate acquisition produced no valid callbacks.' }
-                        else { 'No valid heart-rate callback evidence was captured.' })))
+                    $(if ($heartPass) { 'At least three valid heart-rate callbacks were recorded.' }
+                        elseif ($heartFail) { 'Heart-rate acquisition produced fewer than three valid callbacks.' }
+                        else { 'No qualifying heart-rate callback evidence was captured.' })))
 
         $acquiring = $Text -match 'ACQUIRING[^\r\n]*(heartSamples=0|heartReadings=0)'
         $findings.Add((New-DreamSyncFinding 'HEART_SERVICES' `
@@ -168,7 +197,9 @@ Export-ModuleMember -Function @(
     'Get-DreamSyncFindings',
     'Get-DreamSyncMainActivityComponent',
     'Get-DreamSyncPackageName',
+    'Get-DreamSyncProviderState',
     'Invoke-DreamSyncAdb',
     'Merge-DreamSyncTimeline',
-    'Protect-DreamSyncIdentifier'
+    'Protect-DreamSyncIdentifier',
+    'Test-DreamSyncLanePair'
 )

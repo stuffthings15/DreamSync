@@ -10,7 +10,7 @@ public final class SystemCheckEvaluatorTest {
 
     @Test public void passesOnlyAfterRealMotionAndHeartSamples() {
         SystemCheckEvaluator.Result result = evaluator.evaluate(
-                true, true, true, true, 30, 2, false);
+                true, true, true, true, 30, 3, false);
         assertTrue(result.passed);
         assertTrue(result.reason.contains("passed"));
     }
@@ -20,6 +20,13 @@ public final class SystemCheckEvaluatorTest {
                 true, true, true, true, 30, 0, false);
         assertFalse(result.passed);
         assertTrue(result.reason.contains("heart-rate reading"));
+    }
+
+    @Test public void fewerThanThreeHeartCallbacksFailsAcceptanceGate() {
+        SystemCheckEvaluator.Result result = evaluator.evaluate(
+                true, true, true, true, 30, 2, false);
+        assertFalse(result.passed);
+        assertTrue(result.reason.contains("heart-rate"));
     }
 
     @Test public void missingBothStreamsReportsBothFailures() {
@@ -32,14 +39,14 @@ public final class SystemCheckEvaluatorTest {
 
     @Test public void offWristAlwaysFailsClosed() {
         SystemCheckEvaluator.Result result = evaluator.evaluate(
-                true, true, true, true, 30, 2, true);
+                true, true, true, true, 30, 3, true);
         assertFalse(result.passed);
         assertTrue(result.reason.contains("off-wrist"));
     }
 
     @Test public void missingPermissionsFailBeforeSensorClaims() {
         SystemCheckEvaluator.Result result = evaluator.evaluate(
-                false, true, true, true, 30, 2, false);
+                false, true, true, true, 30, 3, false);
         assertFalse(result.passed);
         assertTrue(result.reason.contains("Activity permission"));
     }

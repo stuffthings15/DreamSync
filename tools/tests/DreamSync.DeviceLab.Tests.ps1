@@ -62,12 +62,44 @@ Assert-True (-not (($registrationResult | Where-Object Code -eq 'MOTION_CALLBACK
 
 $healthy = @'
 100 | WATCH_SYSTEM_CHECK_MOTION_DATA | source=accelerometer;samples=5;x=0.1;y=0.2;z=9.8
-200 | WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED | source=standard;bpm=62;samples=2
-300 | WATCH_SYSTEM_CHECK_RESULT | status=PASS;motionSamples=5;heartSamples=2
+200 | WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED | source=standard;bpm=62;samples=3
+300 | WATCH_SYSTEM_CHECK_RESULT | status=PASS;motionSamples=5;heartSamples=3
 '@
 $healthyResult = Get-DreamSyncFindings -Text $healthy -Scenario 'watch-system-check'
 Assert-Equal ($healthyResult | Where-Object Code -eq 'MOTION_CALLBACKS').State 'PASS' 'motion callbacks pass'
 Assert-Equal ($healthyResult | Where-Object Code -eq 'HEART_CALLBACKS').State 'PASS' 'heart callbacks pass'
+
+$insufficientHeart = @'
+100 | WATCH_SYSTEM_CHECK_HEART_READING_CONFIRMED | source=standard;bpm=62;samples=2
+200 | WATCH_SYSTEM_CHECK_RESULT | status=FAIL;motionSamples=5;heartSamples=2
+'@
+$insufficientHeartResult = Get-DreamSyncFindings -Text $insufficientHeart -Scenario 'watch-system-check'
+Assert-Equal ($insufficientHeartResult | Where-Object Code -eq 'HEART_CALLBACKS').State 'FAIL' `
+    'fewer than three heart callbacks fail'
+
+Assert-Equal (Get-DreamSyncProviderState -Available $false -PermissionGranted $true `
+        -PolicyBlocked $false -Registered $false -CallbackCount 0 -ValidSampleCount 0) `
+    'UNAVAILABLE' 'provider unavailable'
+Assert-Equal (Get-DreamSyncProviderState -Available $true -PermissionGranted $false `
+        -PolicyBlocked $false -Registered $false -CallbackCount 0 -ValidSampleCount 0) `
+    'PERMISSION_BLOCKED' 'provider permission blocked'
+Assert-Equal (Get-DreamSyncProviderState -Available $true -PermissionGranted $true `
+        -PolicyBlocked $true -Registered $false -CallbackCount 0 -ValidSampleCount 0) `
+    'POLICY_BLOCKED' 'provider policy blocked'
+Assert-Equal (Get-DreamSyncProviderState -Available $true -PermissionGranted $true `
+        -PolicyBlocked $false -Registered $false -CallbackCount 0 -ValidSampleCount 0) `
+    'REGISTRATION_REJECTED' 'provider registration rejected'
+Assert-Equal (Get-DreamSyncProviderState -Available $true -PermissionGranted $true `
+        -PolicyBlocked $false -Registered $true -CallbackCount 0 -ValidSampleCount 0) `
+    'REGISTERED_SILENT' 'provider registered silent'
+Assert-Equal (Get-DreamSyncProviderState -Available $true -PermissionGranted $true `
+        -PolicyBlocked $false -Registered $true -CallbackCount 4 -ValidSampleCount 3) `
+    'DELIVERING_VALID_SAMPLES' 'provider valid samples'
+
+Assert-True (Test-DreamSyncLanePair -Lane Debug -PhonePackage 'com.remote.DreamSync.debug' `
+        -WatchPackage 'com.remote.DreamSync.debug') 'matching debug pair'
+Assert-True (-not (Test-DreamSyncLanePair -Lane Debug -PhonePackage 'com.remote.DreamSync.debug' `
+            -WatchPackage 'com.remote.DreamSync')) 'mixed pair rejected'
 
 $acquiring = '100 | WATCH_SYSTEM_CHECK_PROGRESS | measureAvailability=ACQUIRING;heartSamples=0'
 $acquiringResult = Get-DreamSyncFindings -Text $acquiring -Scenario 'watch-system-check'

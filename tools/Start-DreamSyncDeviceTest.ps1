@@ -5,7 +5,11 @@ param(
         'watch-system-check', 'sensor-contention', 'samsung-policy', 'audio-haptic',
         'clock-drift', 'activity-lifecycle', 'disconnect', 'process-death', 'reboot',
         'off-wrist', 'power-saving', 'sensors-off', 'overnight-sensor-only',
-        'controlled-cue')][string]$Scenario,
+        'controlled-cue', 'sensor-isolation')][string]$Scenario,
+    [ValidateSet(
+        'android-accelerometer', 'android-linear-acceleration', 'android-gravity',
+        'samsung-accelerometer', 'health-services-heart', 'android-heart',
+        'samsung-heart')][string]$ProbeProvider,
     [string]$PhoneSerial,
     [string]$WatchSerial,
     [switch]$Install,
@@ -34,6 +38,10 @@ if ($Scenario -eq 'controlled-cue' -and -not $RequireControlledCueApproval) {
 }
 if ($Lane -eq 'Play' -and $Install) {
     throw 'Debug installs cannot target the Play package. Install Play builds from Internal testing.'
+}
+if ($Scenario -eq 'sensor-isolation') {
+    if ($Lane -ne 'Debug') { throw 'sensor-isolation is available only in the Debug lane.' }
+    if (-not $ProbeProvider) { throw 'sensor-isolation requires -ProbeProvider.' }
 }
 
 $deviceLines = & $adb devices -l
@@ -145,8 +153,15 @@ try {
 
     $stepResults.phoneLaunch = (Invoke-DreamSyncAdb $adb $PhoneSerial @(
             'shell', 'am', 'start', '-W', '-n', $mainActivity) -AllowFailure)
-    $stepResults.watchLaunch = (Invoke-DreamSyncAdb $adb $WatchSerial @(
-            'shell', 'am', 'start', '-W', '-n', $mainActivity) -AllowFailure)
+    $watchLaunchArguments = if ($Scenario -eq 'sensor-isolation') {
+        @('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW',
+            '-d', "dreamsync://watch/system-check?lab=true&provider=$ProbeProvider",
+            '-n', $mainActivity)
+    } else {
+        @('shell', 'am', 'start', '-W', '-n', $mainActivity)
+    }
+    $stepResults.watchLaunch = (Invoke-DreamSyncAdb $adb $WatchSerial `
+            $watchLaunchArguments -AllowFailure)
     Write-Host "Capture running for $DurationMinutes minute(s). Perform scenario: $Scenario"
     Start-Sleep -Seconds ($DurationMinutes * 60)
 } finally {

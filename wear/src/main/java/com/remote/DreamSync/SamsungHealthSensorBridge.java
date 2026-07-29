@@ -49,6 +49,7 @@ final class SamsungHealthSensorBridge {
     private Object service;
     private boolean connected;
     private boolean rawPpgRequested;
+    private Set<String> requestedTrackerTypes;
 
     SamsungHealthSensorBridge(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -70,7 +71,13 @@ final class SamsungHealthSensorBridge {
     }
 
     void start(boolean enableRawPpg) {
+        start(enableRawPpg, null);
+    }
+
+    void start(boolean enableRawPpg, Set<String> trackerTypes) {
         rawPpgRequested = enableRawPpg;
+        requestedTrackerTypes = trackerTypes == null
+                ? null : Collections.unmodifiableSet(new HashSet<>(trackerTypes));
         if (!isSamsungWatch()) {
             listener.onCapabilities(Collections.emptySet(), false,
                     "Not a Samsung watch; standard Wear OS sensors active");
@@ -134,22 +141,30 @@ final class SamsungHealthSensorBridge {
             supportedTrackerTypes = Collections.unmodifiableSet(new HashSet<>(supported));
             listener.onCapabilities(supported, true,
                     "state=CONNECTED;source=SAMSUNG_HEALTH_SENSOR_SDK;supported=" + supported);
-            if (supported.contains("ACCELEROMETER_CONTINUOUS")) {
+            if (requested("ACCELEROMETER_CONTINUOUS")
+                    && supported.contains("ACCELEROMETER_CONTINUOUS")) {
                 attach("ACCELEROMETER_CONTINUOUS", this::handleAccelerometer);
             }
-            if (supported.contains("HEART_RATE_CONTINUOUS")) {
+            if (requested("HEART_RATE_CONTINUOUS")
+                    && supported.contains("HEART_RATE_CONTINUOUS")) {
                 attach("HEART_RATE_CONTINUOUS", this::handleHeartRate);
             }
-            if (supported.contains("SKIN_TEMPERATURE_CONTINUOUS")) {
+            if (requested("SKIN_TEMPERATURE_CONTINUOUS")
+                    && supported.contains("SKIN_TEMPERATURE_CONTINUOUS")) {
                 attach("SKIN_TEMPERATURE_CONTINUOUS", this::handleSkinTemperature);
             }
-            if (enableRawPpg && supported.contains("PPG_CONTINUOUS")) {
+            if (enableRawPpg && requested("PPG_CONTINUOUS")
+                    && supported.contains("PPG_CONTINUOUS")) {
                 attach("PPG_CONTINUOUS", this::handlePpg);
             }
         } catch (Throwable error) {
             listener.onBridgeError("SDK_CAPABILITY_FAILED", safe(error));
             listener.onCapabilities(supported, connected, safe(error));
         }
+    }
+
+    private boolean requested(String trackerType) {
+        return requestedTrackerTypes == null || requestedTrackerTypes.contains(trackerType);
     }
 
     private interface DataHandler {

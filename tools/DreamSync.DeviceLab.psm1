@@ -119,6 +119,33 @@ function Get-DreamSyncFindings {
                         else { 'No Samsung policy result was captured.' })))
     }
 
+    if ($Scenario -eq 'sensor-isolation') {
+        $pattern = 'PROVIDER_PROBE_RESULT[^\r\n]*provider=([^;\r\n]+)' +
+            ';available=(true|false);permissionGranted=(true|false)' +
+            ';policyBlocked=(true|false);registered=(true|false)' +
+            ';callbacks=(\d+);validSamples=(\d+)'
+        $match = [regex]::Match($Text, $pattern, 'IgnoreCase')
+        if ($match.Success) {
+            $provider = $match.Groups[1].Value
+            $providerState = Get-DreamSyncProviderState `
+                -Available ([bool]::Parse($match.Groups[2].Value)) `
+                -PermissionGranted ([bool]::Parse($match.Groups[3].Value)) `
+                -PolicyBlocked ([bool]::Parse($match.Groups[4].Value)) `
+                -Registered ([bool]::Parse($match.Groups[5].Value)) `
+                -CallbackCount ([int]$match.Groups[6].Value) `
+                -ValidSampleCount ([int]$match.Groups[7].Value)
+            $code = 'PROVIDER_' + ($provider.ToUpperInvariant() -replace '[^A-Z0-9]+', '_')
+            $findings.Add((New-DreamSyncFinding $code `
+                        $(if ($providerState -eq 'DELIVERING_VALID_SAMPLES') {
+                                'PASS'
+                            } else { 'FAIL' }) `
+                        "Provider state: $providerState."))
+        } else {
+            $findings.Add((New-DreamSyncFinding 'PROVIDER_PROBE' 'NO_EVIDENCE' `
+                        'No completed isolated-provider result was captured.'))
+        }
+    }
+
     if ($Scenario -in @('off-wrist', 'disconnect', 'power-saving', 'sensors-off')) {
         $blocked = $Text -match '(?i)(CUE_REJECTED|BLOCKED|DISABLED|PHONE_LOST)'
         $findings.Add((New-DreamSyncFinding 'FAIL_CLOSED' `

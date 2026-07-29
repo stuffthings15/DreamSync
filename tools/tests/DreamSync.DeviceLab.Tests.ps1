@@ -101,6 +101,20 @@ Assert-True (Test-DreamSyncLanePair -Lane Debug -PhonePackage 'com.remote.DreamS
 Assert-True (-not (Test-DreamSyncLanePair -Lane Debug -PhonePackage 'com.remote.DreamSync.debug' `
             -WatchPackage 'com.remote.DreamSync')) 'mixed pair rejected'
 
+$silentProvider = @'
+100 | PROVIDER_PROBE_RESULT | provider=samsung-heart;available=true;permissionGranted=true;policyBlocked=false;registered=true;callbacks=0;validSamples=0
+'@
+$silentProviderResult = Get-DreamSyncFindings -Text $silentProvider -Scenario 'sensor-isolation'
+Assert-Equal ($silentProviderResult | Where-Object Code -eq 'PROVIDER_SAMSUNG_HEART').State `
+    'FAIL' 'registered silent provider fails'
+
+$liveProvider = @'
+100 | PROVIDER_PROBE_RESULT | provider=samsung-heart;available=true;permissionGranted=true;policyBlocked=false;registered=true;callbacks=4;validSamples=3
+'@
+$liveProviderResult = Get-DreamSyncFindings -Text $liveProvider -Scenario 'sensor-isolation'
+Assert-Equal ($liveProviderResult | Where-Object Code -eq 'PROVIDER_SAMSUNG_HEART').State `
+    'PASS' 'live provider passes'
+
 $acquiring = '100 | WATCH_SYSTEM_CHECK_PROGRESS | measureAvailability=ACQUIRING;heartSamples=0'
 $acquiringResult = Get-DreamSyncFindings -Text $acquiring -Scenario 'watch-system-check'
 Assert-Equal ($acquiringResult | Where-Object Code -eq 'HEART_SERVICES').State 'FAIL' 'Health Services acquiring'
@@ -152,9 +166,13 @@ Assert-True (Test-Path -LiteralPath $analyzeScript) 'analysis script exists'
 if (Test-Path -LiteralPath $startScript) {
     $startText = Get-Content -Raw $startScript
     foreach ($parameter in @('Lane', 'Scenario', 'PhoneSerial', 'WatchSerial',
-            'Install', 'DurationMinutes', 'OutputDirectory', 'PreflightOnly')) {
+            'Install', 'DurationMinutes', 'OutputDirectory', 'PreflightOnly',
+            'ProbeProvider')) {
         Assert-True ($startText -match "\`$$parameter\b") "capture parameter $parameter"
     }
+    Assert-True ($startText -match "'sensor-isolation'") 'sensor isolation scenario'
+    Assert-True ($startText -match 'dreamsync://watch/system-check.+provider=') `
+        'isolated provider deep link'
     Assert-True ($startText -match 'Debug installs cannot target the Play package') `
         'mixed install safety message'
     Assert-True ($startText -match 'controlled-cue.+RequireControlledCueApproval') `

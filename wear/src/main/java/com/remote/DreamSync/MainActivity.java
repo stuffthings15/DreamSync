@@ -89,6 +89,7 @@ public final class MainActivity extends Activity {
     private LiveSystemCheck liveSystemCheck;
     private boolean systemCheckMode;
     private String pendingSystemCheckId = "";
+    private SensorProbeSelection pendingSystemCheckProbe = SensorProbeSelection.fromQuery(null);
     private final ExecutorService remoteExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
@@ -127,11 +128,23 @@ public final class MainActivity extends Activity {
                 || !"watch".equals(data.getHost())
                 || !"/system-check".equals(data.getPath())) return false;
         systemCheckMode = true;
+        SensorProbeSelection probe =
+                SensorProbeSelection.fromQuery(data.getQueryParameter("provider"));
+        if (!probe.valid()) {
+            statusText.setText("Unknown sensor provider. Return to the DreamSync phone app.");
+            WatchDiagnostics.local(this, "SYSTEM_CHECK_BLOCKED",
+                    "reason=unknown sensor provider");
+            return true;
+        }
         String checkId = safeIdentifier(data.getQueryParameter("check"));
         String enrollment = safeIdentifier(data.getQueryParameter("enrollment"));
         AutoSleepConfig config = AutoSleepConfig.load(this);
-        if (checkId.isEmpty() || !config.validBinding()
-                || !config.enrollmentId.equals(enrollment)) {
+        boolean debugLab = (getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                && "true".equals(data.getQueryParameter("lab"));
+        if (debugLab && checkId.isEmpty()) checkId = "local-provider-probe";
+        if (!debugLab && (checkId.isEmpty() || !config.validBinding()
+                || !config.enrollmentId.equals(enrollment))) {
             statusText.setText("System check could not start. Return to the DreamSync phone app.");
             WatchDiagnostics.local(this, "SYSTEM_CHECK_BLOCKED",
                     "reason=missing or invalid phone-watch binding");
@@ -143,13 +156,15 @@ public final class MainActivity extends Activity {
                     "A sleep session is active.");
             return true;
         }
-        startSystemCheckWhenPermissionsReady(config, checkId);
+        pendingSystemCheckProbe = probe;
+        startSystemCheckWhenPermissionsReady(config, checkId, probe);
         return true;
     }
 
     private void startSystemCheckWhenPermissionsReady(
             AutoSleepConfig config,
-            String checkId
+            String checkId,
+            SensorProbeSelection probe
     ) {
         List<String> missing = new ArrayList<>();
         addIfMissing(missing, Manifest.permission.ACTIVITY_RECOGNITION);
@@ -179,15 +194,19 @@ public final class MainActivity extends Activity {
                             && !hasPermission(samsungPpgPermission())));
             return;
         }
-        startLiveSystemCheck(config, checkId);
+        startLiveSystemCheck(config, checkId, probe);
     }
 
-    private void startLiveSystemCheck(AutoSleepConfig config, String checkId) {
+    private void startLiveSystemCheck(
+            AutoSleepConfig config,
+            String checkId,
+            SensorProbeSelection probe
+    ) {
         pendingSystemCheckId = "";
         if (liveSystemCheck != null) {
             liveSystemCheck.cancel("A newer check replaced this check.");
         }
-        liveSystemCheck = new LiveSystemCheck(config, checkId);
+        liveSystemCheck = new LiveSystemCheck(config, checkId, probe);
         liveSystemCheck.start();
     }
 
@@ -455,6 +474,7 @@ public final class MainActivity extends Activity {
         private static final long HEART_SOURCE_STALE_MS = 10_000L;
         private final AutoSleepConfig config;
         private final String checkId;
+        private final SensorProbeSelection probe;
         private final SensorManager sensorManager;
         private final long startedElapsedMs = SystemClock.elapsedRealtime();
         private final Runnable finishRunnable = this::finish;
@@ -532,6 +552,7 @@ public final class MainActivity extends Activity {
         private volatile boolean offWrist;
         private volatile boolean offWristKnown;
         private volatile boolean samsungConnected;
+        private volatile boolean samsungPolicyBlocked;
         private volatile String activeMotionSource = "NONE";
         private volatile String activeHeartSource = "NONE";
         private volatile String standardMotionProbeState = "waiting";
@@ -576,9 +597,14 @@ public final class MainActivity extends Activity {
         private String samsungDetail = "";
         private String forcedFailure = "";
 
-        LiveSystemCheck(AutoSleepConfig config, String checkId) {
+        LiveSystemCheck(
+                AutoSleepConfig config,
+                String checkId,
+                SensorProbeSelection probe
+        ) {
             this.config = config;
             this.checkId = checkId;
+            this.probe = probe;
             sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         }
 
@@ -638,9 +664,19 @@ public final class MainActivity extends Activity {
                     sensorInventory);
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_DEVICE_STATE",
                     deviceStateDetail());
-            availableMotionSensors = MotionSensorRegistration.candidates(sensorManager);
+            List<Sensor> selectedMotionSensors = new ArrayList<>();
+            if (probe.standardMotion()) {
+                for (Sensor sensor : MotionSensorRegistration.candidates(sensorManager)) {
+                    if (probe.acceptsMotionType(sensor.getType())) {
+                        selectedMotionSensors.add(sensor);
+                    }
+                }
+            }
+            availableMotionSensors = Collections.unmodifiableList(selectedMotionSensors);
             startNextMotionProbe("initial probe");
-            availableHeartRateSensors = HeartRateSensorRegistration.candidates(sensorManager);
+            availableHeartRateSensors = probe.standardHeart()
+                    ? HeartRateSensorRegistration.candidates(sensorManager)
+                    : Collections.emptyList();
             heartRate = availableHeartRateSensors.isEmpty()
                     ? null : availableHeartRateSensors.get(0);
             if (!availableHeartRateSensors.isEmpty()) {
@@ -651,11 +687,17 @@ public final class MainActivity extends Activity {
                 WatchDiagnostics.auto(MainActivity.this, config,
                         "SYSTEM_CHECK_STANDARD_HEART_MISSING", "type=HEART_RATE;list=empty");
             }
-            startSamsungCheck();
+            if (probe.samsungMotion() || probe.samsungHeart()) startSamsungCheck();
             statusText.setText((hapticRequested
                     ? "Test vibration sent. " : "Watch vibration unavailable. ")
                     + "Move your wrist now. Waiting for live motion values.");
-            statusText.postDelayed(delayedHealthMeasureStart, 8_000L);
+            if (probe.healthServicesHeart()) {
+                statusText.postDelayed(delayedHealthMeasureStart, 8_000L);
+            } else if (probe.standardHeart()) {
+                statusText.postDelayed(
+                        () -> startStandardHeartFallback("isolated standard heart probe"),
+                        8_000L);
+            }
             statusText.postDelayed(this::startWatchAudioCheck, 8_000L);
             statusText.postDelayed(progressFiveSeconds, 5_000L);
             statusText.postDelayed(progressFifteenSeconds, 15_000L);
@@ -1075,11 +1117,16 @@ public final class MainActivity extends Activity {
 
                         @Override public void onBridgeError(String code, String detail) {
                             samsungDetail = code + ": " + detail;
+                            String normalized = samsungDetail.toLowerCase(java.util.Locale.US);
+                            if (normalized.contains("policy")
+                                    || normalized.contains("signature is not registered")) {
+                                samsungPolicyBlocked = true;
+                            }
                             WatchDiagnostics.auto(MainActivity.this, config,
                                     "SYSTEM_CHECK_SAMSUNG_SENSOR_ERROR", samsungDetail);
                         }
                     });
-            samsungBridge.start(additionalHealthPermission);
+            samsungBridge.start(additionalHealthPermission, probe.samsungTrackerTypes());
         }
 
         private void flushAndLogProgress(String checkpoint) {
@@ -1397,6 +1444,52 @@ public final class MainActivity extends Activity {
                     "state=" + state + ";" + deviceStateDetail());
         }
 
+        private void logProviderProbeResult() {
+            boolean available = false;
+            boolean registered = false;
+            int callbacks = 0;
+            int validSamples = 0;
+            if (probe.standardMotion()) {
+                available = !availableMotionSensors.isEmpty();
+                registered = standardMotionRegistered;
+                callbacks = standardMotionSamples + rejectedMotionCallbacks;
+                validSamples = standardMotionSamples;
+            } else if (probe.samsungMotion()) {
+                available = samsungTrackerTypes.contains("ACCELEROMETER_CONTINUOUS");
+                registered = samsungConnected && available;
+                callbacks = samsungMotionSamples;
+                validSamples = samsungMotionSamples;
+            } else if (probe.healthServicesHeart()) {
+                available = measureSupported;
+                registered = measureRegistered;
+                callbacks = measureHeartSamples;
+                validSamples = measureHeartSamples;
+            } else if (probe.standardHeart()) {
+                available = !availableHeartRateSensors.isEmpty();
+                registered = heartRegistered;
+                callbacks = standardHeartSamples + rejectedHeartCallbacks;
+                validSamples = standardHeartSamples;
+            } else if (probe.samsungHeart()) {
+                available = samsungTrackerTypes.contains("HEART_RATE_CONTINUOUS");
+                registered = samsungConnected && available;
+                callbacks = samsungHeartSamples;
+                validSamples = samsungHeartSamples;
+            }
+            boolean permissionGranted = probe.standardMotion() || probe.samsungMotion()
+                    ? activityPermission : heartPermissionGranted;
+            WatchDiagnostics.local(MainActivity.this, "PROVIDER_PROBE_RESULT",
+                    "provider=" + probe.provider()
+                            + ";available=" + available
+                            + ";permissionGranted=" + permissionGranted
+                            + ";policyBlocked=" + samsungPolicyBlocked
+                            + ";registered=" + registered
+                            + ";callbacks=" + callbacks
+                            + ";validSamples=" + validSamples
+                            + ";offWrist=" + offWrist
+                            + ";deviceState=" + deviceStateDetail()
+                            + ";detail=" + samsungDetail);
+        }
+
         private void finish() {
             if (finished) return;
             finished = true;
@@ -1439,6 +1532,7 @@ public final class MainActivity extends Activity {
             int totalHeartSamples = standardHeartSamples
                     + measureHeartSamples + samsungHeartSamples;
             int usableMotionSamples = usableMotionSamples();
+            if (probe.isolated()) logProviderProbeResult();
             boolean usableMotionRegistration = standardMotionRegistered
                     || samsungMotionSamples > 0;
             sensorSilenceDetected = allSensorCallbacks == 0 && usableMotionSamples == 0
@@ -1502,6 +1596,7 @@ public final class MainActivity extends Activity {
                     samsungDetail + "; " + advanced.reason);
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("status", passed ? "PASS" : "FAIL");
+            payload.put("providerProbe", probe.provider());
             payload.put("reason", reason);
             payload.put("motionSamples", Integer.toString(usableMotionSamples));
             payload.put("motionProbeState", motionProbeState);
@@ -1866,7 +1961,7 @@ public final class MainActivity extends Activity {
                 // Advanced Samsung permissions are optional. If the user denies one,
                 // run the core motion/heart check once and report that capability as
                 // unavailable instead of reopening the same permission request loop.
-                startLiveSystemCheck(config, checkId);
+                startLiveSystemCheck(config, checkId, pendingSystemCheckProbe);
             }
             return;
         }

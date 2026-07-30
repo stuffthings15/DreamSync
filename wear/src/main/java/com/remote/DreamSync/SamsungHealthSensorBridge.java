@@ -2,6 +2,8 @@ package com.remote.DreamSync;
 
 import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -16,6 +18,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Optional Samsung Health Sensor SDK adapter.
@@ -50,6 +55,8 @@ final class SamsungHealthSensorBridge {
     private boolean connected;
     private boolean rawPpgRequested;
     private Set<String> requestedTrackerTypes;
+    private HandlerThread trackerThread;
+    private Handler trackerHandler;
 
     SamsungHealthSensorBridge(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -75,6 +82,7 @@ final class SamsungHealthSensorBridge {
     }
 
     void start(boolean enableRawPpg, Set<String> trackerTypes) {
+        ensureTrackerThread();
         rawPpgRequested = enableRawPpg;
         requestedTrackerTypes = trackerTypes == null
                 ? null : Collections.unmodifiableSet(new HashSet<>(trackerTypes));
@@ -201,8 +209,9 @@ final class SamsungHealthSensorBridge {
                         }
                         return null;
                     });
-            tracker.getClass().getMethod("setEventListener", listenerType)
-                    .invoke(tracker, trackerListener);
+            invokeOnTrackerThread(() -> tracker.getClass()
+                    .getMethod("setEventListener", listenerType)
+                    .invoke(tracker, trackerListener));
             trackers.put(trackerName, tracker);
             trackerListeners.put(trackerName, trackerListener);
             listener.onCapabilities(supportedTrackerTypes, connected,
@@ -276,7 +285,8 @@ final class SamsungHealthSensorBridge {
         trackerListeners.remove(trackerName);
         if (tracker == null) return;
         try {
-            tracker.getClass().getMethod("unsetEventListener").invoke(tracker);
+            invokeOnTrackerThread(() -> tracker.getClass()
+                    .getMethod("unsetEventListener").invoke(tracker));
         } catch (Throwable error) {
             listener.onBridgeError(trackerName + "_STOP_FAILED", safe(error));
         }
@@ -382,7 +392,8 @@ final class SamsungHealthSensorBridge {
     void stop() {
         for (Object tracker : trackers.values()) {
             try {
-                tracker.getClass().getMethod("unsetEventListener").invoke(tracker);
+                invokeOnTrackerThread(() -> tracker.getClass()
+                        .getMethod("unsetEventListener").invoke(tracker));
             } catch (Throwable ignored) {
                 // Best-effort cleanup; disconnect below releases the service.
             }
@@ -399,6 +410,49 @@ final class SamsungHealthSensorBridge {
             service = null;
         }
         connected = false;
+        if (trackerThread != null) {
+            trackerThread.quitSafely();
+            trackerThread = null;
+            trackerHandler = null;
+        }
+    }
+
+    private synchronized void ensureTrackerThread() {
+        if (trackerThread != null && trackerThread.isAlive() && trackerHandler != null) return;
+        trackerThread = new HandlerThread("DreamSync-SamsungTrackers");
+        trackerThread.start();
+        trackerHandler = new Handler(trackerThread.getLooper());
+    }
+
+    private void invokeOnTrackerThread(TrackerAction action) throws Exception {
+        ensureTrackerThread();
+        if (Thread.currentThread() == trackerThread) {
+            action.run();
+            return;
+        }
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        if (!trackerHandler.post(() -> {
+            try {
+                action.run();
+            } catch (Throwable error) {
+                failure.set(error);
+            } finally {
+                completed.countDown();
+            }
+        })) {
+            throw new IllegalStateException("Samsung tracker thread rejected listener action");
+        }
+        if (!completed.await(3, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Samsung tracker listener action timed out");
+        }
+        Throwable error = failure.get();
+        if (error instanceof Exception) throw (Exception) error;
+        if (error != null) throw new RuntimeException(error);
+    }
+
+    private interface TrackerAction {
+        void run() throws Exception;
     }
 
     private static long timestamp(Object point) throws Exception {

@@ -15,6 +15,7 @@ public final class SensorProbeSelectionTest {
         assertTrue(selection.standardHeart());
         assertTrue(selection.samsungHeart());
         assertTrue(selection.durationMs() == 75_000L);
+        assertTrue(selection.allowsHeartFallback());
     }
 
     @Test public void physicalAccelerometerRunsWithoutCompetingProviders() {
@@ -29,6 +30,7 @@ public final class SensorProbeSelectionTest {
         assertFalse(selection.standardHeart());
         assertFalse(selection.samsungHeart());
         assertTrue(selection.durationMs() == 60_000L);
+        assertFalse(selection.allowsHeartFallback());
     }
 
     @Test public void samsungHeartRunsAlone() {

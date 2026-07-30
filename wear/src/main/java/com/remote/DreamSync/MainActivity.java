@@ -574,6 +574,7 @@ public final class MainActivity extends Activity {
         private String passivePauseDetail = "not_attempted";
         private volatile boolean measureSupported;
         private volatile boolean measureRegistered;
+        private volatile boolean measureEverRegistered;
         private boolean sensorSilenceDetected;
         private boolean powerInteractive;
         private boolean powerSaveMode;
@@ -802,6 +803,7 @@ public final class MainActivity extends Activity {
             measureCallback = new MeasureCallback() {
                 @Override public void onRegistered() {
                     measureRegistered = true;
+                    measureEverRegistered = true;
                     WatchDiagnostics.auto(MainActivity.this, config,
                             "SYSTEM_CHECK_MEASURE_HEART_REGISTERED",
                             "dataType=HEART_RATE_BPM");
@@ -911,6 +913,12 @@ public final class MainActivity extends Activity {
         }
 
         private void startStandardHeartFallback(String reason) {
+            if (!probe.allowsHeartFallback()) {
+                WatchDiagnostics.auto(MainActivity.this, config,
+                        "SYSTEM_CHECK_HEART_FALLBACK_SUPPRESSED",
+                        "provider=" + probe.provider() + ";reason=" + reason);
+                return;
+            }
             if (finished || standardHeartFallbackAttempted || measureHeartSamples > 0) return;
             standardHeartFallbackAttempted = true;
             heartProbeState = "releasing Health Services";
@@ -1462,7 +1470,7 @@ public final class MainActivity extends Activity {
                 validSamples = samsungMotionSamples;
             } else if (probe.healthServicesHeart()) {
                 available = measureSupported;
-                registered = measureRegistered;
+                registered = measureEverRegistered;
                 callbacks = measureHeartSamples;
                 validSamples = measureHeartSamples;
             } else if (probe.standardHeart()) {

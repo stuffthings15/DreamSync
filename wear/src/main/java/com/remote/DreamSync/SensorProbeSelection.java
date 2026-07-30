@@ -48,6 +48,10 @@ final class SensorProbeSelection {
         return isolated() ? 60_000L : 75_000L;
     }
 
+    boolean allowsHeartFallback() {
+        return valid && (ALL.equals(provider) || standardHeart());
+    }
+
     boolean standardMotion() {
         return valid && (ALL.equals(provider) || provider.startsWith("android-")
                 && !provider.equals("android-heart"));

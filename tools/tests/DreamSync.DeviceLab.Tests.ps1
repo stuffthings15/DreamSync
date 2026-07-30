@@ -115,6 +115,14 @@ $liveProviderResult = Get-DreamSyncFindings -Text $liveProvider -Scenario 'senso
 Assert-Equal ($liveProviderResult | Where-Object Code -eq 'PROVIDER_SAMSUNG_HEART').State `
     'PASS' 'live provider passes'
 
+$multipleProviders = $silentProvider + [Environment]::NewLine + @'
+200 | PROVIDER_PROBE_RESULT | provider=android-gravity;available=true;permissionGranted=true;policyBlocked=false;registered=true;callbacks=6;validSamples=6
+'@
+$multipleProviderResult = Get-DreamSyncFindings -Text $multipleProviders -Scenario 'sensor-isolation'
+Assert-True ($null -ne ($multipleProviderResult |
+            Where-Object Code -eq 'PROVIDER_ANDROID_GRAVITY')) `
+    'newest provider result wins'
+
 $acquiring = '100 | WATCH_SYSTEM_CHECK_PROGRESS | measureAvailability=ACQUIRING;heartSamples=0'
 $acquiringResult = Get-DreamSyncFindings -Text $acquiring -Scenario 'watch-system-check'
 Assert-Equal ($acquiringResult | Where-Object Code -eq 'HEART_SERVICES').State 'FAIL' 'Health Services acquiring'

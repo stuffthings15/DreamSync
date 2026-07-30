@@ -124,8 +124,9 @@ function Get-DreamSyncFindings {
             ';available=(true|false);permissionGranted=(true|false)' +
             ';policyBlocked=(true|false);registered=(true|false)' +
             ';callbacks=(\d+);validSamples=(\d+)'
-        $match = [regex]::Match($Text, $pattern, 'IgnoreCase')
-        if ($match.Success) {
+        $matches = [regex]::Matches($Text, $pattern, 'IgnoreCase')
+        $match = if ($matches.Count -gt 0) { $matches[$matches.Count - 1] } else { $null }
+        if ($null -ne $match -and $match.Success) {
             $provider = $match.Groups[1].Value
             $providerState = Get-DreamSyncProviderState `
                 -Available ([bool]::Parse($match.Groups[2].Value)) `

@@ -197,6 +197,8 @@ if (Test-Path -LiteralPath $startScript) {
         Assert-True ($startText -match "\`$$parameter\b") "capture parameter $parameter"
     }
     Assert-True ($startText -match "'sensor-isolation'") 'sensor isolation scenario'
+    Assert-True ($startText -notmatch 'sensor-isolation is available only in the Debug lane') `
+        'Play-signed sensor isolation remains available for Samsung policy validation'
     Assert-True ($startText -match 'dreamsync://watch/system-check.+provider=') `
         'isolated provider deep link'
     Assert-True ($startText -match "install', '-r', '-g'") `

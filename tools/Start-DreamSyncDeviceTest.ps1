@@ -40,7 +40,6 @@ if ($Lane -eq 'Play' -and $Install) {
     throw 'Debug installs cannot target the Play package. Install Play builds from Internal testing.'
 }
 if ($Scenario -eq 'sensor-isolation') {
-    if ($Lane -ne 'Debug') { throw 'sensor-isolation is available only in the Debug lane.' }
     if (-not $ProbeProvider) { throw 'sensor-isolation requires -ProbeProvider.' }
 }
 

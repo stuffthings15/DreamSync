@@ -475,6 +475,8 @@ public final class MainActivity extends Activity {
         private final AutoSleepConfig config;
         private final String checkId;
         private final SensorProbeSelection probe;
+        private final ProviderProbeEvidence standardHeartProbeEvidence =
+                new ProviderProbeEvidence();
         private final SensorManager sensorManager;
         private final long startedElapsedMs = SystemClock.elapsedRealtime();
         private final Runnable finishRunnable = this::finish;
@@ -985,6 +987,7 @@ public final class MainActivity extends Activity {
                         HeartRateSensorRegistration.registerCandidate(
                                 sensorManager, this, candidate,
                                 SensorManager.SENSOR_DELAY_NORMAL, 0, null);
+                standardHeartProbeEvidence.recordRegistration(result.registered);
                 heartRegistrationDetails = appendDetails(
                         heartRegistrationDetails,
                         "probe=" + heartProbeIndex + ";reason=" + reason
@@ -1475,7 +1478,7 @@ public final class MainActivity extends Activity {
                 validSamples = measureHeartSamples;
             } else if (probe.standardHeart()) {
                 available = !availableHeartRateSensors.isEmpty();
-                registered = heartRegistered;
+                registered = standardHeartProbeEvidence.everRegistered();
                 callbacks = standardHeartSamples + rejectedHeartCallbacks;
                 validSamples = standardHeartSamples;
             } else if (probe.samsungHeart()) {

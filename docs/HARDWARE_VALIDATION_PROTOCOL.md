@@ -1,6 +1,6 @@
 # DreamSync Android and Wear OS hardware validation protocol
 
-Version under test: phone 69 / Wear OS 70 (`1.3.18-test`)
+Version under test: phone 71 / Wear OS 72 (`1.3.19-test`)
 
 Required device groups:
 
@@ -31,7 +31,7 @@ Treat it as private evidence, review it before sharing, and never upload it auto
 
 | Area | Test | Pass condition | Evidence |
 |---|---|---|---|
-| Installation | Install phone and watch from their Play tester pages | Correct 1.3.18-test build opens on each device | Play screen plus collected package metadata |
+| Installation | Install phone and watch from their Play tester pages | Correct 1.3.19-test build opens on each device | Play screen plus collected package metadata |
 | Pair binding | Turn DreamSync On from the phone | One capability-matched watch is bound; no broadcast to other nodes | Export plus connection events |
 | Permissions | Deny, grant, and revoke each required permission | Clear explanation; no cue when a required permission is missing | Screen capture and event export |
 | Sensors | Wear watch normally for at least 30 minutes | Fresh motion and HR, usable sample rate/coverage, on-wrist state | Capability/signal export |

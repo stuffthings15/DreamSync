@@ -161,6 +161,12 @@ Assert-Equal $emptyMerged.Count 0 'empty timeline is valid'
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $phoneGradle = Get-Content -Raw (Join-Path $projectRoot 'phone\build.gradle')
 $wearGradle = Get-Content -Raw (Join-Path $projectRoot 'wear\build.gradle')
+$phoneRelease = Get-DreamSyncReleaseVersion -ProjectRoot $projectRoot -Module phone
+$wearRelease = Get-DreamSyncReleaseVersion -ProjectRoot $projectRoot -Module wear
+Assert-Equal $phoneRelease.VersionCode '71' 'phone release version code'
+Assert-Equal $phoneRelease.VersionName '1.3.19-test' 'phone release version name'
+Assert-Equal $wearRelease.VersionCode '72' 'wear release version code'
+Assert-Equal $wearRelease.VersionName '1.3.19-test' 'wear release version name'
 foreach ($entry in @(
     @{ Name = 'phone'; Text = $phoneGradle },
     @{ Name = 'wear'; Text = $wearGradle }
@@ -203,6 +209,14 @@ if (Test-Path -LiteralPath $startScript) {
         'mixed install safety message'
     Assert-True ($startText -match 'controlled-cue.+RequireControlledCueApproval') `
         'controlled cue approval gate'
+    Assert-True ($startText -match 'Get-DreamSyncReleaseVersion') `
+        'Play version gate follows Gradle release metadata'
+    Assert-True ($startText -notmatch "phone code 69 and watch code 70") `
+        'Play version gate has no stale hardcoded release codes'
+    Assert-True ($startText -match 'Screenshot skipped: expected') `
+        'capture skips screenshots when DreamSync is not foreground'
+    Assert-True ($startText -match 'mCurrentFocus\|mFocusedApp') `
+        'screenshot privacy guard checks the foreground package'
 }
 
 if ($failures.Count -gt 0) {

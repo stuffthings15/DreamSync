@@ -14,6 +14,28 @@ function Get-DreamSyncMainActivityComponent {
     return "$package/com.remote.DreamSync.MainActivity"
 }
 
+function Get-DreamSyncReleaseVersion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [Parameter(Mandatory)][ValidateSet('phone', 'wear')][string]$Module
+    )
+    $gradlePath = Join-Path $ProjectRoot "$Module\build.gradle"
+    if (-not (Test-Path -LiteralPath $gradlePath)) {
+        throw "Missing Gradle file: $gradlePath"
+    }
+    $gradle = Get-Content -Raw -LiteralPath $gradlePath
+    $codeMatch = [regex]::Match($gradle, '(?m)^\s*versionCode\s+(\d+)\s*$')
+    $nameMatch = [regex]::Match($gradle, "(?m)^\s*versionName\s+'([^']+)'\s*$")
+    if (-not $codeMatch.Success -or -not $nameMatch.Success) {
+        throw "Could not read release version from $gradlePath"
+    }
+    [pscustomobject]@{
+        VersionCode = $codeMatch.Groups[1].Value
+        VersionName = $nameMatch.Groups[1].Value
+    }
+}
+
 function Get-DreamSyncDeviceRole {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Characteristics)
@@ -228,6 +250,7 @@ Export-ModuleMember -Function @(
     'Get-DreamSyncMainActivityComponent',
     'Get-DreamSyncPackageName',
     'Get-DreamSyncProviderState',
+    'Get-DreamSyncReleaseVersion',
     'Invoke-DreamSyncAdb',
     'Merge-DreamSyncTimeline',
     'Protect-DreamSyncIdentifier',

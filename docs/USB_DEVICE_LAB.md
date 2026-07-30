@@ -53,7 +53,7 @@ the Play lane.
 
 ### Play lane
 
-Install phone `69` and Wear OS `70` (`1.3.18-test`) from Internal testing. The runner
+Install phone `71` and Wear OS `72` (`1.3.19-test`) from Internal testing. The runner
 will not sideload or replace them:
 
 ```powershell

@@ -95,8 +95,12 @@ if (-not $phoneInstalled -or -not $watchInstalled) {
 if ($Lane -eq 'Play') {
     $phoneCode = ([regex]::Match($phoneDump, 'versionCode=(\d+)')).Groups[1].Value
     $watchCode = ([regex]::Match($watchDump, 'versionCode=(\d+)')).Groups[1].Value
-    if ($phoneCode -ne '69' -or $watchCode -ne '70') {
-        throw "Play lane requires phone code 69 and watch code 70; found $phoneCode/$watchCode."
+    $phoneRelease = Get-DreamSyncReleaseVersion -ProjectRoot $projectRoot -Module phone
+    $watchRelease = Get-DreamSyncReleaseVersion -ProjectRoot $projectRoot -Module wear
+    if ($phoneCode -ne $phoneRelease.VersionCode -or
+        $watchCode -ne $watchRelease.VersionCode) {
+        throw "Play lane requires phone code $($phoneRelease.VersionCode) and watch code " +
+            "$($watchRelease.VersionCode); found $phoneCode/$watchCode."
     }
 }
 
@@ -195,8 +199,28 @@ foreach ($record in @(
 }
 
 function Save-Screenshot {
-    param([string]$Serial, [string]$Path)
+    param([string]$Serial, [string]$Path, [string]$ExpectedPackage)
     $errorPath = "$Path.error.txt"
+    $windowDump = (Invoke-DreamSyncAdb $adb $Serial @(
+            'shell', 'dumpsys', 'window') -AllowFailure).Text
+    $focusMatch = [regex]::Match(
+        $windowDump,
+        '(?:mCurrentFocus|mFocusedApp)=[^\r\n]*\s([A-Za-z0-9_.]+)/'
+    )
+    $foregroundPackage = if ($focusMatch.Success) {
+        $focusMatch.Groups[1].Value
+    } else {
+        ''
+    }
+    if ($foregroundPackage -ne $ExpectedPackage) {
+        [IO.File]::WriteAllText(
+            $errorPath,
+            "Screenshot skipped: expected $ExpectedPackage in foreground; found " +
+                $(if ($foregroundPackage) { $foregroundPackage } else { 'unknown' }) + '.',
+            [Text.UTF8Encoding]::new($false)
+        )
+        return 2
+    }
     $process = Start-Process -FilePath $adb -ArgumentList @(
         '-s', $Serial, 'exec-out', 'screencap', '-p') `
         -RedirectStandardOutput $Path -RedirectStandardError $errorPath `
@@ -204,9 +228,9 @@ function Save-Screenshot {
     return $process.ExitCode
 }
 $stepResults['screenshots\phone.png'] =
-    Save-Screenshot $PhoneSerial (Join-Path $screenshots 'phone.png')
+    Save-Screenshot $PhoneSerial (Join-Path $screenshots 'phone.png') $package
 $stepResults['screenshots\watch.png'] =
-    Save-Screenshot $WatchSerial (Join-Path $screenshots 'watch.png')
+    Save-Screenshot $WatchSerial (Join-Path $screenshots 'watch.png') $package
 
 if ($Lane -eq 'Debug') {
     foreach ($target in @(

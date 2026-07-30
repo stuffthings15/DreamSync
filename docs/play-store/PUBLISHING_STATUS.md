@@ -19,6 +19,13 @@
 
 ## Internal testing
 
+- Phone version code 71 and Wear OS version code 72 (`1.3.19-test`) were published
+  on 2026-07-29 and show Available to internal testers. Both were clean-installed
+  from Google Play on the target S23+ and Galaxy Watch Ultra. The installed APKs
+  share Play signer SHA-256
+  `2e94c57bd8cbe3f5dcba40cc2bf4883a01804970ca6dd45cf07ca76f8e76f37a`.
+  The release moves Samsung tracker listener registration to a dedicated handler
+  thread. This is not live sensor proof; physical acceptance remains open.
 - Phone version code 65 and Wear OS version code 66 (`1.3.16-test`) were published
   on 2026-07-23 and show Available to internal testers. The phone track is Active.
   Play still labels the Wear OS track Inactive. The release uses the approved
@@ -70,6 +77,19 @@
 - Phone tester link: `https://play.google.com/apps/internaltest/4701743177829341351`
 - Wear OS tester link: `https://play.google.com/apps/internaltest/4700051853729851607`
 - Both tracks use the `Dream Sync private testers` email list.
+
+## Current internal-test build: 1.3.19
+
+- Release name: `1.3.19-test - Samsung sensor fix`.
+- Phone AAB version code 71 SHA-256:
+  `12F3C54FDC6F730D00498F32871547F5327CB8695D0F2EDB5883FA777B35096D`.
+- Wear OS AAB version code 72 SHA-256:
+  `88CD8E4D6C4A098440DD278CA4A0745E54BCD3D4F2BFAFC54A076AFED1F04248`.
+- Both tracks are Internal testing only. Production was not changed.
+- Google Play accepted both bundles and reports each release Available to internal
+  testers.
+- Final completion still requires two consecutive awake live-sensor passes, fault
+  tests, one overnight sensor-only run, and a controlled-cue test after those gates.
 
 ## Previous internal-test build
 

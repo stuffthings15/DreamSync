@@ -81,8 +81,8 @@ if ($Install) {
     if (-not (Test-Path -LiteralPath $phoneApk) -or -not (Test-Path -LiteralPath $watchApk)) {
         throw 'Debug APKs are missing. Build :phone:assembleDebug and :wear:assembleDebug first.'
     }
-    Invoke-DreamSyncAdb $adb $PhoneSerial @('install', '-r', $phoneApk) | Out-Null
-    Invoke-DreamSyncAdb $adb $WatchSerial @('install', '-r', $watchApk) | Out-Null
+    Invoke-DreamSyncAdb $adb $PhoneSerial @('install', '-r', '-g', $phoneApk) | Out-Null
+    Invoke-DreamSyncAdb $adb $WatchSerial @('install', '-r', '-g', $watchApk) | Out-Null
 }
 
 $phoneDump = Get-PackageDump $PhoneSerial
@@ -155,7 +155,7 @@ try {
             'shell', 'am', 'start', '-W', '-n', $mainActivity) -AllowFailure)
     $watchLaunchArguments = if ($Scenario -eq 'sensor-isolation') {
         @('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW',
-            '-d', "dreamsync://watch/system-check?lab=true&provider=$ProbeProvider",
+            '-d', "dreamsync://watch/system-check?lab=true\&provider=$ProbeProvider",
             '-n', $mainActivity)
     } else {
         @('shell', 'am', 'start', '-W', '-n', $mainActivity)

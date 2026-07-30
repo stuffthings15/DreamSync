@@ -173,6 +173,10 @@ if (Test-Path -LiteralPath $startScript) {
     Assert-True ($startText -match "'sensor-isolation'") 'sensor isolation scenario'
     Assert-True ($startText -match 'dreamsync://watch/system-check.+provider=') `
         'isolated provider deep link'
+    Assert-True ($startText -match "install', '-r', '-g'") `
+        'debug install grants runtime permissions'
+    Assert-True ($startText -match '\\&provider=') `
+        'provider deep link escapes remote shell ampersand'
     Assert-True ($startText -match 'Debug installs cannot target the Play package') `
         'mixed install safety message'
     Assert-True ($startText -match 'controlled-cue.+RequireControlledCueApproval') `

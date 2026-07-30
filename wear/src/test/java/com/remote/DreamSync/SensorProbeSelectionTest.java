@@ -14,6 +14,7 @@ public final class SensorProbeSelectionTest {
         assertTrue(selection.healthServicesHeart());
         assertTrue(selection.standardHeart());
         assertTrue(selection.samsungHeart());
+        assertTrue(selection.durationMs() == 75_000L);
     }
 
     @Test public void physicalAccelerometerRunsWithoutCompetingProviders() {
@@ -27,6 +28,7 @@ public final class SensorProbeSelectionTest {
         assertFalse(selection.healthServicesHeart());
         assertFalse(selection.standardHeart());
         assertFalse(selection.samsungHeart());
+        assertTrue(selection.durationMs() == 60_000L);
     }
 
     @Test public void samsungHeartRunsAlone() {

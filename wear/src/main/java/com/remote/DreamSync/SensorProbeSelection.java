@@ -44,6 +44,10 @@ final class SensorProbeSelection {
         return valid && !ALL.equals(provider);
     }
 
+    long durationMs() {
+        return isolated() ? 60_000L : 75_000L;
+    }
+
     boolean standardMotion() {
         return valid && (ALL.equals(provider) || provider.startsWith("android-")
                 && !provider.equals("android-heart"));

@@ -617,7 +617,8 @@ public final class MainActivity extends Activity {
             heartPermissionGranted = hasPermission(heartPermission());
             additionalHealthPermission = hasPermission(samsungPpgPermission());
             WatchDiagnostics.auto(MainActivity.this, config, "SYSTEM_CHECK_STARTED",
-                    "checkId=" + checkId + ";durationSeconds=75"
+                    "checkId=" + checkId + ";durationSeconds=" + probe.durationMs() / 1_000L
+                            + ";providerProbe=" + probe.provider()
                             + ";activityPermission=" + activityPermission
                             + ";heartPermission=" + heartPermissionGranted
                             + ";hapticAvailable=" + hapticAvailable
@@ -704,7 +705,7 @@ public final class MainActivity extends Activity {
             statusText.postDelayed(progressThirtySeconds, 30_000L);
             statusText.postDelayed(progressSixtySeconds, 60_000L);
             statusText.post(progressTick);
-            statusText.postDelayed(finishRunnable, SYSTEM_CHECK_DURATION_MS);
+            statusText.postDelayed(finishRunnable, probe.durationMs());
         }
 
         private void startNextMotionProbe(String reason) {
@@ -1368,7 +1369,7 @@ public final class MainActivity extends Activity {
                     ? "reading " + activeHeartSource : heartProbeState;
             statusText.setText(SystemCheckProgress.format(
                     SystemClock.elapsedRealtime() - startedElapsedMs,
-                    SYSTEM_CHECK_DURATION_MS,
+                    probe.durationMs(),
                     motionSamples,
                     motionProbeState,
                     lastMotionX,

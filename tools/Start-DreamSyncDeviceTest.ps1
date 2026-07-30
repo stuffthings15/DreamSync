@@ -226,10 +226,14 @@ if ($Lane -eq 'Debug') {
     }
 }
 if ($PullPlayExport) {
-    $remote = (Invoke-DreamSyncAdb $adb $PhoneSerial @(
-            'shell', 'sh', '-c', 'ls -t /sdcard/Download/dreamsync-phone-debug-log*.txt 2>/dev/null | head -1'
-        ) -AllowFailure).Text.Trim()
-    if ($remote) { & $adb -s $PhoneSerial pull $remote $exports | Out-Null }
+    $downloadListing = (Invoke-DreamSyncAdb $adb $PhoneSerial @(
+            'shell', 'ls', '-t', '/sdcard/Download') -AllowFailure).Text -split '\r?\n'
+    $exportName = $downloadListing |
+        Where-Object { $_ -like 'dreamsync-phone-debug-log*.txt' } |
+        Select-Object -First 1
+    if ($exportName) {
+        & $adb -s $PhoneSerial pull "/sdcard/Download/$exportName" $exports | Out-Null
+    }
 }
 if ($CaptureBugreport) {
     & $adb -s $PhoneSerial bugreport (Join-Path $rawPhone 'bugreport.zip') | Out-Null

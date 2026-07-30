@@ -19,6 +19,19 @@ public final class MissionProtectionPlanTest {
                 ProtectionMode.fromHistoricalRecord("LUCID"));
     }
 
+    @Test public void experimentalModeRequiresPassedLiveSystemCheck() {
+        assertEquals(ProtectionMode.PROTECT_ONLY, ProtectionMode.forLiveSelection(
+                ProtectionMode.EXPERIMENTAL_AUDIO, "NOT RUN"));
+        assertEquals(ProtectionMode.PROTECT_ONLY, ProtectionMode.forLiveSelection(
+                ProtectionMode.EXPERIMENTAL_AUDIO, "RUNNING"));
+        assertEquals(ProtectionMode.PROTECT_ONLY, ProtectionMode.forLiveSelection(
+                ProtectionMode.EXPERIMENTAL_AUDIO, "FAIL"));
+        assertEquals(ProtectionMode.EXPERIMENTAL_AUDIO, ProtectionMode.forLiveSelection(
+                ProtectionMode.EXPERIMENTAL_AUDIO, "PASS"));
+        assertEquals(ProtectionMode.PROTECT_ONLY, ProtectionMode.forLiveSelection(
+                ProtectionMode.PROTECT_ONLY, "PASS"));
+    }
+
     @Test public void experimentalSoundStartsOnNightOneAndProgressesSlowly() {
         ProgressiveCuePolicy policy = new ProgressiveCuePolicy();
         assertEquals(0, policy.allowedPairs(ProtectionMode.PROTECT_ONLY, 20));

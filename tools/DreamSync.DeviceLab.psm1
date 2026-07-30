@@ -101,10 +101,12 @@ function Get-DreamSyncFindings {
                         elseif ($heartFail) { 'Heart-rate acquisition produced fewer than three valid callbacks.' }
                         else { 'No qualifying heart-rate callback evidence was captured.' })))
 
+        $offBody = $Text -match 'UNAVAILABLE_DEVICE_OFF_BODY[^\r\n]*(heartSamples=0|heartReadings=0)'
         $acquiring = $Text -match 'ACQUIRING[^\r\n]*(heartSamples=0|heartReadings=0)'
         $findings.Add((New-DreamSyncFinding 'HEART_SERVICES' `
-                    $(if ($acquiring) { 'FAIL' } elseif ($heartPass) { 'PASS' } else { 'NO_EVIDENCE' }) `
-                    $(if ($acquiring) { 'Health Services remained ACQUIRING with no readings.' }
+                    $(if ($offBody -or $acquiring) { 'FAIL' } elseif ($heartPass) { 'PASS' } else { 'NO_EVIDENCE' }) `
+                    $(if ($offBody) { 'Health Services reported the watch was off-body with no readings.' }
+                        elseif ($acquiring) { 'Health Services remained ACQUIRING with no readings.' }
                         elseif ($heartPass) { 'Heart acquisition completed with a valid reading.' }
                         else { 'Health Services completion was not demonstrated.' })))
     }
@@ -161,7 +163,7 @@ function Get-DreamSyncFindings {
 function Merge-DreamSyncTimeline {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][object[]]$Events,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Events,
         [Parameter(Mandatory)][long]$WatchClockOffsetMs
     )
     $adjusted = foreach ($event in $Events) {

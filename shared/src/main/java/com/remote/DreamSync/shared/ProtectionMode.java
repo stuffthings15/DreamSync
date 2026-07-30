@@ -15,4 +15,14 @@ public enum ProtectionMode {
         return EXPERIMENTAL_AUDIO.name().equals(value) || "DEEP".equals(value)
                 ? EXPERIMENTAL_AUDIO : PROTECT_ONLY;
     }
+
+    /** Live experimental audio is unavailable until the physical sensor check passes. */
+    public static ProtectionMode forLiveSelection(
+            ProtectionMode requested,
+            String systemCheckStatus
+    ) {
+        return requested == EXPERIMENTAL_AUDIO
+                && "PASS".equals(systemCheckStatus)
+                ? EXPERIMENTAL_AUDIO : PROTECT_ONLY;
+    }
 }

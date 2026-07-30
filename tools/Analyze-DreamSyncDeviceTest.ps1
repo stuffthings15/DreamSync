@@ -15,6 +15,11 @@ $sourceFiles = @(
     @{ Device = 'phone'; Path = Join-Path $InputDirectory 'exports\phone-app-debug.log' },
     @{ Device = 'watch'; Path = Join-Path $InputDirectory 'exports\watch-app-debug.log' }
 )
+$playExports = Get-ChildItem -LiteralPath (Join-Path $InputDirectory 'exports') `
+    -Filter 'dreamsync-phone-debug-log*.txt' -File -ErrorAction SilentlyContinue
+foreach ($playExport in $playExports) {
+    $sourceFiles += @{ Device = 'phone'; Path = $playExport.FullName }
+}
 $events = [System.Collections.Generic.List[object]]::new()
 $allText = [Text.StringBuilder]::new()
 foreach ($source in $sourceFiles) {

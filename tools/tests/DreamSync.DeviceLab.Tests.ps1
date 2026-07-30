@@ -127,6 +127,11 @@ $acquiring = '100 | WATCH_SYSTEM_CHECK_PROGRESS | measureAvailability=ACQUIRING;
 $acquiringResult = Get-DreamSyncFindings -Text $acquiring -Scenario 'watch-system-check'
 Assert-Equal ($acquiringResult | Where-Object Code -eq 'HEART_SERVICES').State 'FAIL' 'Health Services acquiring'
 
+$offBody = '100 | WATCH_SYSTEM_CHECK_PROGRESS | measureAvailability=UNAVAILABLE_DEVICE_OFF_BODY;heartSamples=0'
+$offBodyResult = Get-DreamSyncFindings -Text $offBody -Scenario 'watch-system-check'
+Assert-Equal ($offBodyResult | Where-Object Code -eq 'HEART_SERVICES').State 'FAIL' `
+    'Health Services off body'
+
 $policy = '100 | WATCH_SAMSUNG_SENSOR_ERROR | policy error: package signature is not registered'
 $policyResult = Get-DreamSyncFindings -Text $policy -Scenario 'samsung-policy'
 Assert-Equal ($policyResult | Where-Object Code -eq 'SAMSUNG_POLICY').State 'FAIL' 'Samsung policy error'
@@ -150,6 +155,8 @@ $events = @(
 $merged = Merge-DreamSyncTimeline -Events $events -WatchClockOffsetMs 100
 Assert-Equal $merged[0].AdjustedUtcMs 1000 'watch clock adjustment'
 Assert-Equal $merged[1].AdjustedUtcMs 1000 'phone clock unchanged'
+$emptyMerged = @(Merge-DreamSyncTimeline -Events @() -WatchClockOffsetMs 0)
+Assert-Equal $emptyMerged.Count 0 'empty timeline is valid'
 
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $phoneGradle = Get-Content -Raw (Join-Path $projectRoot 'phone\build.gradle')
@@ -170,6 +177,11 @@ $analyzeScript = Join-Path $projectRoot 'tools\Analyze-DreamSyncDeviceTest.ps1'
 Assert-True (Test-Path -LiteralPath $connectScript) 'connect script exists'
 Assert-True (Test-Path -LiteralPath $startScript) 'capture script exists'
 Assert-True (Test-Path -LiteralPath $analyzeScript) 'analysis script exists'
+if (Test-Path -LiteralPath $analyzeScript) {
+    $analyzeText = Get-Content -Raw $analyzeScript
+    Assert-True ($analyzeText -match 'dreamsync-phone-debug-log\*\.txt') `
+        'analysis includes user-mediated Play exports'
+}
 
 if (Test-Path -LiteralPath $startScript) {
     $startText = Get-Content -Raw $startScript
@@ -185,6 +197,8 @@ if (Test-Path -LiteralPath $startScript) {
         'debug install grants runtime permissions'
     Assert-True ($startText -match '\\&provider=') `
         'provider deep link escapes remote shell ampersand'
+    Assert-True ($startText -notmatch "'sh', '-c'") `
+        'Play export lookup avoids remote shell quoting'
     Assert-True ($startText -match 'Debug installs cannot target the Play package') `
         'mixed install safety message'
     Assert-True ($startText -match 'controlled-cue.+RequireControlledCueApproval') `

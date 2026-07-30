@@ -162,10 +162,13 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         gainSeek.setProgress(Math.max(1, Math.min(10,
                 Math.round(prefs.getFloat("auto_gain", 0.04f) * 100f))));
-        ProtectionMode mode = ProtectionMode.fromStored(prefs.getString(
+        ProtectionMode requestedMode = ProtectionMode.fromStored(prefs.getString(
                 "auto_mode", ProtectionMode.PROTECT_ONLY.name()));
+        ProtectionMode mode = ProtectionMode.forLiveSelection(
+                requestedMode, prefs.getString("last_system_check_status", "NOT RUN"));
         modeGroup.check(mode == ProtectionMode.EXPERIMENTAL_AUDIO
                 ? R.id.modeLucid : R.id.modeDeep);
+        findViewById(R.id.modeLucid).setEnabled(experimentalAudioEligible());
         if (!mode.name().equals(prefs.getString("auto_mode", ""))) {
             prefs.edit().putString("auto_mode", mode.name()).apply();
         }
@@ -359,6 +362,8 @@ public final class MainActivity extends Activity {
                 .putLong("last_system_check_requested_utc", System.currentTimeMillis())
                 .putString("last_system_check_status", "RUNNING")
                 .apply();
+        updateExperimentalAudioAvailability(
+                getSharedPreferences(PREFS, MODE_PRIVATE));
         statusText.postDelayed(this::expireSystemCheckIfNeeded,
                 SYSTEM_CHECK_TIMEOUT_MS + 1_000L);
         Intent remoteIntent = new Intent(Intent.ACTION_VIEW)
@@ -1659,6 +1664,7 @@ public final class MainActivity extends Activity {
 
     private void restoreLatestSystemCheckStatus() {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        updateExperimentalAudioAvailability(prefs);
         long completedUtcMs = prefs.getLong("last_system_check_utc", 0L);
         long displayedUtcMs = prefs.getLong("last_system_check_displayed_utc", 0L);
         if (completedUtcMs <= 0L || completedUtcMs <= displayedUtcMs
@@ -1671,6 +1677,19 @@ public final class MainActivity extends Activity {
         DebugLog.append(this, "SYSTEM_CHECK_RESULT_RESTORED",
                 "status=" + result + ";reason=" + reason);
         showSystemCheckReport(result, reason, completedUtcMs);
+    }
+
+    private void updateExperimentalAudioAvailability(
+            android.content.SharedPreferences prefs
+    ) {
+        boolean eligible = "PASS".equals(
+                prefs.getString("last_system_check_status", "NOT RUN"));
+        findViewById(R.id.modeLucid).setEnabled(eligible);
+        if (!eligible && modeGroup.getCheckedRadioButtonId() == R.id.modeLucid) {
+            modeGroup.check(R.id.modeDeep);
+            prefs.edit().putString(
+                    "auto_mode", ProtectionMode.PROTECT_ONLY.name()).apply();
+        }
     }
 
     private void showSystemCheckReport(String result, String reason, long completedUtcMs) {
@@ -1919,8 +1938,17 @@ public final class MainActivity extends Activity {
 
     private String selectedMode() {
         int checked = modeGroup.getCheckedRadioButtonId();
-        if (checked == R.id.modeLucid) return ProtectionMode.EXPERIMENTAL_AUDIO.name();
-        return ProtectionMode.PROTECT_ONLY.name();
+        ProtectionMode requested = checked == R.id.modeLucid
+                ? ProtectionMode.EXPERIMENTAL_AUDIO : ProtectionMode.PROTECT_ONLY;
+        return ProtectionMode.forLiveSelection(
+                requested,
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getString("last_system_check_status", "NOT RUN")).name();
+    }
+
+    private boolean experimentalAudioEligible() {
+        return "PASS".equals(getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_system_check_status", "NOT RUN"));
     }
 
     private float cueGain() {

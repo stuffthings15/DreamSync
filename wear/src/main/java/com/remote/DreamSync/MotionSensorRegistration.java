@@ -11,6 +11,8 @@ import java.util.List;
 
 /** Tries standard motion sensors one at a time and records every registration attempt. */
 final class MotionSensorRegistration {
+    private static final int PREFERRED_SAMPLING_PERIOD_US = 100_000;
+
     static final class Result {
         final Sensor sensor;
         final List<Sensor> sensors;
@@ -86,6 +88,18 @@ final class MotionSensorRegistration {
             for (Sensor sensor : sensors) addUnique(ordered, sensor);
         }
         return Collections.unmodifiableList(ordered);
+    }
+
+    static int safeSamplingPeriodUs(Sensor sensor) {
+        return sensor == null
+                ? PREFERRED_SAMPLING_PERIOD_US
+                : safeSamplingPeriodUs(sensor.getMinDelay(), sensor.getMaxDelay());
+    }
+
+    static int safeSamplingPeriodUs(int minimumDelayUs, int maximumDelayUs) {
+        int periodUs = Math.max(PREFERRED_SAMPLING_PERIOD_US, minimumDelayUs);
+        if (maximumDelayUs > 0) periodUs = Math.min(periodUs, maximumDelayUs);
+        return periodUs;
     }
 
     static boolean accepts(List<Sensor> registeredSensors, Sensor eventSensor) {

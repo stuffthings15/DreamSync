@@ -735,7 +735,8 @@ public final class MainActivity extends Activity {
                 MotionSensorRegistration.Result result =
                         MotionSensorRegistration.registerCandidate(
                                 sensorManager, this, candidate,
-                                SensorManager.SENSOR_DELAY_NORMAL, 0, null);
+                                MotionSensorRegistration.safeSamplingPeriodUs(candidate),
+                                0, null);
                 motionRegistrationDetails = appendDetails(
                         motionRegistrationDetails,
                         "probe=" + motionProbeIndex + ";reason=" + reason

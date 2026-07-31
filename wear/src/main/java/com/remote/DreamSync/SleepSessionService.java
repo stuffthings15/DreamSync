@@ -852,7 +852,9 @@ public final class SleepSessionService extends Service implements SensorEventLis
         while (++motionSensorProbeIndex < availableMotionSensors.size()) {
             Sensor candidate = availableMotionSensors.get(motionSensorProbeIndex);
             MotionSensorRegistration.Result result = MotionSensorRegistration.registerCandidate(
-                    sensorManager, this, candidate, 200_000, 0, sensorHandler);
+                    sensorManager, this, candidate,
+                    MotionSensorRegistration.safeSamplingPeriodUs(candidate),
+                    0, sensorHandler);
             motionRegistrationDetails = appendRegistrationDetail(
                     motionRegistrationDetails,
                     "probe=" + motionSensorProbeIndex + ";reason=" + reason
